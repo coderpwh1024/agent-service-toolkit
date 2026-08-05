@@ -1,0 +1,11 @@
+[features]
+hooks = true
+
+[[hooks.SessionStart]]
+matcher = "^(startup|resume)$"
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '/bin/bash "$(git rev-parse --show-toplevel)/.codex/hooks/ensure-pinned-uv.sh"'
+timeout = 120
+statusMessage = "Checking the pinned uv version"

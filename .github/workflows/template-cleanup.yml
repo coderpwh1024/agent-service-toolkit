@@ -1,0 +1,48 @@
+name: Template cleanup
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    if: >-
+      github.repository != 'JoshuaC215/agent-service-toolkit'
+      && github.event.repository.fork == false
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Remove maintainer scaffolding
+        run: |
+          set -euo pipefail
+
+          rm -rf .claude .agents .codex docs/maintenance
+
+          guard="github.repository == 'JoshuaC215/agent-service-toolkit'"
+          for wf in .github/workflows/*.yml; do
+            [ "$wf" = ".github/workflows/template-cleanup.yml" ] && continue
+            if grep -qF "$guard" "$wf"; then
+              rm -f "$wf"
+            fi
+          done
+
+          rm -f .github/workflows/template-cleanup.yml
+
+      - name: Commit cleanup
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Nothing to clean up."
+            exit 0
+          fi
+          git add -A
+          git commit -m "Remove maintainer scaffolding from template instance"
+          git push origin HEAD:${{ github.ref_name }}
