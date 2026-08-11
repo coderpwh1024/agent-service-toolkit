@@ -93,6 +93,7 @@ docker compose watch
 
 ### 特定 AI 提供商的额外配置
 
+- 配置百炼千问：在 `.env` 中设置 `DASHSCOPE_API_KEY`。默认使用中国区兼容端点；如需使用工作空间或其他地域，请同时将 `DASHSCOPE_BASE_URL` 设置为百炼控制台提供的 OpenAI 兼容端点。
 - [配置 Ollama](docs/Ollama.md)
 - [配置 VertexAI](docs/VertexAI.md)
 - [使用 ChromaDB 配置 RAG](docs/RAG_Assistant.md)

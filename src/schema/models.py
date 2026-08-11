@@ -6,6 +6,7 @@ class Provider(StrEnum):
     OPENAI_COMPATIBLE = auto()
     AZURE_OPENAI = auto()
     DEEPSEEK = auto()
+    DASHSCOPE = auto()
     ANTHROPIC = auto()
     GOOGLE = auto()
     VERTEXAI = auto()
@@ -40,6 +41,14 @@ class DeepseekModelName(StrEnum):
 
     DEEPSEEK_V4_FLASH = "deepseek-v4-flash"
     DEEPSEEK_V4_PRO = "deepseek-v4-pro"
+
+
+class QwenModelName(StrEnum):
+    """https://help.aliyun.com/zh/model-studio/getting-started/models"""
+
+    QWEN_37_FLASH = "qwen3.7-flash"
+    QWEN_37_PLUS = "qwen3.7-plus"
+    QWEN_38_MAX = "qwen3.8-max"
 
 
 class AnthropicModelName(StrEnum):
@@ -123,6 +132,7 @@ type AllModelEnum = (
     | OpenAICompatibleName
     | AzureOpenAIModelName
     | DeepseekModelName
+    | QwenModelName
     | AnthropicModelName
     | GoogleModelName
     | VertexAIModelName

@@ -27,6 +27,7 @@ from schema.models import (
     OpenAIModelName,
     OpenRouterModelName,
     Provider,
+    QwenModelName,
     VertexAIModelName,
 )
 
@@ -82,6 +83,8 @@ class Settings(BaseSettings):
 
     OPENAI_API_KEY: SecretStr | None = None
     DEEPSEEK_API_KEY: SecretStr | None = None
+    DASHSCOPE_API_KEY: SecretStr | None = None
+    DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     ANTHROPIC_API_KEY: SecretStr | None = None
     GOOGLE_API_KEY: SecretStr | None = None
     GOOGLE_APPLICATION_CREDENTIALS: SecretStr | None = None
@@ -157,6 +160,7 @@ class Settings(BaseSettings):
             Provider.OPENAI: self.OPENAI_API_KEY,
             Provider.OPENAI_COMPATIBLE: self.COMPATIBLE_BASE_URL and self.COMPATIBLE_MODEL,
             Provider.DEEPSEEK: self.DEEPSEEK_API_KEY,
+            Provider.DASHSCOPE: self.DASHSCOPE_API_KEY,
             Provider.ANTHROPIC: self.ANTHROPIC_API_KEY,
             Provider.GOOGLE: self.GOOGLE_API_KEY,
             Provider.VERTEXAI: self.GOOGLE_APPLICATION_CREDENTIALS,
@@ -189,6 +193,10 @@ class Settings(BaseSettings):
                     if self.DEFAULT_MODEL is None:
                         self.DEFAULT_MODEL = DeepseekModelName.DEEPSEEK_V4_FLASH
                     self.AVAILABLE_MODELS.update(set(DeepseekModelName))
+                case Provider.DASHSCOPE:
+                    if self.DEFAULT_MODEL is None:
+                        self.DEFAULT_MODEL = QwenModelName.QWEN_37_FLASH
+                    self.AVAILABLE_MODELS.update(set(QwenModelName))
                 case Provider.ANTHROPIC:
                     if self.DEFAULT_MODEL is None:
                         self.DEFAULT_MODEL = AnthropicModelName.HAIKU_45
