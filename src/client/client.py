@@ -3,6 +3,8 @@ import os
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
+import httpx
+
 from schema import (
     ChatHistory,
     ChatHistoryInput,
@@ -55,3 +57,26 @@ class AgentClient:
             if self.auth_secret:
                 headers["Authorization"] = f"Bearer {self.auth_secret}"
             return headers
+
+        def retrieve_info(self) -> None:
+            try:
+                response = httpx.get(
+                    f"{self.base_url}/info",
+                    headers=self._headers,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as e:
+                raise AgentClientError(f"Error getting service info: {e}")
+
+        # 更新智能体
+        def update_agent(self, agent: str, verify: bool = True)->None:
+            if verify:
+                if not self.info:
+                    self.retrieve_info()
+                agent_keys=[a.key for a in self.info.agents]
+                if agent not in agent_keys:
+                    raise AgentClientError(
+                        f"Agent {agent} not found in available agents: {', '.join(agent_keys)}"
+                    )
+            self.agent = agent
