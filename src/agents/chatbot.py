@@ -5,7 +5,7 @@ from langgraph.func import entrypoint
 from core import get_model, settings
 
 @entrypoint()
-async def chatbod(
+async def chatbot(
         inputs: dict[str, list[BaseMessage]],
         *,
         previous: dict[str, list[BaseMessage]],
