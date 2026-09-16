@@ -1,0 +1,12 @@
+
+--- Restart with PostgreSQL persistence ---
+INFO:     Started server process [58355]
+INFO:     Waiting for application startup.
+WARNING:service.service:AUTH_SECRET is not configured — all API endpoints are unauthenticated. Set AUTH_SECRET in your environment to enable bearer token authentication.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:18080 (Press CTRL+C to quit)
+INFO:     127.0.0.1:64942 - "GET /health HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [58355]

@@ -1,0 +1,52 @@
+2026-09-16 14:06:35.340 Uvicorn server started on 127.0.0.1:8501
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://127.0.0.1:8501
+
+  For better performance, install the Watchdog module:
+
+  $ xcode-select --install
+  $ pip install watchdog
+            
+Alibaba Bailian TTS truncating text from 787 to 600 chars
+Alibaba Bailian TTS truncating text from 607 to 600 chars
+Alibaba Bailian TTS truncating text from 731 to 600 chars
+Alibaba Bailian TTS truncating text from 732 to 600 chars
+  Stopping...
+
+--- Restart with PostgreSQL persistence ---
+2026-09-16 15:22:02.670 Uvicorn server started on 127.0.0.1:8501
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://127.0.0.1:8501
+
+  For better performance, install the Watchdog module:
+
+  $ xcode-select --install
+  $ pip install watchdog
+            
+an error occurred during closing of asynchronous generator <async_generator object AgentClient.astream at 0x109b7fdf0>
+asyncgen: <async_generator object AgentClient.astream at 0x109b7fdf0>
+Traceback (most recent call last):
+  File "/Users/coderpwh/python/workspace/agent-service-toolkit/src/client/client.py", line 317, in astream
+    yield parsed
+GeneratorExit
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/Users/coderpwh/python/workspace/agent-service-toolkit/src/client/client.py", line 302, in astream
+    async with client.stream(
+               ~~~~~~~~~~~~~^
+        "POST",
+        ^^^^^^^
+    ...<3 lines>...
+        timeout=self.timeout,
+        ^^^^^^^^^^^^^^^^^^^^^
+    ) as response:
+    ^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 271, in __aexit__
+    raise RuntimeError("generator didn't stop after athrow()")
+RuntimeError: generator didn't stop after athrow()
