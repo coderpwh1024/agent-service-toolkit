@@ -14,10 +14,8 @@ THREAD_ID = os.environ.get("SMOKE_THREAD_ID", "smoke-test-persistence-thread")
 def test_checkpointer_persists_history():
     """Confirm the configured checkpointer persists conversation state across turns.
 
-    Backend-agnostic: exercises whichever DATABASE_TYPE the service was started
-    with. scripts/smoke_test.sh runs this against both postgres and mongo, then
-    separately verifies the data actually landed in that backend (this test alone
-    can't tell the backends apart, since any working checkpointer would pass).
+    scripts/smoke_test.sh separately verifies the data landed in PostgreSQL;
+    this API test alone cannot prove which backend was used.
     Requires a running service (USE_FAKE_MODEL=true) backed by a live database.
 
     Uses the default agent for both invoke and get_history. Since /history is
@@ -25,7 +23,7 @@ def test_checkpointer_persists_history():
     graph that created the thread also reads it back — which is what makes the
     round-trip work now that each agent is a distinct graph with its own state.
     """
-    client = AgentClient("http://localhost:8080")
+    client = AgentClient(os.environ.get("AGENT_URL", "http://localhost:8080"))
 
     client.invoke("Tell me a joke?", thread_id=THREAD_ID, model="fake")
     client.invoke("Tell me another?", thread_id=THREAD_ID, model="fake")
@@ -43,10 +41,10 @@ def test_threads_lists_user_threads():
 
     The unit tests use a fake checkpointer and the SQLite integration tests only
     prove the SQLite driver, so this is the check that the metadata filter
-    (including the step -1 head lookup) behaves the same on Postgres and Mongo.
+    (including the step -1 head lookup) works with PostgreSQL.
     Requires a running service (USE_FAKE_MODEL=true) backed by a live database.
     """
-    client = AgentClient("http://localhost:8080")
+    client = AgentClient(os.environ.get("AGENT_URL", "http://localhost:8080"))
     user_id = f"{THREAD_ID}-user"
     other_user_id = f"{THREAD_ID}-other"
 

@@ -75,3 +75,27 @@ async def test_lifespan(monkeypatch, caplog) -> None:
 
     assert "Agent loaded: good" in caplog.text
     assert "Failed to load agent bad: boom" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed_component", ["initialize_database", "initialize_store"])
+async def test_lifespan_fails_when_postgres_is_unavailable(monkeypatch, failed_component):
+    """Never start serving with transient memory when either PG component fails."""
+    from service import service
+
+    @asynccontextmanager
+    async def available():
+        yield object()
+
+    @asynccontextmanager
+    async def unavailable():
+        raise ConnectionError("PostgreSQL is unavailable")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(service, "initialize_database", available)
+    monkeypatch.setattr(service, "initialize_store", available)
+    monkeypatch.setattr(service, failed_component, unavailable)
+
+    with pytest.raises(ConnectionError, match="PostgreSQL is unavailable"):
+        async with service.lifespan(FastAPI()):
+            pytest.fail("Service must not start without PostgreSQL persistence")

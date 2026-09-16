@@ -168,15 +168,9 @@ response.pretty_print()
 
 ```
 
-### 使用 LangGraph Studio 进行开发
-
-该智能体支持 [LangGraph Studio](https://langchain-ai.github.io/langgraph/concepts/langgraph_studio/)，它是用于开发 LangGraph 智能体的 IDE。
-
-运行 `uv sync` 时会安装 `langgraph-cli[inmem]`。你只需按照上述说明将 `.env` 文件添加到根目录，然后运行 `langgraph dev` 即可启动 LangGraph Studio。可根据需要自定义 `langgraph.json`。有关更多信息，请参阅[本地快速入门](https://langchain-ai.github.io/langgraph/cloud/how-tos/studio/quick_start/#local-development-server)。
-
 ### 不使用 Docker 进行本地开发
 
-你也可以不使用 Docker，而是仅使用 Python 虚拟环境，在本地运行智能体服务和 Streamlit 应用。
+你也可以使用 Python 虚拟环境，在本地运行智能体服务和 Streamlit 应用。所有服务启动方式都使用 PostgreSQL 保存短期记忆和长期记忆；不再支持 SQLite、MongoDB 或内存回退。直接运行 `langgraph dev` 使用独立的开发运行时，不经过本项目的存储初始化，因此不作为本项目支持的服务启动方式。
 
 1. 创建虚拟环境并安装依赖：
 
@@ -185,19 +179,29 @@ response.pretty_print()
    source .venv/bin/activate
    ```
 
-2. 运行 FastAPI 服务器：
+2. 准备 PostgreSQL。可以连接已有数据库，也可以只启动项目的数据库容器：
+
+   ```sh
+   docker compose up -d postgres
+   ```
+
+   本地默认连接 `127.0.0.1:5432/agent_service`，用户名和密码均为 `postgres`，与 Compose 默认配置一致。使用其他数据库时，在 `.env` 中设置 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB`、`POSTGRES_USER` 和 `POSTGRES_PASSWORD`，并提前创建数据库。
+
+3. 运行 FastAPI 服务器：
 
    ```sh
    python src/run_service.py
    ```
 
-3. 在单独的终端中运行 Streamlit 应用：
+4. 在单独的终端中运行 Streamlit 应用：
 
    ```sh
    streamlit run src/streamlit_app.py
    ```
 
-4. 打开浏览器，访问 Streamlit 提供的 URL（通常为 `http://localhost:8501`）。
+5. 打开浏览器，访问 Streamlit 提供的 URL（通常为 `http://localhost:8501`）。
+
+服务会自动创建检查点和长期记忆所需的表；PG 不可用时启动失败，不会回退到本地文件或内存。已有 `checkpoints.db` 不会自动迁移或删除。长期记忆仍由智能体通过 Store 显式写入。
 
 ## 使用 agent-service-toolkit 构建或受其启发的项目
 
@@ -234,16 +238,16 @@ response.pretty_print()
 
 ### 可选依赖项的冒烟测试
 
-某些集成不会在单元测试套件或默认 CI 运行中进行测试，因为它们需要真实的基础设施：Postgres 和 MongoDB 检查点存储、AG-UI 端点以及 LangFuse 追踪。`scripts/smoke_test.sh` 会在 Docker 中启动每项依赖，针对该依赖运行服务，端到端验证集成（包括检查是否确实使用了预期后端，而不是静默回退到 SQLite），然后将其关闭。
+某些集成不会在单元测试套件或默认 CI 运行中进行测试，因为它们需要真实的基础设施：PostgreSQL 检查点和长期记忆存储、AG-UI 端点以及 LangFuse 追踪。`scripts/smoke_test.sh` 会在 Docker 中启动每项依赖，针对该依赖运行服务，端到端验证集成（包括直接验证 PostgreSQL 中的记录和重新连接后的记忆读取），然后将其关闭。
 
 ```sh
-./scripts/smoke_test.sh                 # 默认：postgres、mongo、agui
-./scripts/smoke_test.sh mongo           # 单个目标
+./scripts/smoke_test.sh                 # 默认：postgres、agui
+./scripts/smoke_test.sh postgres        # 单个目标
 ./scripts/smoke_test.sh langfuse        # 重型：启动完整的 LangFuse 自托管技术栈
 ./scripts/smoke_test.sh all             # 全部，包括 langfuse
 ```
 
-这些是供维护者或智能体选择性运行的可信度检查，并非 CI 的一部分。请运行与你的更改相匹配的目标，而非整套测试。可选的附加 Compose 文件位于 `docker/` 中（例如 `docker/compose.mongo.yaml`），并叠加在默认的 `compose.yaml` 之上，使默认技术栈保持轻量。
+这些是供维护者或智能体选择性运行的可信度检查，并非 CI 的一部分。请运行与你的更改相匹配的目标，而非整套测试。冒烟测试使用独立的 Compose 项目和端口，避免清理日常开发的数据卷。
 
 ## 许可证
 

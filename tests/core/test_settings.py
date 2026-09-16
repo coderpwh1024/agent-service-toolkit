@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from core.settings import LogLevel, Settings, check_str_is_http
+from core.settings import DatabaseType, LogLevel, Settings, check_str_is_http
 from schema.models import (
     AlibabaModelName,
     AnthropicModelName,
@@ -36,6 +36,24 @@ def test_settings_default_values():
     assert settings.PORT == 8080
     assert settings.USE_AWS_BEDROCK is False
     assert settings.USE_FAKE_MODEL is False
+
+
+def test_local_storage_defaults_match_compose_postgres():
+    with patch.dict(os.environ, {"USE_FAKE_MODEL": "true"}, clear=True):
+        settings = Settings(_env_file=None)
+    assert settings.DATABASE_TYPE == DatabaseType.POSTGRES
+    assert settings.POSTGRES_HOST == "127.0.0.1"
+    assert settings.POSTGRES_PORT == 5432
+    assert settings.POSTGRES_DB == "agent_service"
+    assert settings.POSTGRES_USER == "postgres"
+    assert settings.POSTGRES_PASSWORD == SecretStr("postgres")
+
+
+@pytest.mark.parametrize("backend", ["sqlite", "mongo", "memory"])
+def test_non_postgres_backend_is_rejected(backend):
+    with patch.dict(os.environ, {"USE_FAKE_MODEL": "true", "DATABASE_TYPE": backend}, clear=True):
+        with pytest.raises(ValidationError, match="DATABASE_TYPE"):
+            Settings(_env_file=None)
 
 
 def test_settings_no_api_keys():

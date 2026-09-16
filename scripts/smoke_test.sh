@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # On-demand smoke tests for docker-backed integration paths that aren't in the
-# fast unit-test suite or the default CI run: the Postgres and MongoDB
-# checkpointers, the AG-UI endpoint, and LangFuse tracing. Lets a maintainer (or
-# agent) verify these still work without waiting for a full CI cycle.
+# fast unit-test suite or the default CI run: the PostgreSQL checkpoint and memory
+# stores, the AG-UI endpoint, and LangFuse tracing. Lets a maintainer (or agent)
+# verify these still work without waiting for a full CI cycle.
 #
 # Usage:
-#   ./scripts/smoke_test.sh                 # default targets: postgres, mongo, agui
-#   ./scripts/smoke_test.sh mongo           # run a single target
+#   ./scripts/smoke_test.sh                 # default targets: postgres, agui
+#   ./scripts/smoke_test.sh postgres        # run a single target
 #   ./scripts/smoke_test.sh postgres agui   # run a subset
 #   ./scripts/smoke_test.sh langfuse        # run the heavy langfuse target on its own
 #   ./scripts/smoke_test.sh all             # everything, including langfuse
 #
-# Targets: postgres, mongo, agui, langfuse
+# Targets: postgres, agui, langfuse
 #   langfuse is excluded from the default run: it spins up LangFuse's full
 #   self-host stack (6 services, ~5GB of images) and takes noticeably longer, so
 #   run it explicitly or via `all`. It also needs the cgr.dev container registry
@@ -34,6 +34,15 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# Isolate test resources from the user's regular Compose stack and local service.
+export COMPOSE_PROJECT_NAME="agent-memory-smoke-$$"
+export POSTGRES_HOST=127.0.0.1 POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres
+export POSTGRES_DB=agent_service DATABASE_TYPE=postgres
+export POSTGRES_HOST_PORT="${SMOKE_POSTGRES_PORT:-15432}"
+export POSTGRES_PORT="$POSTGRES_HOST_PORT"
+export HOST=127.0.0.1 PORT="${SMOKE_SERVICE_PORT:-18080}"
+export AGENT_URL="http://127.0.0.1:$PORT"
+
 # Unique per run so the backend verification below reflects THIS run's data even
 # if the database volume isn't empty. Exported so the pytest test uses the same
 # thread id (see tests/smoke/test_persistence.py).
@@ -51,15 +60,16 @@ LANGFUSE_COMPOSE=""  # temp compose file, set while the langfuse target runs
 start_service() {
   # Start the agent service on the host with the given backend env, then wait
   # until it reports healthy. Args: KEY=VALUE ... connection settings.
-  if curl -sf http://localhost:8080/health >/dev/null 2>&1; then
-    echo "  ✗ refusing to start: something is already listening on :8080"
+  if curl -sf "$AGENT_URL/health" >/dev/null 2>&1; then
+    echo "  ✗ refusing to start: something is already listening on :$PORT"
     return 1
   fi
+  start_postgres
   SERVICE_LOG="$(mktemp)"
   env USE_FAKE_MODEL=true "$@" uv run python src/run_service.py > "$SERVICE_LOG" 2>&1 &
   SERVICE_PID=$!
   for _ in $(seq 1 30); do
-    if curl -sf http://localhost:8080/health >/dev/null 2>&1; then
+    if curl -sf "$AGENT_URL/health" >/dev/null 2>&1; then
       return 0
     fi
     if ! kill -0 "$SERVICE_PID" 2>/dev/null; then
@@ -113,25 +123,26 @@ assert_positive_count() {
 cleanup() {
   echo "--- Tearing down ---"
   stop_service
-  # down removes every service in the merged project (postgres + mongo), so this
-  # one call cleans up regardless of which target was running.
-  docker compose -f compose.yaml -f docker/compose.mongo.yaml down -v >/dev/null 2>&1 || true
+  # Only remove the isolated smoke-test project and its disposable volume.
+  docker compose -f compose.yaml down -v >/dev/null 2>&1 || true
   if [[ -n "$LANGFUSE_COMPOSE" && -f "$LANGFUSE_COMPOSE" ]]; then
-    docker compose -f "$LANGFUSE_COMPOSE" down -v >/dev/null 2>&1 || true
+    docker compose -p "$COMPOSE_PROJECT_NAME-langfuse" -f "$LANGFUSE_COMPOSE" down -v >/dev/null 2>&1 || true
     rm -f "$LANGFUSE_COMPOSE"
   fi
 }
 trap cleanup EXIT
 
-smoke_postgres() {
-  echo "=== Postgres checkpointer (DATABASE_TYPE=postgres) ==="
+start_postgres() {
   docker compose -f compose.yaml up -d postgres
+  wait_healthy "$(docker compose -f compose.yaml ps -q postgres)"
+}
+
+smoke_postgres() {
+  echo "=== PostgreSQL checkpoints and long-term memory ==="
+  start_service
   local cid
   cid="$(docker compose -f compose.yaml ps -q postgres)"
-  wait_healthy "$cid"
-  start_service DATABASE_TYPE=postgres POSTGRES_HOST=localhost POSTGRES_PORT=5432 \
-    POSTGRES_USER=postgres POSTGRES_PASSWORD=postgres POSTGRES_DB=agent_service
-  uv run pytest tests/smoke/test_persistence.py -v --run-docker
+  uv run pytest tests/smoke/test_persistence.py tests/smoke/test_postgres_memory.py -v --run-docker
   local n
   n="$(docker exec -e PGPASSWORD=postgres "$cid" psql -U postgres -d agent_service -tAc \
     "select count(*) from checkpoints where thread_id='$SMOKE_THREAD_ID'" 2>/dev/null | tr -d '[:space:]')" || true
@@ -140,31 +151,12 @@ smoke_postgres() {
   docker compose -f compose.yaml down -v
 }
 
-smoke_mongo() {
-  echo "=== MongoDB checkpointer (DATABASE_TYPE=mongo) ==="
-  local files=(-f compose.yaml -f docker/compose.mongo.yaml)
-  docker compose "${files[@]}" up -d mongo
-  local cid
-  cid="$(docker compose "${files[@]}" ps -q mongo)"
-  wait_healthy "$cid"
-  start_service DATABASE_TYPE=mongo MONGO_HOST=localhost MONGO_PORT=27017 MONGO_DB=agent_service
-  uv run pytest tests/smoke/test_persistence.py -v --run-docker
-  local n
-  n="$(docker exec "$cid" mongosh agent_service --quiet --eval \
-    "db.checkpoints.countDocuments({thread_id:'$SMOKE_THREAD_ID'})" 2>/dev/null | tr -d '[:space:]')" || true
-  assert_positive_count "$n" "mongo checkpoint documents for this run's thread"
-  stop_service
-  docker compose "${files[@]}" down -v
-}
-
 smoke_agui() {
   echo "=== AG-UI endpoint ==="
-  # AG-UI is backend-agnostic, so the default SQLite checkpointer is fine here
-  # and no database container is needed.
   start_service
   local out
   out="$(cd scripts/agui-client && npm install --silent && \
-    AGENT_URL=http://localhost:8080 node client.mjs "Tell me a joke!" chatbot)" || true
+    AGENT_URL="$AGENT_URL" node client.mjs "Tell me a joke!" chatbot)" || true
   echo "$out"
   # A green exit isn't enough: confirm the stream actually completed and returned
   # the fake model's response, not an empty or partial run.
@@ -203,7 +195,7 @@ smoke_langfuse() {
   LANGFUSE_INIT_PROJECT_PUBLIC_KEY="$pk" LANGFUSE_INIT_PROJECT_SECRET_KEY="$sk" \
   LANGFUSE_INIT_USER_EMAIL=smoke@example.com LANGFUSE_INIT_USER_NAME=smoke \
   LANGFUSE_INIT_USER_PASSWORD=smokepassword123 \
-    docker compose -f "$LANGFUSE_COMPOSE" up -d
+    docker compose -p "$COMPOSE_PROJECT_NAME-langfuse" -f "$LANGFUSE_COMPOSE" up -d
 
   echo "  waiting for langfuse-web..."
   for _ in $(seq 1 40); do
@@ -219,7 +211,7 @@ smoke_langfuse() {
     LANGFUSE_PUBLIC_KEY="$pk" LANGFUSE_SECRET_KEY="$sk"
 
   # (1) service-level: /health runs langfuse.auth_check() against the instance.
-  if curl -s http://localhost:8080/health | grep -q '"langfuse":"connected"'; then
+  if curl -s "$AGENT_URL/health" | grep -q '"langfuse":"connected"'; then
     echo "  ✓ /health reports langfuse connected"
   else
     echo "  ✗ FAIL: /health did not report langfuse connected"
@@ -230,7 +222,7 @@ smoke_langfuse() {
   uv run python -c "
 import sys; sys.path.insert(0, 'src')
 from client import AgentClient
-c = AgentClient('http://localhost:8080')
+c = AgentClient('$AGENT_URL')
 r = c.invoke('Trace me please', thread_id='$SMOKE_THREAD_ID', model='fake')
 assert r.type == 'ai', r
 print('  traced invoke ok')
@@ -246,19 +238,19 @@ print('  traced invoke ok')
   assert_positive_count "$n" "LangFuse traces recorded for this run"
 
   stop_service
-  docker compose -f "$LANGFUSE_COMPOSE" down -v
+  docker compose -p "$COMPOSE_PROJECT_NAME-langfuse" -f "$LANGFUSE_COMPOSE" down -v
   rm -f "$LANGFUSE_COMPOSE"
   LANGFUSE_COMPOSE=""
 }
 
 targets=("$@")
-[[ ${#targets[@]} -eq 0 ]] && targets=(postgres mongo agui)
+[[ ${#targets[@]} -eq 0 ]] && targets=(postgres agui)
 
 # Expand "all" to every target, including the heavy langfuse one.
 expanded=()
 for t in "${targets[@]}"; do
   if [[ "$t" == "all" ]]; then
-    expanded+=(postgres mongo agui langfuse)
+    expanded+=(postgres agui langfuse)
   else
     expanded+=("$t")
   fi
@@ -268,10 +260,9 @@ targets=("${expanded[@]}")
 for t in "${targets[@]}"; do
   case "$t" in
     postgres) smoke_postgres ;;
-    mongo)    smoke_mongo ;;
     agui)     smoke_agui ;;
     langfuse) smoke_langfuse ;;
-    *) echo "unknown target: $t (valid: postgres, mongo, agui, langfuse, all)"; exit 2 ;;
+    *) echo "unknown target: $t (valid: postgres, agui, langfuse, all)"; exit 2 ;;
   esac
 done
 

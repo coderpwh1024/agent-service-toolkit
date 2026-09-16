@@ -1,9 +1,11 @@
+from contextlib import asynccontextmanager
 from unittest.mock import patch
 
 import pytest
 from langchain_core.messages import AIMessage, ToolCall, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, MessagesState, StateGraph
+from langgraph.store.memory import InMemoryStore
 from langgraph.types import StreamWriter
 
 from agents.agents import Agent
@@ -81,13 +83,22 @@ static_agent = agent.compile(checkpointer=MemorySaver())
 
 
 @pytest.fixture
-def mock_database_settings(mock_env):
-    """Fixture to ensure database settings are clean"""
-    with patch("memory.settings") as mock_settings:
-        yield mock_settings
+def mock_persistence(monkeypatch):
+    """Keep this streaming protocol test independent of a running PostgreSQL."""
+
+    @asynccontextmanager
+    async def checkpointer():
+        yield MemorySaver()
+
+    @asynccontextmanager
+    async def store():
+        yield InMemoryStore()
+
+    monkeypatch.setattr("service.service.initialize_database", checkpointer)
+    monkeypatch.setattr("service.service.initialize_store", store)
 
 
-def test_agent_stream(mock_database_settings, mock_httpx):
+def test_agent_stream(mock_persistence, mock_httpx):
     """Test that streaming from our static agent works correctly with token streaming."""
     agent_meta = Agent(description="A static agent.", graph_like=static_agent)
     with patch.dict("agents.agents.agents", {"static-agent": agent_meta}, clear=True):

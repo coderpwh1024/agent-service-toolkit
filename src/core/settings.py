@@ -33,9 +33,7 @@ from schema.models import (
 
 
 class DatabaseType(StrEnum):
-    SQLITE = "sqlite"
     POSTGRES = "postgres"
-    MONGO = "mongo"
 
 
 class LogLevel(StrEnum):
@@ -123,33 +121,22 @@ class Settings(BaseSettings):
     LANGFUSE_PUBLIC_KEY: SecretStr | None = None
     LANGFUSE_SECRET_KEY: SecretStr | None = None
 
-    # Database Configuration
-    DATABASE_TYPE: DatabaseType = (
-        DatabaseType.SQLITE
-    )  # Options: DatabaseType.SQLITE or DatabaseType.POSTGRES
-    SQLITE_DB_PATH: str = "checkpoints.db"
+    # PostgreSQL is required for both checkpoints and cross-thread memory.
+    DATABASE_TYPE: DatabaseType = DatabaseType.POSTGRES
 
     # PostgreSQL Configuration
-    POSTGRES_USER: str | None = None
-    POSTGRES_PASSWORD: SecretStr | None = None
-    POSTGRES_HOST: str | None = None
-    POSTGRES_PORT: int | None = None
-    POSTGRES_DB: str | None = None
+    # Local defaults match compose.yaml; containers override the host to postgres.
+    POSTGRES_USER: str | None = "postgres"
+    POSTGRES_PASSWORD: SecretStr | None = SecretStr("postgres")
+    POSTGRES_HOST: str | None = "127.0.0.1"
+    POSTGRES_PORT: int | None = 5432
+    POSTGRES_DB: str | None = "agent_service"
     POSTGRES_APPLICATION_NAME: str = "agent-service-toolkit"
     POSTGRES_MIN_CONNECTIONS_PER_POOL: int = 1
     POSTGRES_MAX_CONNECTIONS_PER_POOL: int = 1
 
     RAG_COLLECTION_NAME: str = "acmetech-employee-handbook"
     RAG_TOP_K: int = Field(default=5, ge=1, le=50)
-
-    # MongoDB Configuration
-    MONGO_HOST: str | None = None
-    MONGO_PORT: int | None = None
-    MONGO_DB: str | None = None
-    MONGO_USER: str | None = None
-    MONGO_PASSWORD: SecretStr | None = None
-    MONGO_AUTH_SOURCE: str | None = None
-    MONGO_TLS: bool = False  # opt-in TLS for MongoDB; set to True for production/Atlas
 
     # Azure OpenAI Settings
     AZURE_OPENAI_API_KEY: SecretStr | None = None

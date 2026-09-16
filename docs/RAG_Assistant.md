@@ -54,5 +54,5 @@ uv run python scripts/create_postgres_rag.py data \
 
 ## 持久化说明
 
-`DATABASE_TYPE=postgres` 时，会话历史和长期记忆都持久化到 PostgreSQL，服务重启后
-仍然存在。原来的 `checkpoints.db` 不会被自动导入或删除。
+所有服务启动方式均将会话历史和长期记忆持久化到 PostgreSQL，服务重启后仍然存在。
+`DATABASE_TYPE` 默认且只允许 `postgres`，PG 不可用时启动失败。原来的 `checkpoints.db` 不会被自动导入或删除。

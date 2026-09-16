@@ -78,7 +78,7 @@ def verify_bearer(
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """
-    Configurable lifespan that initializes the appropriate database checkpointer, store,
+    Lifespan that initializes the PostgreSQL checkpointer, store,
     and agents with async loading - for example for starting up MCP clients.
     """
     try:
@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # Set up both components
             if hasattr(saver, "setup"):  # ignore: union-attr
                 await saver.setup()
-            # Only setup store for Postgres as InMemoryStore doesn't need setup
+            # Initialize the persistent cross-conversation store.
             if hasattr(store, "setup"):  # ignore: union-attr
                 await store.setup()
 
