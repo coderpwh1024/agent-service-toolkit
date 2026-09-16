@@ -1,0 +1,30 @@
+INFO:     Started server process [7606]
+INFO:     Waiting for application startup.
+WARNING:service.service:AUTH_SECRET is not configured — all API endpoints are unauthenticated. Set AUTH_SECRET in your environment to enable bearer token authentication.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8080 (Press CTRL+C to quit)
+INFO:     127.0.0.1:51812 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51813 - "GET /info HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51950 - "GET /info HTTP/1.1" 200 OK
+WARNING:langgraph.checkpoint.serde.jsonplus:Deserializing unregistered type agents.safeguard.SafetyAssessment from checkpoint. This will be blocked in a future version. Set LANGGRAPH_STRICT_MSGPACK=true to block now, or add to allowed_msgpack_modules to allow explicitly: [('agents.safeguard', 'SafetyAssessment')]
+WARNING:langgraph.checkpoint.serde.jsonplus:Deserializing unregistered type agents.safeguard.SafeguardOutput from checkpoint. This will be blocked in a future version. Set LANGGRAPH_STRICT_MSGPACK=true to block now, or add to allowed_msgpack_modules to allow explicitly: [('agents.safeguard', 'SafeguardOutput')]
+INFO:     127.0.0.1:51952 - "POST /research-assistant/history HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51954 - "GET /research-assistant/threads?user_id=e3628aa1-1d40-494f-bf3f-402da750d627&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52500 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52501 - "GET /info HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52765 - "GET /research-assistant/threads?user_id=e3628aa1-1d40-494f-bf3f-402da750d627&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52767 - "POST /research-assistant/stream HTTP/1.1" 200 OK
+GROQ_API_KEY not set, skipping Safeguard
+INFO:     127.0.0.1:52777 - "POST /research-assistant/stream HTTP/1.1" 200 OK
+GROQ_API_KEY not set, skipping Safeguard
+INFO:     127.0.0.1:52819 - "POST /research-assistant/stream HTTP/1.1" 200 OK
+GROQ_API_KEY not set, skipping Safeguard
+INFO:     127.0.0.1:59426 - "GET /research-assistant/threads?user_id=e3628aa1-1d40-494f-bf3f-402da750d627&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59430 - "POST /research-assistant/stream HTTP/1.1" 200 OK
+GROQ_API_KEY not set, skipping Safeguard
+INFO:     127.0.0.1:58526 - "GET /research-assistant/threads?user_id=e3628aa1-1d40-494f-bf3f-402da750d627&limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58531 - "POST /research-assistant/stream HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [7606]

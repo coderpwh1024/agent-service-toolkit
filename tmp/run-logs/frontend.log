@@ -1,0 +1,13 @@
+2026-09-12 16:44:34.901 Uvicorn server started on 127.0.0.1:8501
+
+  You can now view your Streamlit app in your browser.
+
+  URL: http://127.0.0.1:8501
+
+  For better performance, install the Watchdog module:
+
+  $ xcode-select --install
+  $ pip install watchdog
+            
+Alibaba Bailian TTS truncating text from 4066 to 600 chars
+  Stopping...
