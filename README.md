@@ -88,7 +88,7 @@ docker compose watch
    ```
 
 2. 设置环境变量：
-   至少需要一个 LLM API 密钥或相关配置。推荐在当前 shell 中配置 `DASHSCOPE_API_KEY`，并在根目录的 `.env` 中配置 PostgreSQL。完整配置参考 [`.env.example`](./.env.example)。
+   至少需要一个 LLM API 密钥或相关配置。推荐在当前 shell 中配置 `DASHSCOPE_API_KEY`，并在根目录的 `.env` 中配置 PostgreSQL。最小配置参考 [`.env.example`](./.env.example)，其他服务账号及认证边界见[账号、凭据与用户身份梳理](docs/Accounts_and_Credentials.md)。
 
 3. 现在，你可以使用 Docker 或仅使用 Python，在本地运行智能体服务和 Streamlit 应用。推荐使用 Docker，以简化环境配置，并在代码发生更改时立即重新加载服务。
 
