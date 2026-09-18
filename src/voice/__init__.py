@@ -30,8 +30,15 @@ Advanced Usage:
     >>> voice = VoiceManager(stt=stt, tts=tts)
 """
 
-from voice.manager import VoiceManager
 from voice.stt import SpeechToText
 from voice.tts import TextToSpeech
 
 __all__ = ["VoiceManager", "SpeechToText", "TextToSpeech"]
+
+
+def __getattr__(name: str):
+    if name == "VoiceManager":
+        from voice.manager import VoiceManager
+
+        return VoiceManager
+    raise AttributeError(name)

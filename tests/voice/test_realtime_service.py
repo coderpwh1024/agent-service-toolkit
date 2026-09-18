@@ -1,0 +1,406 @@
+import asyncio
+import json
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
+
+import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+from langchain_core.language_models.fake_chat_models import FakeListChatModel
+from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.func import entrypoint
+from langgraph.graph import END, MessagesState, StateGraph
+from langgraph.types import interrupt
+from pydantic import SecretStr
+from starlette.websockets import WebSocketDisconnect
+
+from core import settings
+from schema.voice import ZERO_UUID, decode_audio, encode_audio
+from service import app
+
+
+class MemoryRepository:
+    def __init__(self):
+        self.sessions = {}
+        self.records = {}
+        self.owners = {}
+        self.runs = {}
+        self.locks = set()
+
+    @asynccontextmanager
+    async def guard(self, key):
+        if key in self.locks:
+            raise HTTPException(409, "busy")
+        self.locks.add(key)
+        try:
+            yield
+        finally:
+            self.locks.remove(key)
+
+    async def owner(self, thread_id):
+        return self.owners.get(thread_id)
+
+    async def claim(self, thread_id, user_id, agent_id):
+        self.owners.setdefault(thread_id, (user_id, agent_id))
+        if self.owners[thread_id] != (user_id, agent_id):
+            raise HTTPException(403, "wrong owner")
+
+    async def register_run(self, run_id, user_id, thread_id):
+        self.runs.setdefault(run_id, (user_id, thread_id))
+
+    async def owns_run(self, run_id, user_id):
+        return self.runs.get(run_id, (None, None))[0] == user_id
+
+    async def save_session(self, session):
+        self.sessions[session.session_id] = session.model_copy(deep=True)
+
+    async def get_session(self, session_id):
+        session = self.sessions.get(session_id)
+        return session.model_copy(deep=True) if session else None
+
+    async def active_sessions(self, user_id):
+        return sum(s.user_id == user_id and s.status != "closed" for s in self.sessions.values())
+
+    async def save_turn(self, turn):
+        self.records[turn.turn_id] = turn.model_copy(deep=True)
+
+    async def has_input(self, session_id, input_id):
+        return any(
+            t.session_id == session_id and t.input_id == input_id for t in self.records.values()
+        )
+
+    async def turns(self, thread_id, limit=50):
+        return [t.model_copy(deep=True) for t in self.records.values() if t.thread_id == thread_id][
+            -limit:
+        ]
+
+
+class FakeSpeech:
+    def __init__(self, config):
+        self.events = asyncio.Queue()
+
+    @asynccontextmanager
+    async def recognize(self, session):
+        yield self
+
+    @asynccontextmanager
+    async def synthesizer(self, session):
+        yield self
+
+    async def append_audio(self, ws, pcm):
+        await self.events.put({"type": "input_audio_buffer.speech_started", "item_id": "speech-1"})
+        await self.events.put(
+            {
+                "type": "conversation.item.input_audio_transcription.text",
+                "item_id": "speech-1",
+                "text": "你",
+                "stash": "好",
+            }
+        )
+        for _ in range(2):
+            await self.events.put(
+                {
+                    "type": "conversation.item.input_audio_transcription.completed",
+                    "item_id": "speech-1",
+                    "transcript": "你好",
+                }
+            )
+
+    async def commit_audio(self, ws):
+        await self.append_audio(ws, b"\0\0")
+
+    async def receive(self, ws, timeout=False):
+        return await self.events.get()
+
+    async def synthesize(self, ws, text):
+        yield b"\0\0" * 480
+        await asyncio.sleep(0.002)
+        yield b"\0\0" * 480
+
+
+def build_chatbot(responses=None, sleep=0):
+    model = FakeListChatModel(responses=responses or ["你好。这是一段语音回答。"], sleep=sleep)
+
+    @entrypoint(checkpointer=MemorySaver())
+    async def chatbot(inputs, *, previous, config):
+        messages = (previous or {}).get("messages", []) + inputs["messages"]
+        response = await model.ainvoke(messages, config)
+        return entrypoint.final(
+            value={"messages": [response]}, save={"messages": messages + [response]}
+        )
+
+    return chatbot
+
+
+@pytest.fixture
+def voice_env(monkeypatch):
+    from service import agui, service
+    from service import voice as voice_routes
+
+    repo = MemoryRepository()
+    agents = {"chatbot": build_chatbot()}
+    monkeypatch.setattr(settings, "AUTH_SECRET", SecretStr("test-admin-secret"))
+    monkeypatch.setattr(settings, "APP_TOKEN_SECRET", SecretStr("a" * 48))
+    monkeypatch.setattr(settings, "VOICE_ENABLED", True)
+    monkeypatch.setattr(settings, "VOICE_SESSION_SECONDS", 60)
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", FakeSpeech)
+    for module in (service, voice_routes, agui):
+        monkeypatch.setattr(module, "get_agent", lambda name: agents[name])
+    monkeypatch.setattr(app.state, "voice_repository", repo, raising=False)
+    monkeypatch.setattr(app.state, "voice_connections", {}, raising=False)
+    client = TestClient(app)
+
+    def headers(user="alice"):
+        response = client.post(
+            "/auth/token",
+            json={"user_id": user},
+            headers={"Authorization": "Bearer test-admin-secret"},
+        )
+        assert response.status_code == 200
+        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+    yield client, repo, agents, headers
+    client.close()
+
+
+def create(client, headers, **body):
+    response = client.post("/voice/sessions", headers=headers, json=body)
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def event(ws, kind, **data):
+    ws.send_json({"type": kind, "event_id": str(uuid4()), **data})
+
+
+def read_until(ws, kind):
+    seen = []
+    for _ in range(2000):
+        raw = ws.receive()
+        if raw.get("bytes") is not None:
+            seen.append({"type": "audio", "frame": decode_audio(raw["bytes"])})
+        elif raw.get("text") is not None:
+            item = json.loads(raw["text"])
+            seen.append(item)
+            if item["type"] == kind:
+                return seen
+            assert item["type"] != "session.closed", item
+        else:
+            pytest.fail(str(raw))
+    pytest.fail(f"Missing event: {kind}")
+
+
+def connect(client, session, headers):
+    return client.websocket_connect(f"/voice/sessions/{session['session_id']}/ws", headers=headers)
+
+
+def configure(ws):
+    event(ws, "session.configure")
+    return read_until(ws, "session.ready")[-1]
+
+
+def test_voice_roundtrip_streams_and_persists(voice_env):
+    client, repo, agents, headers = voice_env
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        frame = encode_audio(b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, 0, kind=1)
+        ws.send_bytes(frame)
+        events = read_until(ws, "response.done")
+        assert [e["text"] for e in events if e["type"] == "transcript.partial"] == ["你好"]
+        assert sum(e["type"] == "transcript.final" for e in events) == 1
+        audio = [e for e in events if e["type"] == "audio"]
+        assert audio and all(e["frame"][1] == ready["connection_id"] for e in audio)
+        assert (
+            "".join(e["text"] for e in events if e["type"] == "text.delta")
+            == "你好。这是一段语音回答。"
+        )
+        response_id = events[-1]["response_id"]
+        event(ws, "playback.finished", response_id=response_id)
+        event(ws, "ping")
+        read_until(ws, "pong")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert len(repo.records) == 1
+    turn = next(iter(repo.records.values()))
+    assert turn.status == "completed"
+    assert all(s.played_samples == s.samples > 0 for s in turn.segments)
+    history = client.post(
+        "/chatbot/history", json={"thread_id": session["thread_id"]}, headers=auth
+    )
+    assert history.status_code == 200
+    assert [m["type"] for m in history.json()["messages"]] == ["human", "ai"]
+
+
+def test_tokens_bind_user_and_protect_every_thread_entry(voice_env):
+    client, repo, agents, headers = voice_env
+    alice, bob = headers(), headers("bob")
+    session = create(client, alice)
+    assert client.post("/voice/sessions", headers=alice, json={"user_id": "bob"}).status_code == 403
+    assert client.get(f"/voice/sessions/{session['session_id']}", headers=bob).status_code == 403
+    for route in ("history", "invoke", "stream"):
+        body = {"thread_id": session["thread_id"]}
+        if route != "history":
+            body["message"] = "steal"
+        assert client.post(f"/chatbot/{route}", headers=bob, json=body).status_code == 403
+    assert (
+        client.get("/chatbot/threads", params={"user_id": "alice"}, headers=bob).status_code == 403
+    )
+    assert client.post("/auth/token", headers=bob, json={"user_id": "alice"}).status_code == 403
+    run = client.post("/chatbot/invoke", headers=alice, json={"message": "hello"}).json()
+    assert (
+        client.post(
+            "/feedback",
+            headers=bob,
+            json={"run_id": run["run_id"], "key": "rating", "score": 1},
+        ).status_code
+        == 403
+    )
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with connect(client, session, bob):
+            pass
+    assert caught.value.code == 4403
+    response = client.post(
+        "/agui/chatbot/run",
+        headers=bob,
+        json={
+            "threadId": session["thread_id"],
+            "runId": "r",
+            "messages": [],
+            "tools": [],
+            "context": [],
+            "state": {},
+            "forwardedProps": {},
+        },
+    )
+    assert response.status_code == 403
+
+
+def test_cancel_invalidates_audio_and_recovers_functional_history(voice_env):
+    client, repo, agents, headers = voice_env
+    agents["chatbot"] = build_chatbot(["第一句话。" + "后续内容" * 100, "新的回答。"], sleep=0.003)
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="第一个问题")
+        first = read_until(ws, "audio.segment.done")
+        old_id = first[-1]["response_id"]
+        event(
+            ws,
+            "playback.progress",
+            response_id=old_id,
+            segment_index=1,
+            played_samples=first[-1]["samples"],
+        )
+        event(ws, "response.cancel", response_id=old_id)
+        read_until(ws, "response.cancelled")
+        event(ws, "input.text", text="第二个问题")
+        seen = read_until(ws, "response.done")
+        if seen[-1]["response_id"] == old_id:
+            seen += read_until(ws, "response.done")
+        assert all(e["frame"][2] != old_id for e in seen if e["type"] == "audio")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    turns = list(repo.records.values())
+    assert turns[0].interrupted and turns[0].execution_status == "cancelled"
+    history = client.post(
+        "/chatbot/history", headers=auth, json={"thread_id": session["thread_id"]}
+    ).json()
+    contents = [m["content"] for m in history["messages"]]
+    assert "第一个问题" in contents and "第二个问题" in contents
+    assert any("第一句话。" in c and "语音播放记录" in c for c in contents)
+
+
+def test_reconnect_deduplicates_text_and_rejects_second_socket(voice_env):
+    client, repo, agents, headers = voice_env
+    auth = headers()
+    session = create(client, auth)
+    message = {"type": "input.text", "event_id": "stable-input", "text": "只执行一次"}
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        with pytest.raises(WebSocketDisconnect) as caught:
+            with connect(client, session, auth):
+                pass
+        assert caught.value.code == 4409
+        ws.send_json(message)
+        read_until(ws, "response.done")
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        ws.send_json(message)
+        assert read_until(ws, "input.accepted")[-1]["duplicate"]
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert len(repo.records) == 1
+
+
+def test_business_interrupt_requires_explicit_approval(voice_env):
+    client, repo, agents, headers = voice_env
+
+    async def ask(state):
+        answer = interrupt("确认执行？")
+        return {"messages": [AIMessage(content=f"已确认：{answer}")]}
+
+    graph = StateGraph(MessagesState)
+    graph.add_node("ask", ask)
+    graph.add_edge("__start__", "ask")
+    graph.add_edge("ask", END)
+    agents["approval"] = graph.compile(checkpointer=MemorySaver())
+    auth = headers()
+    session = create(client, auth, agent_id="approval")
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="开始")
+        events = read_until(ws, "response.done")
+        required = next(e for e in events if e["type"] == "approval.required")
+        event(ws, "input.text", text="这不是确认")
+        assert read_until(ws, "error")[-1]["code"] == "approval_required"
+        event(ws, "approval.submit", interrupt_id=required["interrupt_id"], value="同意")
+        events = read_until(ws, "response.done")
+        assert "同意" in "".join(e["text"] for e in events if e["type"] == "text.delta")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert len(repo.records) == 2
+
+
+@pytest.mark.parametrize("bad_frame", [b"bad", b"VCE1" + b"\0" * 44])
+def test_invalid_binary_closes_session(voice_env, bad_frame):
+    client, repo, agents, headers = voice_env
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        ws.send_bytes(bad_frame)
+        assert read_until(ws, "session.closed")[-1]["reason"] == "invalid_protocol"
+
+
+def test_expired_session_cannot_connect(voice_env):
+    client, repo, agents, headers = voice_env
+    auth = headers()
+    session = create(client, auth)
+    repo.sessions[session["session_id"]].expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with connect(client, session, auth):
+            pass
+    assert caught.value.code == 4410
+
+
+@pytest.mark.asyncio
+async def test_voice_lifespan_requires_both_backend_secrets(monkeypatch):
+    from service.voice import voice_lifespan
+
+    monkeypatch.setattr(settings, "VOICE_ENABLED", True)
+    monkeypatch.setattr(settings, "AUTH_SECRET", SecretStr("admin"))
+    monkeypatch.setattr(settings, "APP_TOKEN_SECRET", None)
+    with pytest.raises(ValueError, match="APP_TOKEN_SECRET"):
+        async with voice_lifespan(FastAPI()):
+            pass
+
+    monkeypatch.setattr(settings, "AUTH_SECRET", None)
+    monkeypatch.setattr(settings, "APP_TOKEN_SECRET", SecretStr("a" * 48))
+    with pytest.raises(ValueError, match="AUTH_SECRET"):
+        async with voice_lifespan(FastAPI()):
+            pass

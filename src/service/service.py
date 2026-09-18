@@ -7,24 +7,22 @@ from contextlib import asynccontextmanager
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langchain_core._api import LangChainBetaWarning
 from langchain_core.messages import (
     AIMessage,
-    AIMessageChunk,
     BaseMessage,
     HumanMessage,
-    ToolMessage,
 )
 from langchain_core.runnables import RunnableConfig
 from langfuse import Langfuse  # type: ignore[import-untyped]
 from langfuse.langchain import (
     CallbackHandler,  # type: ignore[import-untyped]
 )
-from langgraph.types import Command, Interrupt
+from langgraph.types import Command
 from langsmith import Client as LangsmithClient
 from langsmith import uuid7
 
@@ -43,15 +41,19 @@ from schema import (
     UserThreads,
     UserThreadsInput,
 )
+from service.access import authenticate, authorize_thread, bind_user, repository
+from service.access import router as auth_router
+from service.agent_runner import delivery_context, graph_events, thread_guard
 from service.agui import router as agui_router
 from service.threads import list_user_threads
 from service.utils import (
-    convert_message_content_to_string,
     ensure_model_available,
     langchain_to_chat_message,
     messages_from_checkpoint,
-    remove_tool_calls,
 )
+from service.voice import router as voice_router
+from service.voice import voice_lifespan
+from voice.persistence import VoiceRepository
 
 warnings.filterwarnings("ignore", category=LangChainBetaWarning)
 logger = logging.getLogger(__name__)
@@ -63,16 +65,19 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 
 
 def verify_bearer(
+    request: Request,
     http_auth: Annotated[
         HTTPAuthorizationCredentials | None,
-        Depends(HTTPBearer(description="Please provide AUTH_SECRET api key.", auto_error=False)),
+        Depends(
+            HTTPBearer(
+                description="Provide a trusted AUTH_SECRET or a short-lived app access token.",
+                auto_error=False,
+            )
+        ),
     ],
 ) -> None:
-    if not settings.AUTH_SECRET:
-        return
-    auth_secret = settings.AUTH_SECRET.get_secret_value()
-    if not http_auth or http_auth.credentials != auth_secret:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+    header = f"Bearer {http_auth.credentials}" if http_auth else None
+    request.state.principal = authenticate(header, settings)
 
 
 @asynccontextmanager
@@ -112,7 +117,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 agent.checkpointer = saver
                 # Set store for long-term memory (cross-conversation knowledge)
                 agent.store = store
-            yield
+            async with voice_lifespan(app):
+                yield
     except Exception as e:
         logger.error(f"Error during database/store/agents initialization: {e}")
         raise
@@ -137,7 +143,12 @@ async def info() -> ServiceMetadata:
 
 
 async def _handle_input(
-    user_input: UserInput, agent: AgentGraph, agent_id: str
+    user_input: UserInput,
+    agent: AgentGraph,
+    agent_id: str,
+    repo: VoiceRepository | None = None,
+    *,
+    auto_resume: bool = True,
 ) -> tuple[dict[str, Any], UUID]:
     """
     Parse user input and handle any required interrupt resumption.
@@ -161,7 +172,7 @@ async def _handle_input(
 
     if user_input.agent_config:
         # Check for reserved keys (including 'model' even if not in configurable)
-        reserved_keys = {"thread_id", "user_id", "model"}
+        reserved_keys = {"thread_id", "user_id", "model", "checkpoint_id", "checkpoint_ns"}
         if overlap := reserved_keys & user_input.agent_config.keys():
             raise HTTPException(
                 status_code=422,
@@ -184,23 +195,44 @@ async def _handle_input(
     ]
 
     input: Command | dict[str, Any]
-    if interrupted_tasks:
+    if interrupted_tasks and auto_resume:
         # assume user input is response to resume agent execution from interrupt
         input = Command(resume=user_input.message)
     else:
-        input = {"messages": [HumanMessage(content=user_input.message)]}
+        context = await delivery_context(repo, agent, thread_id) if repo else []
+        input = {"messages": context + [HumanMessage(content=user_input.message)]}
 
     kwargs = {
         "input": input,
         "config": config,
     }
 
+    if repo:
+        await repo.register_run(str(run_id), user_id, thread_id)
+
     return kwargs, run_id
 
 
 @router.post("/{agent_id}/invoke", operation_id="invoke_with_agent_id")
 @router.post("/invoke")
-async def invoke(user_input: UserInput, agent_id: str = DEFAULT_AGENT) -> ChatMessage:
+async def invoke(
+    user_input: UserInput, request: Request, agent_id: str = DEFAULT_AGENT
+) -> ChatMessage:
+    repo = repository(request)
+    identity = request.state.principal
+    user_input.user_id = bind_user(identity, user_input.user_id)
+    user_input.thread_id = user_input.thread_id or str(uuid4())
+    agent = get_agent(agent_id)
+    async with thread_guard(repo, user_input.thread_id):
+        await authorize_thread(
+            repo, agent, user_input.thread_id, agent_id, identity, user_input.user_id, create=True
+        )
+        return await _invoke(user_input, agent_id, repo)
+
+
+async def _invoke(
+    user_input: UserInput, agent_id: str, repo: VoiceRepository | None
+) -> ChatMessage:
     """
     Invoke an agent with user input to retrieve a final response.
 
@@ -215,7 +247,7 @@ async def invoke(user_input: UserInput, agent_id: str = DEFAULT_AGENT) -> ChatMe
     # you'd want to include it. You could update the API to return a list of ChatMessages
     # in that case.
     agent: AgentGraph = get_agent(agent_id)
-    kwargs, run_id = await _handle_input(user_input, agent, agent_id)
+    kwargs, run_id = await _handle_input(user_input, agent, agent_id, repo)
 
     try:
         response_events: list[tuple[str, Any]] = await agent.ainvoke(**kwargs, stream_mode=["updates", "values"])  # type: ignore # fmt: skip
@@ -241,116 +273,37 @@ async def invoke(user_input: UserInput, agent_id: str = DEFAULT_AGENT) -> ChatMe
 
 
 async def message_generator(
-    user_input: StreamInput, agent_id: str = DEFAULT_AGENT
+    user_input: StreamInput,
+    agent_id: str = DEFAULT_AGENT,
+    repo: VoiceRepository | None = None,
 ) -> AsyncGenerator[str, None]:
-    """
-    Generate a stream of messages from the agent.
-
-    This is the workhorse method for the /stream endpoint.
-    """
-    agent: AgentGraph = get_agent(agent_id)
-    kwargs, run_id = await _handle_input(user_input, agent, agent_id)
-
+    agent = get_agent(agent_id)
+    user_input.thread_id = user_input.thread_id or str(uuid4())
     try:
-        # Process streamed events from the graph and yield messages over the SSE stream.
-        async for stream_event in agent.astream(  # type: ignore[no-matching-overload]
-            **kwargs, stream_mode=["updates", "messages", "custom"], subgraphs=True
-        ):
-            if not isinstance(stream_event, tuple):
-                continue
-            # Handle different stream event structures based on subgraphs
-            if len(stream_event) == 3:
-                # With subgraphs=True: (node_path, stream_mode, event)
-                _, stream_mode, event = stream_event
-            else:
-                # Without subgraphs: (stream_mode, event)
-                stream_mode, event = stream_event
-            new_messages: list[Any] = []
-            if stream_mode == "updates":
-                for node, updates in event.items():
-                    # A simple approach to handle agent interrupts.
-                    # In a more sophisticated implementation, we could add
-                    # some structured ChatMessage type to return the interrupt value.
-                    if node == "__interrupt__":
-                        interrupt: Interrupt
-                        for interrupt in updates:
-                            new_messages.append(AIMessage(content=interrupt.value))
-                        continue
-                    updates = updates or {}
-                    update_messages = updates.get("messages", [])
-                    # special cases for using langgraph-supervisor library
-                    if "supervisor" in node or "sub-agent" in node:
-                        # the only tools that come from the actual agent are the handoff and handback tools
-                        if isinstance(update_messages[-1], ToolMessage):
-                            if "sub-agent" in node and len(update_messages) > 1:
-                                # If this is a sub-agent, we want to keep the last 2 messages - the handback tool, and it's result
-                                update_messages = update_messages[-2:]
-                            else:
-                                # If this is a supervisor, we want to keep the last message only - the handoff result. The tool comes from the 'agent' node.
-                                update_messages = [update_messages[-1]]
-                        else:
-                            update_messages = []
-                    new_messages.extend(update_messages)
-
-            if stream_mode == "custom":
-                new_messages = [event]
-
-            # LangGraph streaming may emit tuples: (field_name, field_value)
-            # e.g. ('content', <str>), ('tool_calls', [ToolCall,...]), ('additional_kwargs', {...}), etc.
-            # We accumulate only supported fields into `parts` and skip unsupported metadata.
-            # More info at: https://langchain-ai.github.io/langgraph/cloud/how-tos/stream_messages/
-            processed_messages = []
-            current_message: dict[str, Any] = {}
-            for message in new_messages:
-                if isinstance(message, tuple):
-                    key, value = message
-                    # Store parts in temporary dict
-                    current_message[key] = value
+        async with thread_guard(repo, user_input.thread_id):
+            kwargs, run_id = await _handle_input(user_input, agent, agent_id, repo)
+            async for event in graph_events(
+                agent,
+                kwargs,
+                str(run_id),
+                stream_tokens=user_input.stream_tokens,
+                user_message=user_input.message,
+            ):
+                if event.type == "interrupt":
+                    content = event.content["value"]
+                    if not isinstance(content, str):
+                        content = json.dumps(content, ensure_ascii=False)
+                    message = ChatMessage(type="ai", content=content, run_id=str(run_id))
+                    payload = {"type": "message", "content": message.model_dump()}
+                elif event.type == "message":
+                    payload = {"type": "message", "content": event.content.model_dump()}
                 else:
-                    # Add complete message if we have one in progress
-                    if current_message:
-                        processed_messages.append(_create_ai_message(current_message))
-                        current_message = {}
-                    processed_messages.append(message)
-
-            # Add any remaining message parts
-            if current_message:
-                processed_messages.append(_create_ai_message(current_message))
-
-            for message in processed_messages:
-                try:
-                    chat_message = langchain_to_chat_message(message)
-                    chat_message.run_id = str(run_id)
-                except Exception as e:
-                    logger.error(f"Error parsing message: {e}")
-                    yield f"data: {json.dumps({'type': 'error', 'content': 'Unexpected error'})}\n\n"
-                    continue
-                # LangGraph re-sends the input message, which feels weird, so drop it
-                if chat_message.type == "human" and chat_message.content == user_input.message:
-                    continue
-                yield f"data: {json.dumps({'type': 'message', 'content': chat_message.model_dump()})}\n\n"
-
-            if stream_mode == "messages":
-                if not user_input.stream_tokens:
-                    continue
-                msg, metadata = event
-                if "skip_stream" in metadata.get("tags", []):
-                    continue
-                # For some reason, astream("messages") causes non-LLM nodes to send extra messages.
-                # Drop them.
-                if not isinstance(msg, AIMessageChunk):
-                    continue
-                content = remove_tool_calls(msg.content)
-                if content:
-                    # Empty content in the context of OpenAI usually means
-                    # that the model is asking for a tool to be invoked.
-                    # So we only print non-empty content.
-                    yield f"data: {json.dumps({'type': 'token', 'content': convert_message_content_to_string(content)})}\n\n"
-    except Exception as e:
-        logger.error(f"Error in message generator: {e}")
+                    payload = {"type": event.type, "content": event.content}
+                yield f"data: {json.dumps(payload)}\n\n"
+    except Exception:
+        logger.exception("Error in message generator")
         yield f"data: {json.dumps({'type': 'error', 'content': 'Internal server error'})}\n\n"
-    finally:
-        yield "data: [DONE]\n\n"
+    yield "data: [DONE]\n\n"
 
 
 def _create_ai_message(parts: dict) -> AIMessage:
@@ -381,7 +334,9 @@ def _sse_response_example() -> dict[int | str, Any]:
     operation_id="stream_with_agent_id",
 )
 @router.post("/stream", response_class=StreamingResponse, responses=_sse_response_example())
-async def stream(user_input: StreamInput, agent_id: str = DEFAULT_AGENT) -> StreamingResponse:
+async def stream(
+    user_input: StreamInput, request: Request, agent_id: str = DEFAULT_AGENT
+) -> StreamingResponse:
     """
     Stream an agent's response to a user input, including intermediate messages and tokens.
 
@@ -392,14 +347,27 @@ async def stream(user_input: StreamInput, agent_id: str = DEFAULT_AGENT) -> Stre
 
     Set `stream_tokens=false` to return intermediate messages but not token-by-token.
     """
+    repo = repository(request)
+    identity = request.state.principal
+    user_input.user_id = bind_user(identity, user_input.user_id)
+    user_input.thread_id = user_input.thread_id or str(uuid4())
+    await authorize_thread(
+        repo,
+        get_agent(agent_id),
+        user_input.thread_id,
+        agent_id,
+        identity,
+        user_input.user_id,
+        create=True,
+    )
     return StreamingResponse(
-        message_generator(user_input, agent_id),
+        message_generator(user_input, agent_id, repo),
         media_type="text/event-stream",
     )
 
 
 @router.post("/feedback")
-async def feedback(feedback: Feedback) -> FeedbackResponse:
+async def feedback(feedback: Feedback, request: Request) -> FeedbackResponse:
     """
     Record feedback for a run to LangSmith.
 
@@ -407,6 +375,13 @@ async def feedback(feedback: Feedback) -> FeedbackResponse:
     credentials can be stored and managed in the service rather than the client.
     See: https://api.smith.langchain.com/redoc#tag/feedback/operation/create_feedback_api_v1_feedback_post
     """
+    identity = request.state.principal
+    repo = repository(request)
+    if not identity.admin:
+        assert identity.user_id
+        if repo is None or not await repo.owns_run(feedback.run_id, identity.user_id):
+            raise HTTPException(403, "Run belongs to another user")
+
     client = LangsmithClient()
     kwargs = feedback.kwargs or {}
     client.create_feedback(
@@ -420,13 +395,18 @@ async def feedback(feedback: Feedback) -> FeedbackResponse:
 
 @router.post("/{agent_id}/history", operation_id="history_with_agent_id")
 @router.post("/history")
-async def history(input: ChatHistoryInput, agent_id: str = DEFAULT_AGENT) -> ChatHistory:
+async def history(
+    input: ChatHistoryInput, request: Request, agent_id: str = DEFAULT_AGENT
+) -> ChatHistory:
     """
     Get chat history for a thread and agent.
 
     If agent_id is not provided, the default agent will be used.
     """
     agent: AgentGraph = get_agent(agent_id)
+    await authorize_thread(
+        repository(request), agent, input.thread_id, agent_id, request.state.principal
+    )
     config = RunnableConfig(configurable={"thread_id": input.thread_id})
     try:
         messages: list[BaseMessage] = []
@@ -450,16 +430,15 @@ async def history(input: ChatHistoryInput, agent_id: str = DEFAULT_AGENT) -> Cha
 @router.get("/{agent_id}/threads", operation_id="threads_with_agent_id")
 @router.get("/threads")
 async def threads(
-    input: UserThreadsInput = Depends(), agent_id: str = DEFAULT_AGENT
+    request: Request, input: UserThreadsInput = Depends(), agent_id: str = DEFAULT_AGENT
 ) -> UserThreads:
     """
     List a user's conversation threads for an agent, most recently updated first.
 
-    `user_id` is asserted by the caller and not checked against the credentials on the
-    request, so any holder of the bearer token can list any user's threads - the same
-    trust model as /history. Put your own authorization in front of this before end
-    users can reach it.
+    App access tokens are bound to their authenticated user. Trusted service
+    credentials may query an explicit user_id for administrative integrations.
     """
+    input.user_id = bind_user(request.state.principal, input.user_id)
     agent: AgentGraph = get_agent(agent_id)
     checkpointer = getattr(agent, "checkpointer", None)
     if not checkpointer:
@@ -491,4 +470,6 @@ async def health_check():
     return health_status
 
 
+app.include_router(auth_router)
+app.include_router(voice_router)
 app.include_router(router)

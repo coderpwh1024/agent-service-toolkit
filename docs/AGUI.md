@@ -17,8 +17,8 @@
 | `POST /agui/{agent_id}/run` | 运行智能体，并通过 SSE 流式传输 AG-UI 事件 |
 | `POST /agui/run` | 使用默认智能体执行相同操作 |
 
-请求体采用标准 AG-UI `RunAgentInput`。该端点与 API 的其余部分使用相同的
-`AUTH_SECRET` Bearer 身份验证。
+请求体采用标准 AG-UI `RunAgentInput`。该端点与 API 的其余部分使用相同的 Bearer
+身份验证，可使用可信服务的 `AUTH_SECRET`，也可使用 `/auth/token` 签发的短期用户令牌。
 
 ## 连接前端
 

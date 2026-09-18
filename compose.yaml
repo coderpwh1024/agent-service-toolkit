@@ -30,6 +30,21 @@ services:
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       DASHSCOPE_EMBEDDING_MODEL: ${DASHSCOPE_EMBEDDING_MODEL:-qwen3.7-text-embedding}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      APP_TOKEN_SECRET: ${APP_TOKEN_SECRET:-}
+      APP_TOKEN_TTL_SECONDS: ${APP_TOKEN_TTL_SECONDS:-3600}
+      VOICE_ENABLED: ${VOICE_ENABLED:-false}
+      VOICE_REALTIME_URL: ${VOICE_REALTIME_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
+      VOICE_REALTIME_PROXY: ${VOICE_REALTIME_PROXY:-}
+      VOICE_REALTIME_STT_MODEL: ${VOICE_REALTIME_STT_MODEL:-qwen3-asr-flash-realtime}
+      VOICE_REALTIME_TTS_MODEL: ${VOICE_REALTIME_TTS_MODEL:-qwen3-tts-flash-realtime}
+      VOICE_REALTIME_VOICES: '${VOICE_REALTIME_VOICES:-["Cherry"]}'
+      VOICE_MAX_SESSIONS: ${VOICE_MAX_SESSIONS:-8}
+      VOICE_SESSION_SECONDS: ${VOICE_SESSION_SECONDS:-1800}
+      VOICE_IDLE_SECONDS: ${VOICE_IDLE_SECONDS:-120}
+      VOICE_QUEUE_SIZE: ${VOICE_QUEUE_SIZE:-64}
+      VOICE_VAD_SILENCE_MS: ${VOICE_VAD_SILENCE_MS:-500}
+      VOICE_VAD_THRESHOLD: ${VOICE_VAD_THRESHOLD:-0.2}
       DATABASE_TYPE: postgres
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
@@ -42,7 +57,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/info"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -66,6 +81,12 @@ services:
         - path: src/memory/
           action: sync+restart
           target: /app/memory/
+        - path: src/voice/
+          action: sync+restart
+          target: /app/voice/
+        - path: src/rag/
+          action: sync+restart
+          target: /app/rag/
   streamlit_app:
     build:
       context: .
@@ -84,6 +105,7 @@ services:
       retries: 5
     environment:
       AGENT_URL: http://agent_service:8080
+      AUTH_SECRET: ${AUTH_SECRET:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
       DASHSCOPE_NATIVE_BASE_URL: ${DASHSCOPE_NATIVE_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}

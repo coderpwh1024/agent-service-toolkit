@@ -78,6 +78,22 @@ class Settings(BaseSettings):
     LOG_LEVEL: LogLevel = LogLevel.WARNING
 
     AUTH_SECRET: SecretStr | None = None
+    APP_TOKEN_SECRET: SecretStr | None = None
+    APP_TOKEN_TTL_SECONDS: int = Field(default=3600, ge=60, le=86400)
+
+    VOICE_ENABLED: bool = False
+    VOICE_REALTIME_URL: str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
+    VOICE_REALTIME_PROXY: str | None = None
+    VOICE_REALTIME_STT_MODEL: str = "qwen3-asr-flash-realtime"
+    VOICE_REALTIME_TTS_MODEL: str = "qwen3-tts-flash-realtime"
+    VOICE_REALTIME_VOICES: list[str] = ["Cherry"]
+    VOICE_MAX_SESSIONS: int = Field(default=8, ge=1, le=1000)
+    VOICE_SESSION_SECONDS: int = Field(default=1800, ge=60, le=7200)
+    VOICE_IDLE_SECONDS: int = Field(default=120, ge=10, le=600)
+    VOICE_UPSTREAM_TIMEOUT: float = Field(default=30, ge=1, le=120)
+    VOICE_QUEUE_SIZE: int = Field(default=64, ge=8, le=256)
+    VOICE_VAD_SILENCE_MS: int = Field(default=500, ge=200, le=6000)
+    VOICE_VAD_THRESHOLD: float = Field(default=0.2, ge=-1, le=1)
 
     DASHSCOPE_API_KEY: SecretStr | None = None
     DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"

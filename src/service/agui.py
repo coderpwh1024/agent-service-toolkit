@@ -24,7 +24,10 @@ from langfuse.langchain import CallbackHandler  # type: ignore[import-untyped]
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent
 from core import settings
+from service.access import authorize_thread, bind_user, repository
+from service.agent_runner import thread_guard
 from service.utils import ensure_model_available
+from voice.persistence import VoiceRepository
 
 logger = logging.getLogger(__name__)
 
@@ -77,18 +80,14 @@ async def _event_stream(
     input_data: RunAgentInput,
     config: RunnableConfig,
     encoder: EventEncoder,
+    repo: VoiceRepository | None = None,
 ) -> AsyncGenerator[str, None]:
-    # A new LangGraphAgent per request: it holds per-run state and is cheap to build.
-    agent = LangGraphAgent(name=agent_id, graph=graph, config=config)  # type: ignore[arg-type]
-    async for event in agent.run(input_data):
-        # Don't forward RAW passthrough events. Standard AG-UI clients ignore them,
-        # and they expose server-side internals - including fully rendered prompts
-        # from on_chat_model_start - to the caller. Remove this filter only if the
-        # endpoint is consumed by a trusted middle layer and you want the full
-        # event firehose (e.g. for the AG-UI Event Inspector).
-        if event.type == EventType.RAW:
-            continue
-        yield encoder.encode(event)
+    async with thread_guard(repo, input_data.thread_id):
+        agent = LangGraphAgent(name=agent_id, graph=graph, config=config)  # type: ignore[arg-type]
+        async for event in agent.run(input_data):
+            if event.type == EventType.RAW:
+                continue
+            yield encoder.encode(event)
 
 
 @router.post("/run", operation_id="agui_run_default")
@@ -108,9 +107,31 @@ async def agui_run(
     except KeyError:
         raise HTTPException(status_code=404, detail=f"Agent {agent_id} not found")
 
+    props = dict(input_data.forwarded_props or {})
+    configurable = props.get("configurable") or {}
+    if not isinstance(configurable, dict):
+        raise HTTPException(422, "configurable must be an object")
+    configurable = dict(configurable)
+    configurable["user_id"] = bind_user(request.state.principal, configurable.get("user_id"))
+    props["configurable"] = configurable
+    input_data.forwarded_props = props
+    repo = repository(request)
+    await authorize_thread(
+        repo,
+        graph,
+        input_data.thread_id,
+        agent_id,
+        request.state.principal,
+        configurable["user_id"],
+        create=True,
+    )
+    if repo and input_data.run_id:
+        await repo.register_run(
+            str(input_data.run_id), configurable["user_id"], input_data.thread_id
+        )
     config = _base_config(input_data, agent_id)
     encoder = EventEncoder(accept=request.headers.get("accept", ""))
     return StreamingResponse(
-        _event_stream(agent_id, graph, input_data, config, encoder),
+        _event_stream(agent_id, graph, input_data, config, encoder, repo),
         media_type=encoder.get_content_type(),
     )

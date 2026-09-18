@@ -56,6 +56,7 @@ docker compose watch
 1. **FastAPI 服务**：通过流式和非流式端点提供智能体服务。
 1. **高级流式传输**：采用一种新颖的方法，同时支持基于 token 和基于消息的流式传输。
 1. **AG-UI 协议支持**：每个智能体也会通过 [AG-UI 协议](https://docs.ag-ui.com) 提供服务，以连接 CopilotKit 等兼容 AG-UI 的前端——请参阅[文档](docs/AGUI.md)。
+1. **移动端实时语音 API**：提供百炼实时 ASR、Agent、流式 TTS、插话取消、播放进度和业务确认协议，可由独立 Flutter App 连接——请参阅[接口文档](docs/Voice_API.md)和[整体规划](docs/Voice_App_Plan.md)。
 1. **Streamlit 界面**：提供用户友好的聊天界面，并支持基于阿里云百炼的语音输入和输出；两者复用 `DASHSCOPE_API_KEY`。
 1. **多智能体支持**：在服务中运行多个智能体，并通过 URL 路径调用。可用的智能体和模型在 `/info` 中说明。
 1. **异步设计**：使用 async/await 高效处理并发请求。
@@ -95,6 +96,7 @@ docker compose watch
 ### 特定 AI 提供商的额外设置
 
 - [设置阿里云百炼千问](docs/Alibaba_Bailian.md)
+- [移动端实时语音 API](docs/Voice_API.md)
 - [设置 Ollama](docs/Ollama.md)
 - [设置 VertexAI](docs/VertexAI.md)
 - [使用 PostgreSQL 设置 RAG 与记忆库](docs/RAG_Assistant.md)
