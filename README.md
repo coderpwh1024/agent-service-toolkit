@@ -188,7 +188,7 @@ response.pretty_print()
    docker compose up -d postgres
    ```
 
-   未启用 Nacos 时，本地默认连接 `127.0.0.1:5432/agent_service`，用户名和密码均为 `postgres`，与 Compose 默认配置一致。使用其他数据库时，在 `.env` 中设置 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB`、`POSTGRES_USER` 和 `POSTGRES_PASSWORD`，并提前创建数据库。启用 Nacos 强制存储配置后，这些本地 Redis/PostgreSQL 值不会被连接资源使用。
+   当前 Nacos 部署的 Redis/PostgreSQL 连接信息只在配置中心维护。切换数据库时应更新 Nacos YAML 配置并提前创建数据库，不要在 `.env` 中重复设置连接字段。只有显式禁用 Nacos 时，应用才会使用代码中的本地开发默认值。
 
 3. 运行 FastAPI 服务器：
 
