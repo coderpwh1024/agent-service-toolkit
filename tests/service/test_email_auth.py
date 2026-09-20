@@ -17,7 +17,6 @@ from service.email_auth import (
     EmailAuthService,
     EmailRateLimitError,
     InvalidVerificationCodeError,
-    NicknameRequiredError,
     UserRepository,
     VerificationCodeStore,
     router,
@@ -95,24 +94,10 @@ def auth_components():
 
 
 @pytest.mark.asyncio
-async def test_new_email_requires_nickname(auth_components):
-    service, _, _, _, _ = auth_components
-
-    with pytest.raises(NicknameRequiredError):
-        await service.request_code(EmailCodeRequest(email="new@example.com"))
-
-
-@pytest.mark.asyncio
 async def test_new_email_registers_and_issues_user_bound_token(auth_components):
     service, users, _, sender, config = auth_components
 
-    accepted = await service.request_code(
-        EmailCodeRequest(
-            email=" New@Example.COM ",
-            nickname=" 新用户 ",
-            image_url="https://example.com/avatar.png",
-        )
-    )
+    accepted = await service.request_code(EmailCodeRequest(email=" New@Example.COM "))
 
     assert accepted.expires_in_seconds == 180
     assert sender.messages[0][0] == "new@example.com"
@@ -123,8 +108,8 @@ async def test_new_email_registers_and_issues_user_bound_token(auth_components):
     )
 
     assert response.is_new_user is True
-    assert response.user.nickname == "新用户"
-    assert str(response.user.image_url) == "https://example.com/avatar.png"
+    assert response.user.nickname == "new"
+    assert response.user.image_url is None
     assert users.users["new@example.com"].id == response.user.id
     claims = jwt.decode(
         response.access_token,
@@ -247,11 +232,19 @@ def test_email_auth_routes_and_strict_input_validation(auth_components):
     with TestClient(app) as client:
         invalid = client.post(
             "/auth/email/code",
-            json={"email": "not-an-email", "nickname": "user", "unexpected": True},
+            json={"email": "not-an-email"},
+        )
+        removed_fields = client.post(
+            "/auth/email/code",
+            json={
+                "email": "user@example.com",
+                "nickname": "user",
+                "image_url": "https://example.com/avatar.png",
+            },
         )
         requested = client.post(
             "/auth/email/code",
-            json={"email": "user@example.com", "nickname": "user"},
+            json={"email": "user@example.com"},
         )
         invalid_code = client.post(
             "/auth/email/verify",
@@ -263,6 +256,7 @@ def test_email_auth_routes_and_strict_input_validation(auth_components):
         )
 
     assert invalid.status_code == 422
+    assert removed_fields.status_code == 422
     assert requested.status_code == 202
     assert requested.json() == {"expires_in_seconds": 180}
     assert invalid_code.status_code == 422
@@ -277,7 +271,7 @@ def test_email_auth_route_is_unavailable_when_disabled():
     with TestClient(app) as client:
         response = client.post(
             "/auth/email/code",
-            json={"email": "user@example.com", "nickname": "user"},
+            json={"email": "user@example.com"},
         )
 
     assert response.status_code == 503

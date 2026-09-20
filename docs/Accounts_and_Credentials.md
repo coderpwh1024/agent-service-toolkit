@@ -79,7 +79,7 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 
 - 同时未设置 `AUTH_SECRET` 和 `APP_TOKEN_SECRET` 时，保留原开发模式，业务接口不要求 Bearer 令牌并按管理身份处理。该模式不适合多用户暴露。
 - 设置后，`/info`、调用、流式输出、历史、线程列表、反馈及 AG-UI 路由接受可信 `AUTH_SECRET` 或 App Token；`/health` 独立于认证路由，默认文档路由也没有接入这一校验。
-- `POST /auth/email/code` 和 `POST /auth/email/verify` 是公开认证入口。前者向规范化后的邮箱发送 6 位数字验证码；新邮箱必须同时提交 `nickname`，`image_url` 可选。验证码 3 分钟有效且只能成功使用一次，连续错误 5 次后作废。
+- `POST /auth/email/code` 和 `POST /auth/email/verify` 是公开认证入口。前者只接收 `email` 并向规范化后的邮箱发送 6 位数字验证码；新用户的默认昵称由邮箱 `@` 前的部分生成，头像默认为空。验证码 3 分钟有效且只能成功使用一次，连续错误 5 次后作废。
 - 同一邮箱在滚动 24 小时内最多请求 6 封验证码邮件。Redis 使用邮箱 SHA-256 作为键的一部分，仅保存验证码 HMAC 摘要及待注册资料；明文验证码不会写入 Redis 或日志。
 - 验证成功时会再次查询用户表。存在的有效邮箱直接登录；不存在时依靠数据库唯一索引原子注册，避免并发创建重复账号。
 - 可信服务携带 `AUTH_SECRET` 调用 `POST /auth/token`，为已完成登录校验的 `user_id` 签发短期令牌。普通 App Token 不能再次签发令牌。
@@ -92,10 +92,10 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 POST /auth/email/code
 Content-Type: application/json
 
-{"email":"user@example.com","nickname":"示例用户","image_url":"https://example.com/avatar.png"}
+{"email":"user@example.com"}
 ```
 
-已有用户可以省略 `nickname` 和 `image_url`。收到邮件后提交：
+收到邮件后提交：
 
 ```http
 POST /auth/email/verify
@@ -104,7 +104,7 @@ Content-Type: application/json
 {"email":"user@example.com","code":"012345"}
 ```
 
-响应中的 `access_token` 用于后续 `Authorization: Bearer <access_token>`。认证邮件完全使用固定模板生成，不调用 LLM，也不会把邮箱、昵称或验证码送入智能体提示词。
+响应中的 `access_token` 用于后续 `Authorization: Bearer <access_token>`。认证邮件完全使用固定模板生成，不调用 LLM，也不会把邮箱、默认昵称或验证码送入智能体提示词。
 
 Compose 中的 Redis 配置面向本地开发，默认没有密码并映射宿主机端口。生产部署应将 Redis 放在受限私网，使用带认证信息的 `REDIS_URL`；跨不可信网络连接时还应使用 `rediss://`。
 

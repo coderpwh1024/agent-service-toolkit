@@ -90,10 +90,6 @@ class InvalidVerificationCodeError(Exception):
     pass
 
 
-class NicknameRequiredError(Exception):
-    pass
-
-
 class EmailDeliveryError(Exception):
     pass
 
@@ -309,14 +305,11 @@ class EmailAuthService:
 
     async def request_code(self, body: EmailCodeRequest) -> EmailCodeAccepted:
         email = str(body.email)
-        existing = await self.users.get_by_email(email)
-        if existing is None and body.nickname is None:
-            raise NicknameRequiredError
         code = f"{secrets.randbelow(1_000_000):06d}"
         digest = self._digest(email, code)
         profile = {
-            "nickname": body.nickname if existing is None else None,
-            "image_url": str(body.image_url) if existing is None and body.image_url else None,
+            "nickname": email.partition("@")[0],
+            "image_url": None,
         }
         await self.codes.reserve(email, digest, profile)
         try:
@@ -360,11 +353,6 @@ def _service(request: Request) -> EmailAuthService:
 async def request_email_code(body: EmailCodeRequest, request: Request) -> EmailCodeAccepted:
     try:
         return await _service(request).request_code(body)
-    except NicknameRequiredError:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "nickname is required when registering a new email",
-        ) from None
     except EmailRateLimitError as exc:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,

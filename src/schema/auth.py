@@ -9,18 +9,11 @@ class EmailCodeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: EmailStr = Field(max_length=320)
-    nickname: str | None = Field(default=None, min_length=1, max_length=64)
-    image_url: AnyHttpUrl | None = None
 
     @field_validator("email", mode="before")
     @classmethod
     def normalize_email(cls, value: Any) -> Any:
         return value.strip().lower() if isinstance(value, str) else value
-
-    @field_validator("nickname", mode="before")
-    @classmethod
-    def normalize_nickname(cls, value: Any) -> Any:
-        return value.strip() if isinstance(value, str) else value
 
 
 class EmailCodeVerify(BaseModel):
