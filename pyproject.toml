@@ -48,6 +48,7 @@ dependencies = [
     "pyarrow >=23.0.1",
     "pydantic ~=2.13.4",
     "pydantic-settings ~=2.14.2",
+    "email-validator ~=2.3.0",
     "pypdf ~=6.14.2",
     "pyowm ~=3.5.0",
     "python-dotenv ~=1.2.2",
@@ -57,6 +58,7 @@ dependencies = [
     "uvicorn ~=0.51.0",
     "websockets ~=15.0.1",
     "pyjwt ~=2.13.0",
+    "redis >=6.4,<8",
     "langchain-mcp-adapters>=0.3.0",
     "ddgs>=9.14.4",
     "ag-ui-langgraph~=0.0.42",
@@ -85,6 +87,7 @@ dev = [
 # These are also installed in the default dependencies.
 # To install run: `uv sync --frozen --only-group client`
 client = [
+    "email-validator ~=2.3.0",
     "httpx~=0.28.1",
     "pydantic ~=2.13.4",
     "python-dotenv ~=1.2.2",

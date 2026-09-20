@@ -1,3 +1,10 @@
+from schema.auth import (
+    EmailAuthResponse,
+    EmailCodeAccepted,
+    EmailCodeRequest,
+    EmailCodeVerify,
+    UserProfile,
+)
 from schema.models import AllModelEnum
 from schema.schema import (
     AgentInfo,
@@ -17,6 +24,10 @@ from schema.schema import (
 __all__ = [
     "AgentInfo",
     "AllModelEnum",
+    "EmailAuthResponse",
+    "EmailCodeAccepted",
+    "EmailCodeRequest",
+    "EmailCodeVerify",
     "UserInput",
     "ChatMessage",
     "ServiceMetadata",
@@ -28,4 +39,5 @@ __all__ = [
     "UserThreadsInput",
     "ThreadSummary",
     "UserThreads",
+    "UserProfile",
 ]

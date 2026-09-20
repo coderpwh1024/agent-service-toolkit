@@ -120,24 +120,32 @@ class TokenInput(BaseModel):
     user_id: str = Field(min_length=1, max_length=128)
 
 
-@router.post("/token")
-async def issue_token(body: TokenInput, request: Request) -> dict[str, Any]:
-    if not settings.AUTH_SECRET or not settings.APP_TOKEN_SECRET:
-        raise HTTPException(503, "AUTH_SECRET and APP_TOKEN_SECRET must be configured")
-    if not principal(request).admin:
-        raise HTTPException(403, "Only a trusted service can provision app tokens")
+def create_access_token(user_id: str, config: Any = settings) -> tuple[str, int]:
+    app_secret = config.APP_TOKEN_SECRET
+    if not isinstance(app_secret, SecretStr):
+        raise ValueError("APP_TOKEN_SECRET must be configured")
     now = datetime.now(UTC)
-    expiry = now + timedelta(seconds=settings.APP_TOKEN_TTL_SECONDS)
+    expiry = now + timedelta(seconds=config.APP_TOKEN_TTL_SECONDS)
     token = jwt.encode(
         {
-            "sub": body.user_id,
+            "sub": user_id,
             "iat": now,
             "exp": expiry,
             "jti": str(uuid4()),
             "aud": "agent-service-app",
             "iss": "agent-service-toolkit",
         },
-        settings.APP_TOKEN_SECRET.get_secret_value(),
+        app_secret.get_secret_value(),
         algorithm="HS256",
     )
-    return {"access_token": token, "token_type": "bearer", "expires_at": int(expiry.timestamp())}
+    return token, int(expiry.timestamp())
+
+
+@router.post("/token")
+async def issue_token(body: TokenInput, request: Request) -> dict[str, Any]:
+    if not settings.AUTH_SECRET or not settings.APP_TOKEN_SECRET:
+        raise HTTPException(503, "AUTH_SECRET and APP_TOKEN_SECRET must be configured")
+    if not principal(request).admin:
+        raise HTTPException(403, "Only a trusted service can provision app tokens")
+    token, expires_at = create_access_token(body.user_id)
+    return {"access_token": token, "token_type": "bearer", "expires_at": expires_at}

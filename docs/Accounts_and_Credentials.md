@@ -12,7 +12,9 @@
 | `POSTGRES_USER`、`POSTGRES_PASSWORD` | PostgreSQL 数据库身份 | 服务端连接数据库；Compose 用于初始化数据库 |
 | `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB` | 数据库连接目标 | 本地默认 `127.0.0.1:5432/agent_service`；服务容器内使用 `postgres:5432` |
 | `AUTH_SECRET` | 可信后台服务凭据，由部署者自行设置 | 服务端管理调用和现有 Streamlit/Python 客户端；不能内置到移动 App |
-| `APP_TOKEN_SECRET` | App 短期访问令牌的 HS256 签名密钥，至少 32 字符 | 仅服务端；启用实时语音时必需 |
+| `APP_TOKEN_SECRET` | App 短期访问令牌的 HS256 签名密钥，至少 32 字符 | 仅服务端；启用邮箱认证或实时语音时必需 |
+| `REDIS_URL` | Redis 连接地址 | 邮箱验证码的 3 分钟有效期、失败次数和 24 小时发送上限 |
+| `SMTP_HOST`、`SMTP_FROM_EMAIL` | 验证邮件发送配置 | 启用邮箱认证时必需；可选用户名、密码和 STARTTLS |
 
 本地 PostgreSQL 默认用户名和密码均为 `postgres`，见 [配置示例](../.env.example)。这是一组数据库凭据，不是聊天界面的登录账号。数据库当前用于会话检查点、跨会话记忆及 RAG 数据。
 
@@ -57,12 +59,16 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 
 ## 应用内用户身份与认证
 
-当前没有注册、密码登录、找回密码、用户角色或账号管理模块。后端提供的是登录完成后的令牌签发与资源隔离能力；实际登录服务需要由业务系统提供。
+后端支持无密码邮箱登录与注册。`EMAIL_AUTH_ENABLED=true` 时，新邮箱验证成功后写入 `app_users`，已存在邮箱验证成功后直接登录；两种路径都签发相同的短期 App Token。登出、刷新令牌和账号资料管理仍未实现。
+
+`app_users` 使用自增 `BIGINT` 主键，包含必填昵称、规范化邮箱、可选图片 URL，以及 `create_by`、`update_by`、`create_time`、`update_time`、`is_delete`。有效记录的邮箱由部分唯一索引约束。自助注册的审计操作者使用 `AUTH_SERVICE_ACCOUNT_ID`，默认保留值为 `0`。
+
+完整且幂等的 PostgreSQL DDL 位于 [`src/service/sql/create_app_users.sql`](../src/service/sql/create_app_users.sql)。服务启动时读取并执行同一文件，也可以手工执行 `psql -f src/service/sql/create_app_users.sql`，因此运行时初始化与部署脚本不会形成两套 schema 定义。
 
 | 标识 | 当前含义 | 是否完成用户认证 |
 | --- | --- | --- |
 | `AUTH_SECRET` | 可信服务共享的管理凭据 | 是管理身份，可跨用户操作 |
-| App access token | `/auth/token` 签发的短期 JWT，`sub` 为用户 ID | 是普通用户身份 |
+| App access token | 邮箱验证或 `/auth/token` 签发的短期 JWT，`sub` 为用户 ID | 是普通用户身份 |
 | `user_id` | 关联用户的线程、记忆和语音会话 | App Token 调用时由服务端绑定 |
 | `thread_id` | 标识单次会话及其历史 | 由 `app_thread_owners` 校验归属，不是访问凭证 |
 | `run_id` | 标识一次运行及其反馈 | 由 `app_runs` 校验归属 |
@@ -73,24 +79,47 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 
 - 同时未设置 `AUTH_SECRET` 和 `APP_TOKEN_SECRET` 时，保留原开发模式，业务接口不要求 Bearer 令牌并按管理身份处理。该模式不适合多用户暴露。
 - 设置后，`/info`、调用、流式输出、历史、线程列表、反馈及 AG-UI 路由接受可信 `AUTH_SECRET` 或 App Token；`/health` 独立于认证路由，默认文档路由也没有接入这一校验。
+- `POST /auth/email/code` 和 `POST /auth/email/verify` 是公开认证入口。前者向规范化后的邮箱发送 6 位数字验证码；新邮箱必须同时提交 `nickname`，`image_url` 可选。验证码 3 分钟有效且只能成功使用一次，连续错误 5 次后作废。
+- 同一邮箱在滚动 24 小时内最多请求 6 封验证码邮件。Redis 使用邮箱 SHA-256 作为键的一部分，仅保存验证码 HMAC 摘要及待注册资料；明文验证码不会写入 Redis 或日志。
+- 验证成功时会再次查询用户表。存在的有效邮箱直接登录；不存在时依靠数据库唯一索引原子注册，避免并发创建重复账号。
 - 可信服务携带 `AUTH_SECRET` 调用 `POST /auth/token`，为已完成登录校验的 `user_id` 签发短期令牌。普通 App Token 不能再次签发令牌。
 - App Token 的 `user_id` 取自 JWT `sub`。服务端对 HTTP、SSE、AG-UI 和语音入口执行线程归属校验，对反馈执行运行归属校验；跨用户访问返回 403。
 - [Python 客户端](../src/client/client.py) 从自己的进程环境读取 `AUTH_SECRET` 并添加 `Authorization: Bearer ...`；它不会自动建立用户登录会话。
 
-因此，当前后端已经具备用户到线程、语音会话和运行反馈的访问授权。业务系统仍需补齐用户身份来源、登录、注销、刷新令牌和账号管理；`/auth/token` 不能独立承担用户名密码登录。
+邮箱认证请求示例：
+
+```http
+POST /auth/email/code
+Content-Type: application/json
+
+{"email":"user@example.com","nickname":"示例用户","image_url":"https://example.com/avatar.png"}
+```
+
+已有用户可以省略 `nickname` 和 `image_url`。收到邮件后提交：
+
+```http
+POST /auth/email/verify
+Content-Type: application/json
+
+{"email":"user@example.com","code":"012345"}
+```
+
+响应中的 `access_token` 用于后续 `Authorization: Bearer <access_token>`。认证邮件完全使用固定模板生成，不调用 LLM，也不会把邮箱、昵称或验证码送入智能体提示词。
+
+Compose 中的 Redis 配置面向本地开发，默认没有密码并映射宿主机端口。生产部署应将 Redis 放在受限私网，使用带认证信息的 `REDIS_URL`；跨不可信网络连接时还应使用 `rediss://`。
 
 ## 配置放在哪里
 
 1. **本地 Python 运行**：配置可放在进程环境或项目 `.env`。Settings 使用 `find_dotenv()`；服务启动入口和 Streamlit 入口还调用 `load_dotenv()`。环境中已存在的值通常优先于 `.env`。
-2. **Docker Compose**：服务端和 Streamlit 都通过 `env_file` 读取可选的 `.env`。[Compose](../compose.yaml) 另外显式传入百炼等变量；宿主机任意 `export` 的变量并不会全部自动进入容器。其他凭据需要写入 `.env` 或显式添加容器环境映射。
+2. **Docker Compose**：服务端和 Streamlit 都通过 `env_file` 读取可选的 `.env`。[Compose](../compose.yaml) 会启动 PostgreSQL 和启用 AOF 的 Redis，并显式传入邮箱认证、SMTP 和百炼等变量。
 3. **文件凭据**：开发用文件可放在 `privatecredentials/`，Compose 挂载到 `/privatecredentials`。本地路径和容器路径不同，`GOOGLE_APPLICATION_CREDENTIALS` 应指向运行进程能读取的路径。
 4. **服务与 App 令牌**：Streamlit/Python 服务客户端可读取 `AUTH_SECRET`。移动 App 只保存短期 App Token，不保存 `AUTH_SECRET` 或 `APP_TOKEN_SECRET`。实时语音流程见 [Voice API](Voice_API.md)。浏览器直连 AG-UI 的认证处理见 [AG-UI 说明](AGUI.md)。
 
 ## 本次梳理发现的待处理项
 
-- `.env.example` 列出了百炼、PostgreSQL 和实时语音所需配置，其他可选账号配置以本文及代码为准。
+- `.env.example` 列出了百炼、PostgreSQL、Redis、SMTP 和实时语音所需配置，其他可选账号配置以本文及代码为准。
 - Compose 的服务端健康检查访问公开的 `/health`，启用认证后仍可正常探活。
 - 现有 README 和文件凭据文档声称私有文件被 Git 和 Docker 构建忽略，但当前工作树缺少根目录 `.gitignore` 和 `.dockerignore`。现有文档的这一保证不能直接视为已落实；本机 Git 排除配置也不能替代随仓库分发的规则。
-- 账号注册、登录、登出和刷新令牌尚未实现；现有 `/auth/token` 必须放在可信登录服务之后使用。
+- 邮箱注册和登录已经实现；登出、刷新令牌及账号资料管理尚未实现。
 
 以上是代码与配置层面的盘点。本次没有读取真实密钥内容、验证外部账号，也没有调整运行中的服务配置。

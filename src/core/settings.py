@@ -5,6 +5,7 @@ from typing import Annotated, Any
 from dotenv import find_dotenv
 from pydantic import (
     BeforeValidator,
+    EmailStr,
     Field,
     HttpUrl,
     SecretStr,
@@ -80,6 +81,15 @@ class Settings(BaseSettings):
     AUTH_SECRET: SecretStr | None = None
     APP_TOKEN_SECRET: SecretStr | None = None
     APP_TOKEN_TTL_SECONDS: int = Field(default=3600, ge=60, le=86400)
+    EMAIL_AUTH_ENABLED: bool = False
+    AUTH_SERVICE_ACCOUNT_ID: int = Field(default=0, ge=0)
+    REDIS_URL: SecretStr = SecretStr("redis://127.0.0.1:6379/0")
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = Field(default=587, ge=1, le=65535)
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: SecretStr | None = None
+    SMTP_FROM_EMAIL: EmailStr | None = None
+    SMTP_USE_TLS: bool = True
 
     VOICE_ENABLED: bool = False
     VOICE_REALTIME_URL: str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"

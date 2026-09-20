@@ -36,6 +36,9 @@ def test_settings_default_values():
     assert settings.PORT == 8080
     assert settings.USE_AWS_BEDROCK is False
     assert settings.USE_FAKE_MODEL is False
+    assert settings.EMAIL_AUTH_ENABLED is False
+    assert settings.REDIS_URL == SecretStr("redis://127.0.0.1:6379/0")
+    assert settings.SMTP_PORT == 587
 
 
 def test_local_storage_defaults_match_compose_postgres():

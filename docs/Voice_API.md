@@ -8,7 +8,7 @@
 
 ```dotenv
 DASHSCOPE_API_KEY=...
-AUTH_SECRET=只供可信登录服务使用的随机密钥
+AUTH_SECRET=只供可信后台使用的随机管理密钥
 APP_TOKEN_SECRET=至少32字符的随机签名密钥
 VOICE_ENABLED=true
 ```
@@ -17,7 +17,7 @@ PostgreSQL 是必需依赖。服务启动时会幂等创建 `app_thread_owners`�
 
 百炼上游默认直连，不继承操作系统代理。确实需要 HTTP 代理时显式配置 `VOICE_REALTIME_PROXY`；SOCKS 代理还需在部署镜像中安装 `websockets` 所需的 SOCKS 可选依赖。
 
-`AUTH_SECRET` 是后台服务凭据，不能放入 Flutter 安装包。可信登录服务验证用户后调用：
+移动 App 通过 `POST /auth/email/code` 和 `POST /auth/email/verify` 完成邮箱验证码登录，详见[账号与认证说明](Accounts_and_Credentials.md)。验证成功后直接返回用户短期令牌。兼容的可信后台也可以配置 `AUTH_SECRET`，在自行验证用户后调用：
 
 ```http
 POST /auth/token

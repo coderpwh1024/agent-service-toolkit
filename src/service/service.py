@@ -45,6 +45,8 @@ from service.access import authenticate, authorize_thread, bind_user, repository
 from service.access import router as auth_router
 from service.agent_runner import delivery_context, graph_events, thread_guard
 from service.agui import router as agui_router
+from service.email_auth import email_auth_lifespan
+from service.email_auth import router as email_auth_router
 from service.threads import list_user_threads
 from service.utils import (
     ensure_model_available,
@@ -96,10 +98,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             if hasattr(store, "setup"):  # ignore: union-attr
                 await store.setup()
 
-            if not settings.AUTH_SECRET:
+            if not settings.AUTH_SECRET and not settings.APP_TOKEN_SECRET:
                 logger.warning(
-                    "AUTH_SECRET is not configured — all API endpoints are unauthenticated. "
-                    "Set AUTH_SECRET in your environment to enable bearer token authentication."
+                    "AUTH_SECRET and APP_TOKEN_SECRET are not configured — all API endpoints "
+                    "are unauthenticated. Configure a bearer-token secret before deployment."
                 )
 
             # Configure agents with both memory components and async loading
@@ -117,7 +119,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 agent.checkpointer = saver
                 # Set store for long-term memory (cross-conversation knowledge)
                 agent.store = store
-            async with voice_lifespan(app):
+            async with email_auth_lifespan(app), voice_lifespan(app):
                 yield
     except Exception as e:
         logger.error(f"Error during database/store/agents initialization: {e}")
@@ -471,5 +473,6 @@ async def health_check():
 
 
 app.include_router(auth_router)
+app.include_router(email_auth_router)
 app.include_router(voice_router)
 app.include_router(router)

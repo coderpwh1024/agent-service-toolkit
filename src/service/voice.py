@@ -28,8 +28,8 @@ async def voice_lifespan(app: FastAPI):
     if not settings.VOICE_ENABLED and not settings.APP_TOKEN_SECRET:
         yield
         return
-    if not settings.AUTH_SECRET:
-        raise ValueError("AUTH_SECRET is required for app tokens and realtime voice")
+    if settings.VOICE_ENABLED and not settings.AUTH_SECRET:
+        raise ValueError("AUTH_SECRET is required for realtime voice")
     if settings.VOICE_ENABLED and not settings.APP_TOKEN_SECRET:
         raise ValueError("APP_TOKEN_SECRET is required for realtime voice")
     if settings.APP_TOKEN_SECRET and len(settings.APP_TOKEN_SECRET.get_secret_value()) < 32:

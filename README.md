@@ -115,7 +115,7 @@ docker compose watch
 
 ### Docker 设置
 
-本项目包含 Docker 配置，便于开发和部署。`compose.yaml` 文件定义了三个服务：`postgres`、`agent_service` 和 `streamlit_app`。每个服务的 `Dockerfile` 位于各自对应的目录中。
+本项目包含 Docker 配置，便于开发和部署。`compose.yaml` 文件定义了四个服务：`postgres`、`redis`、`agent_service` 和 `streamlit_app`。Redis 用于邮箱验证码有效期与发送频率限制；每个应用服务的 `Dockerfile` 位于对应目录中。
 
 对于本地开发，建议使用 [docker compose watch](https://docs.docker.com/compose/file-watch/)。该功能会在检测到源代码更改时自动更新容器，从而提供更顺畅的开发体验。
 
@@ -135,7 +135,7 @@ docker compose watch
    ```
 
    这将自动执行以下操作：
-   - 启动智能体服务所连接的 PostgreSQL 数据库服务
+   - 启动智能体服务所连接的 PostgreSQL 和 Redis 服务
    - 启动使用 FastAPI 的智能体服务
    - 启动提供用户界面的 Streamlit 应用
 
