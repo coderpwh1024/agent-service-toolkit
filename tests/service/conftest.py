@@ -5,7 +5,14 @@ from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage
 from langgraph.types import StateSnapshot
 
+from core import settings
 from service import app
+
+
+@pytest.fixture(autouse=True)
+def disable_external_nacos(monkeypatch):
+    """Keep service unit tests independent of a developer's local Nacos configuration."""
+    monkeypatch.setattr(settings, "NACOS_ENABLED", False)
 
 
 @pytest.fixture

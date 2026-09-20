@@ -91,6 +91,7 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: SecretStr | None = None
     SMTP_FROM_EMAIL: EmailStr | None = None
     SMTP_USE_TLS: bool = True
+    SMTP_USE_SSL: bool = False
 
     VOICE_ENABLED: bool = False
     VOICE_REALTIME_URL: str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"

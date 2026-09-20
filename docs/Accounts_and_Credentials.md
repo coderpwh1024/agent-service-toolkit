@@ -12,11 +12,11 @@
 | `POSTGRES_USER`、`POSTGRES_PASSWORD` | PostgreSQL 数据库身份 | 服务端连接数据库；Compose 用于初始化数据库 |
 | `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB` | 数据库连接目标 | 本地默认 `127.0.0.1:5432/agent_service`；服务容器内使用 `postgres:5432` |
 | `AUTH_SECRET` | 可信后台服务凭据，由部署者自行设置 | 服务端管理调用和现有 Streamlit/Python 客户端；不能内置到移动 App |
-| `APP_TOKEN_SECRET` | App 短期访问令牌的 HS256 签名密钥，至少 32 字符 | 仅服务端；启用邮箱认证或实时语音时必需 |
+| `APP_TOKEN_SECRET` | App 短期访问令牌的 HS256 签名密钥，至少 32 字符 | 由 Nacos YAML 加载；启用邮箱认证或实时语音时必需 |
 | `REDIS_URL` | Redis 连接地址 | 邮箱验证码的 3 分钟有效期、失败次数和 24 小时发送上限 |
-| `SMTP_HOST`、`SMTP_FROM_EMAIL` | 验证邮件发送配置 | 启用邮箱认证时必需；可选用户名、密码和 STARTTLS |
+| `SMTP_*` | 验证邮件发送配置 | 由 Nacos YAML 加载；支持 STARTTLS 或隐式 SSL，二者不能同时启用 |
 
-本地 PostgreSQL 默认用户名和密码均为 `postgres`，见 [配置示例](../.env.example)。这是一组数据库凭据，不是聊天界面的登录账号。数据库当前用于会话检查点、跨会话记忆及 RAG 数据。
+Redis、PostgreSQL、App Token 和 SMTP 配置统一维护在 Nacos YAML 中，不在 `.env` 重复保存。数据库凭据不是聊天界面的登录账号；数据库当前用于会话检查点、跨会话记忆及 RAG 数据。
 
 百炼相关地址和模型配置见 [百炼说明](Alibaba_Bailian.md)，RAG 初始化见 [RAG 说明](RAG_Assistant.md)。只使用这套默认方案时，不需要额外配置 OpenAI、Deepgram 或 ElevenLabs 账号。研究助手的审核、天气等扩展仍有各自的可选凭据。
 
@@ -110,14 +110,15 @@ Compose 中的 Redis 配置面向本地开发，默认没有密码并映射宿�
 
 ## 配置放在哪里
 
-1. **本地 Python 运行**：配置可放在进程环境或项目 `.env`。Settings 使用 `find_dotenv()`；服务启动入口和 Streamlit 入口还调用 `load_dotenv()`。环境中已存在的值通常优先于 `.env`。
-2. **Docker Compose**：服务端和 Streamlit 都通过 `env_file` 读取可选的 `.env`。[Compose](../compose.yaml) 会启动 PostgreSQL 和启用 AOF 的 Redis，并显式传入邮箱认证、SMTP 和百炼等变量。
-3. **文件凭据**：开发用文件可放在 `privatecredentials/`，Compose 挂载到 `/privatecredentials`。本地路径和容器路径不同，`GOOGLE_APPLICATION_CREDENTIALS` 应指向运行进程能读取的路径。
-4. **服务与 App 令牌**：Streamlit/Python 服务客户端可读取 `AUTH_SECRET`。移动 App 只保存短期 App Token，不保存 `AUTH_SECRET` 或 `APP_TOKEN_SECRET`。实时语音流程见 [Voice API](Voice_API.md)。浏览器直连 AG-UI 的认证处理见 [AG-UI 说明](AGUI.md)。
+1. **Nacos YAML**：Redis、PostgreSQL、`APP_TOKEN_SECRET` 和全部 `SMTP_*` 字段由服务启动时从 Nacos 读取，并覆盖 Settings 中的本地默认值。
+2. **本地 Python 运行**：Nacos 地址、认证、Data ID 及 `EMAIL_AUTH_ENABLED` 等引导配置可放在进程环境或项目 `.env`。Settings 使用 `find_dotenv()`；服务启动入口和 Streamlit 入口还调用 `load_dotenv()`。
+3. **Docker Compose**：服务端和 Streamlit 都通过 `env_file` 读取可选的引导配置。[Compose](../compose.yaml) 会启动 PostgreSQL 和启用 AOF 的 Redis，但应用连接信息仍以 Nacos YAML 为准。
+4. **文件凭据**：开发用文件可放在 `privatecredentials/`，Compose 挂载到 `/privatecredentials`。本地路径和容器路径不同，`GOOGLE_APPLICATION_CREDENTIALS` 应指向运行进程能读取的路径。
+5. **服务与 App 令牌**：Streamlit/Python 服务客户端可读取 `AUTH_SECRET`。移动 App 只保存短期 App Token，不保存 `AUTH_SECRET` 或 `APP_TOKEN_SECRET`。实时语音流程见 [Voice API](Voice_API.md)。浏览器直连 AG-UI 的认证处理见 [AG-UI 说明](AGUI.md)。
 
 ## 本次梳理发现的待处理项
 
-- `.env.example` 列出了百炼、PostgreSQL、Redis、SMTP 和实时语音所需配置，其他可选账号配置以本文及代码为准。
+- `.env.example` 只列出本地引导与非 Nacos 配置；Redis、PostgreSQL、App Token 和 SMTP 字段参考 README 中的 Nacos YAML 示例。
 - Compose 的服务端健康检查访问公开的 `/health`，启用认证后仍可正常探活。
 - 现有 README 和文件凭据文档声称私有文件被 Git 和 Docker 构建忽略，但当前工作树缺少根目录 `.gitignore` 和 `.dockerignore`。现有文档的这一保证不能直接视为已落实；本机 Git 排除配置也不能替代随仓库分发的规则。
 - 邮箱注册和登录已经实现；登出、刷新令牌及账号资料管理尚未实现。

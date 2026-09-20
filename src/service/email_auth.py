@@ -264,6 +264,7 @@ class SMTPEmailSender:
         )
         self.from_email = config.SMTP_FROM_EMAIL
         self.use_tls = config.SMTP_USE_TLS
+        self.use_ssl = config.SMTP_USE_SSL
 
     async def send_code(self, email: str, code: str) -> None:
         message = EmailMessage()
@@ -277,12 +278,22 @@ class SMTPEmailSender:
             raise EmailDeliveryError from exc
 
     def _send(self, message: EmailMessage) -> None:
-        with smtplib.SMTP(self.host, self.port, timeout=10) as smtp:
+        with self._connect() as smtp:
             if self.use_tls:
                 smtp.starttls(context=ssl.create_default_context())
             if self.username and self.password:
                 smtp.login(self.username, self.password)
             smtp.send_message(message)
+
+    def _connect(self) -> smtplib.SMTP:
+        if self.use_ssl:
+            return smtplib.SMTP_SSL(
+                self.host,
+                self.port,
+                timeout=10,
+                context=ssl.create_default_context(),
+            )
+        return smtplib.SMTP(self.host, self.port, timeout=10)
 
 
 class EmailAuthService:
@@ -393,6 +404,8 @@ def _validate_email_auth_settings(config: Any) -> str:
         raise ValueError("SMTP_HOST and SMTP_FROM_EMAIL are required for email authentication")
     if bool(config.SMTP_USERNAME) != bool(config.SMTP_PASSWORD):
         raise ValueError("SMTP_USERNAME and SMTP_PASSWORD must be configured together")
+    if config.SMTP_USE_TLS and config.SMTP_USE_SSL:
+        raise ValueError("SMTP_USE_TLS and SMTP_USE_SSL cannot both be enabled")
     return token_secret
 
 

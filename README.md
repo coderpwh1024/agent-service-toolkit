@@ -90,7 +90,7 @@ docker compose watch
    ```
 
 2. 设置环境变量：
-   至少需要一个 LLM API 密钥或相关配置。推荐在当前 shell 中配置 `DASHSCOPE_API_KEY`，并在根目录的 `.env` 中配置 PostgreSQL。最小配置参考 [`.env.example`](./.env.example)，其他服务账号及认证边界见[账号、凭据与用户身份梳理](docs/Accounts_and_Credentials.md)。
+   至少需要一个 LLM API 密钥或相关配置。推荐在当前 shell 中配置 `DASHSCOPE_API_KEY`；Redis、PostgreSQL、App Token 和 SMTP 连接信息统一维护在 Nacos YAML 中。本地引导配置参考 [`.env.example`](./.env.example)，其他服务账号及认证边界见[账号、凭据与用户身份梳理](docs/Accounts_and_Credentials.md)。
 
 3. 现在，你可以使用 Docker 或仅使用 Python，在本地运行智能体服务和 Streamlit 应用。推荐使用 Docker，以简化环境配置，并在代码发生更改时立即重新加载服务。
 
@@ -235,9 +235,17 @@ POSTGRES_PASSWORD: database-password
 POSTGRES_HOST: postgres-host
 POSTGRES_PORT: 5432
 POSTGRES_DB: agent_service
+APP_TOKEN_SECRET: replace-with-at-least-32-random-characters
+SMTP_HOST: smtp.example.com
+SMTP_PORT: 465
+SMTP_USERNAME: mailer@example.com
+SMTP_PASSWORD: replace-with-smtp-client-password
+SMTP_FROM_EMAIL: mailer@example.com
+SMTP_USE_TLS: false
+SMTP_USE_SSL: true
 ```
 
-远程配置会在 PostgreSQL、Redis、智能体和其他服务资源初始化前加载。当 `NACOS_STORAGE_CONFIG_REQUIRED=true` 时，上述任一字段缺失、内容为空、类型错误或 Nacos 不可用都会导致启动失败，不会回退到 `.env` 或代码默认值。远程值会覆盖本地环境中同名的存储设置，因此数据库连接池、RAG、邮件认证和检查点存储均使用 Nacos 配置。
+远程配置会在 PostgreSQL、Redis、邮箱认证、智能体和其他服务资源初始化前加载。当 `NACOS_STORAGE_CONFIG_REQUIRED=true` 时，Redis/PostgreSQL 六个存储字段任一缺失、内容为空、类型错误或 Nacos 不可用都会导致启动失败，不会回退到 `.env` 或代码默认值。启用邮箱认证时，`APP_TOKEN_SECRET` 以及完整的 `SMTP_*` 字段也必须存在且有效。远程值会覆盖本地环境中的同名设置，因此数据库连接池、RAG、邮件认证和检查点存储均使用 Nacos 配置。
 
 `NACOS_*` 连接参数以及 `HOST`、`PORT`、`MODE`、`LOG_LEVEL`、`GRACEFUL_SHUTDOWN_TIMEOUT` 属于引导配置，只能通过环境变量设置。当前实现只在启动时加载配置，修改 Nacos 配置后需重启应用。若仅使用服务注册与发现，可显式设置 `NACOS_STORAGE_CONFIG_REQUIRED=false` 并不配置 `NACOS_CONFIG_DATA_ID`。若只使用配置中心而不注册当前服务，可设置 `NACOS_REGISTER_SERVICE=false`。运行期间可从 `app.state.nacos.list_instances(...)` 查询健康实例。
 

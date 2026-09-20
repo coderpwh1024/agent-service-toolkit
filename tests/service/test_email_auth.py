@@ -1,7 +1,8 @@
 import re
+from email.message import EmailMessage
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import ANY, AsyncMock, MagicMock
 
 import jwt
 import pytest
@@ -10,6 +11,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from schema.auth import EmailCodeRequest, EmailCodeVerify, UserProfile
+from service import email_auth
 from service.email_auth import (
     EMAIL_SEND_WINDOW_SECONDS,
     USER_SCHEMA_PATH,
@@ -17,6 +19,7 @@ from service.email_auth import (
     EmailAuthService,
     EmailRateLimitError,
     InvalidVerificationCodeError,
+    SMTPEmailSender,
     UserRepository,
     VerificationCodeStore,
     router,
@@ -91,6 +94,34 @@ def auth_components():
     )
     service = EmailAuthService(users, codes, sender, "x" * 32, config)
     return service, users, codes, sender, config
+
+
+def test_smtp_sender_uses_implicit_ssl(monkeypatch):
+    smtp = MagicMock()
+    smtp.__enter__.return_value = smtp
+    ssl_connect = MagicMock(return_value=smtp)
+    monkeypatch.setattr(email_auth.smtplib, "SMTP_SSL", ssl_connect)
+    config = SimpleNamespace(
+        SMTP_HOST="smtp.aliyun.com",
+        SMTP_PORT=465,
+        SMTP_USERNAME="sender@example.com",
+        SMTP_PASSWORD=SecretStr("smtp-password"),
+        SMTP_FROM_EMAIL="sender@example.com",
+        SMTP_USE_TLS=False,
+        SMTP_USE_SSL=True,
+    )
+    sender = SMTPEmailSender(config)
+
+    sender._send(EmailMessage())
+
+    ssl_connect.assert_called_once_with(
+        "smtp.aliyun.com",
+        465,
+        timeout=10,
+        context=ANY,
+    )
+    smtp.starttls.assert_not_called()
+    smtp.login.assert_called_once_with("sender@example.com", "smtp-password")
 
 
 @pytest.mark.asyncio

@@ -151,6 +151,41 @@ def test_apply_remote_settings_rejects_malformed_yaml() -> None:
         nacos.apply_remote_settings(make_settings(), "REDIS_URL: [")
 
 
+def test_remote_email_settings_override_local_values() -> None:
+    config = make_settings(
+        APP_TOKEN_SECRET="local-token-secret-that-is-long-enough",
+        SMTP_HOST="local-smtp",
+        SMTP_PORT=587,
+        SMTP_USERNAME="local@example.com",
+        SMTP_PASSWORD="local-password",
+        SMTP_FROM_EMAIL="local@example.com",
+        SMTP_USE_TLS=True,
+        SMTP_USE_SSL=False,
+    )
+
+    nacos.apply_remote_settings(
+        config,
+        """APP_TOKEN_SECRET: remote-token-secret-that-is-long-enough
+SMTP_HOST: smtp.example.com
+SMTP_PORT: 465
+SMTP_USERNAME: mailer@example.com
+SMTP_PASSWORD: remote-password
+SMTP_FROM_EMAIL: mailer@example.com
+SMTP_USE_TLS: false
+SMTP_USE_SSL: true
+""",
+    )
+
+    assert config.APP_TOKEN_SECRET == SecretStr("remote-token-secret-that-is-long-enough")
+    assert config.SMTP_HOST == "smtp.example.com"
+    assert config.SMTP_PORT == 465
+    assert config.SMTP_USERNAME == "mailer@example.com"
+    assert config.SMTP_PASSWORD == SecretStr("remote-password")
+    assert str(config.SMTP_FROM_EMAIL) == "mailer@example.com"
+    assert config.SMTP_USE_TLS is False
+    assert config.SMTP_USE_SSL is True
+
+
 def test_remote_storage_config_overrides_local_values() -> None:
     config = make_settings(
         REDIS_URL="redis://local:6379/0",
