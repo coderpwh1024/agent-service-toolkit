@@ -65,6 +65,7 @@ docker compose watch
 1. **聊天记录与长期记忆**：使用 PostgreSQL 保存会话检查点和跨会话记忆，并通过 `/threads` 按智能体列出用户之前的对话。
 1. **反馈机制**：包含一个与 LangSmith 集成的星级反馈系统。
 1. **Docker 支持**：包含 Dockerfile 和 Docker Compose 文件，便于开发和部署。
+1. **Nacos 3.x 集成**：支持启动配置加载、服务注册与发现，并在服务关停时自动注销实例。
 1. **测试**：为整个代码仓库提供完善的单元测试和集成测试。
 
 ### 关键文件
@@ -187,7 +188,7 @@ response.pretty_print()
    docker compose up -d postgres
    ```
 
-   本地默认连接 `127.0.0.1:5432/agent_service`，用户名和密码均为 `postgres`，与 Compose 默认配置一致。使用其他数据库时，在 `.env` 中设置 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB`、`POSTGRES_USER` 和 `POSTGRES_PASSWORD`，并提前创建数据库。
+   未启用 Nacos 时，本地默认连接 `127.0.0.1:5432/agent_service`，用户名和密码均为 `postgres`，与 Compose 默认配置一致。使用其他数据库时，在 `.env` 中设置 `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB`、`POSTGRES_USER` 和 `POSTGRES_PASSWORD`，并提前创建数据库。启用 Nacos 强制存储配置后，这些本地 Redis/PostgreSQL 值不会被连接资源使用。
 
 3. 运行 FastAPI 服务器：
 
@@ -204,6 +205,41 @@ response.pretty_print()
 5. 打开浏览器，访问 Streamlit 提供的 URL（通常为 `http://localhost:8501`）。
 
 服务会自动创建检查点和长期记忆所需的表；PG 不可用时启动失败，不会回退到本地文件或内存。已有 `checkpoints.db` 不会自动迁移或删除。长期记忆仍由智能体通过 Store 显式写入。
+
+### Nacos 3.x
+
+项目使用官方 `nacos-sdk-python` 连接 Nacos 3.x。Nacos 3 默认将控制台和客户端服务分开：控制台可位于 `http://127.0.0.1:8080/`，应用 SDK 应连接服务器端口 `127.0.0.1:8848`，并确保对应的 gRPC 端口 `9848` 可访问。
+
+在 `.env` 中启用本地 Nacos。由于本项目也默认监听 `8080`，Nacos 控制台已经占用该端口时，需要同时为应用设置其他端口：
+
+```dotenv
+NACOS_ENABLED=true
+NACOS_SERVER_ADDR=127.0.0.1:8848
+NACOS_USERNAME=nacos
+NACOS_PASSWORD=replace-with-nacos-password
+NACOS_CONFIG_DATA_ID=agent-service-toolkit.yaml
+NACOS_STORAGE_CONFIG_REQUIRED=true
+NACOS_SERVICE_NAME=agent-service-toolkit
+NACOS_SERVICE_IP=127.0.0.1
+PORT=8000
+```
+
+使用 Docker Compose 运行应用、Nacos 运行在宿主机时，将 `NACOS_SERVER_ADDR` 改为 `host.docker.internal:8848`，并将 `NACOS_SERVICE_IP` 设置为调用方可以访问的地址。`NACOS_NAMESPACE_ID` 使用命名空间 ID（留空代表 public），`NACOS_GROUP_NAME` 默认为 `DEFAULT_GROUP`。
+
+已创建的存储配置使用 `public` 命名空间、`DEFAULT_GROUP` 分组和 `agent-service-toolkit.yaml` Data ID，配置类型为 `YAML`。配置内容必须是 YAML 映射，并包含完整的 Redis/PostgreSQL 连接字段：
+
+```yaml
+REDIS_URL: redis://redis-host:6379/0
+POSTGRES_USER: database-user
+POSTGRES_PASSWORD: database-password
+POSTGRES_HOST: postgres-host
+POSTGRES_PORT: 5432
+POSTGRES_DB: agent_service
+```
+
+远程配置会在 PostgreSQL、Redis、智能体和其他服务资源初始化前加载。当 `NACOS_STORAGE_CONFIG_REQUIRED=true` 时，上述任一字段缺失、内容为空、类型错误或 Nacos 不可用都会导致启动失败，不会回退到 `.env` 或代码默认值。远程值会覆盖本地环境中同名的存储设置，因此数据库连接池、RAG、邮件认证和检查点存储均使用 Nacos 配置。
+
+`NACOS_*` 连接参数以及 `HOST`、`PORT`、`MODE`、`LOG_LEVEL`、`GRACEFUL_SHUTDOWN_TIMEOUT` 属于引导配置，只能通过环境变量设置。当前实现只在启动时加载配置，修改 Nacos 配置后需重启应用。若仅使用服务注册与发现，可显式设置 `NACOS_STORAGE_CONFIG_REQUIRED=false` 并不配置 `NACOS_CONFIG_DATA_ID`。若只使用配置中心而不注册当前服务，可设置 `NACOS_REGISTER_SERVICE=false`。运行期间可从 `app.state.nacos.list_instances(...)` 查询健康实例。
 
 ## 使用 agent-service-toolkit 构建或受其启发的项目
 

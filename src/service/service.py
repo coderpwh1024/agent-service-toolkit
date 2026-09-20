@@ -47,6 +47,7 @@ from service.agent_runner import delivery_context, graph_events, thread_guard
 from service.agui import router as agui_router
 from service.email_auth import email_auth_lifespan
 from service.email_auth import router as email_auth_router
+from service.nacos import NacosIntegration
 from service.threads import list_user_threads
 from service.utils import (
     ensure_model_available,
@@ -88,7 +89,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     Lifespan that initializes the PostgreSQL checkpointer, store,
     and agents with async loading - for example for starting up MCP clients.
     """
+    nacos = NacosIntegration(settings)
     try:
+        await nacos.load_remote_config()
         # Initialize both checkpointer (for short-term memory) and store (for long-term memory)
         async with initialize_database() as saver, initialize_store() as store:
             # Set up both components
@@ -120,10 +123,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 # Set store for long-term memory (cross-conversation knowledge)
                 agent.store = store
             async with email_auth_lifespan(app), voice_lifespan(app):
-                yield
+                await nacos.register_service()
+                app.state.nacos = nacos
+                try:
+                    yield
+                finally:
+                    await nacos.shutdown()
     except Exception as e:
-        logger.error(f"Error during database/store/agents initialization: {e}")
+        logger.error("Error during service lifecycle initialization: %s", e)
         raise
+    finally:
+        await nacos.shutdown()
 
 
 app = FastAPI(lifespan=lifespan, generate_unique_id_function=custom_generate_unique_id)

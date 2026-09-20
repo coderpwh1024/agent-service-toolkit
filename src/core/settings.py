@@ -1,5 +1,6 @@
 from enum import StrEnum
 from json import loads
+from tempfile import gettempdir
 from typing import Annotated, Any
 
 from dotenv import find_dotenv
@@ -164,6 +165,26 @@ class Settings(BaseSettings):
     RAG_COLLECTION_NAME: str = "acmetech-employee-handbook"
     RAG_TOP_K: int = Field(default=5, ge=1, le=50)
 
+    # Nacos 3.x service discovery and startup configuration.
+    NACOS_ENABLED: bool = False
+    NACOS_SERVER_ADDR: str = "127.0.0.1:8848"
+    NACOS_CONTEXT_PATH: str = "/nacos"
+    NACOS_USERNAME: str | None = None
+    NACOS_PASSWORD: SecretStr | None = None
+    NACOS_NAMESPACE_ID: str = ""
+    NACOS_GROUP_NAME: str = "DEFAULT_GROUP"
+    NACOS_CONFIG_DATA_ID: str | None = None
+    NACOS_STORAGE_CONFIG_REQUIRED: bool = True
+    NACOS_REGISTER_SERVICE: bool = True
+    NACOS_SERVICE_NAME: str = "agent-service-toolkit"
+    NACOS_SERVICE_IP: str | None = None
+    NACOS_SERVICE_PORT: int | None = Field(default=None, ge=1, le=65535)
+    NACOS_CLUSTER_NAME: str = "DEFAULT"
+    NACOS_METADATA: dict[str, str] = Field(default_factory=dict)
+    NACOS_GRPC_PORT_OFFSET: int = Field(default=1000, ge=1, le=65535)
+    NACOS_CACHE_DIR: str = f"{gettempdir()}/agent-service-toolkit/nacos/cache"
+    NACOS_LOG_DIR: str = f"{gettempdir()}/agent-service-toolkit/nacos/logs"
+
     # Azure OpenAI Settings
     AZURE_OPENAI_API_KEY: SecretStr | None = None
     AZURE_OPENAI_ENDPOINT: str | None = None
@@ -173,6 +194,10 @@ class Settings(BaseSettings):
     )
 
     def model_post_init(self, __context: Any) -> None:
+        has_nacos_password = bool(self.NACOS_PASSWORD and self.NACOS_PASSWORD.get_secret_value())
+        if bool(self.NACOS_USERNAME) != has_nacos_password:
+            raise ValueError("NACOS_USERNAME and NACOS_PASSWORD must be configured together")
+
         api_keys = {
             Provider.ALIBABA: self.DASHSCOPE_API_KEY,
             Provider.OPENAI: self.OPENAI_API_KEY,

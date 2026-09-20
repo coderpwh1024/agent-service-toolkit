@@ -39,6 +39,23 @@ def test_settings_default_values():
     assert settings.EMAIL_AUTH_ENABLED is False
     assert settings.REDIS_URL == SecretStr("redis://127.0.0.1:6379/0")
     assert settings.SMTP_PORT == 587
+    assert settings.NACOS_ENABLED is False
+    assert settings.NACOS_SERVER_ADDR == "127.0.0.1:8848"
+    assert settings.NACOS_SERVICE_NAME == "agent-service-toolkit"
+
+
+def test_nacos_credentials_must_be_configured_together():
+    with pytest.raises(ValidationError, match="NACOS_USERNAME and NACOS_PASSWORD"):
+        Settings(_env_file=None, NACOS_USERNAME="nacos")
+
+
+def test_nacos_password_is_redacted():
+    settings = Settings(
+        _env_file=None,
+        NACOS_USERNAME="nacos",
+        NACOS_PASSWORD="test-nacos-password",
+    )
+    assert "test-nacos-password" not in repr(settings)
 
 
 def test_local_storage_defaults_match_compose_postgres():
