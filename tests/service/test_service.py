@@ -3,12 +3,15 @@ from unittest.mock import AsyncMock, patch
 
 import langsmith
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langgraph.types import Interrupt, StateSnapshot
 
 from agents.agents import Agent
 from schema import ChatHistory, ChatMessage, ServiceMetadata
 from schema.models import AnthropicModelName, OpenAIModelName
+from service.service import api_unhandled_exception_handler
 
 
 def test_invoke(test_client, mock_agent) -> None:
@@ -23,7 +26,7 @@ def test_invoke(test_client, mock_agent) -> None:
     input_message = mock_agent.ainvoke.await_args.kwargs["input"]["messages"][0]
     assert input_message.content == QUESTION
 
-    output = ChatMessage.model_validate(response.json())
+    output = ChatMessage.model_validate(response.json()["data"])
     assert output.type == "ai"
     assert output.content == ANSWER
 
@@ -61,7 +64,7 @@ def test_invoke_custom_agent(test_client, mock_agent) -> None:
         input_message = mock_agent.ainvoke.await_args.kwargs["input"]["messages"][0]
         assert input_message.content == QUESTION
 
-        output = ChatMessage.model_validate(response.json())
+        output = ChatMessage.model_validate(response.json()["data"])
         assert output.type == "ai"
         assert output.content == CUSTOM_ANSWER  # Verify we got the custom agent's response
 
@@ -82,7 +85,7 @@ def test_invoke_model_param(test_client, mock_agent) -> None:
     assert config["configurable"]["model"] == CUSTOM_MODEL
 
     # Verify the response is still correct
-    output = ChatMessage.model_validate(response.json())
+    output = ChatMessage.model_validate(response.json()["data"])
     assert output.type == "ai"
     assert output.content == ANSWER
 
@@ -90,12 +93,15 @@ def test_invoke_model_param(test_client, mock_agent) -> None:
     unavailable_model = AnthropicModelName.SONNET_45
     response = test_client.post("/invoke", json={"message": QUESTION, "model": unavailable_model})
     assert response.status_code == 400
-    assert "not available" in response.json()["detail"]
+    assert "not available" in response.json()["message"]
 
     # Verify a malformed model string still fails request validation.
     INVALID_MODEL = "gpt-7-notreal"
     response = test_client.post("/invoke", json={"message": QUESTION, "model": INVALID_MODEL})
     assert response.status_code == 422
+    assert response.json()["code"] == 422
+    assert response.json()["message"] == "Validation error"
+    assert isinstance(response.json()["data"], list)
 
 
 def test_invoke_no_model_param_uses_none_default(test_client, mock_agent) -> None:
@@ -113,7 +119,7 @@ def test_invoke_no_model_param_uses_none_default(test_client, mock_agent) -> Non
     assert "model" not in config["configurable"]  # Should not be present when None
 
     # Verify the response is still correct
-    output = ChatMessage.model_validate(response.json())
+    output = ChatMessage.model_validate(response.json()["data"])
     assert output.type == "ai"
     assert output.content == ANSWER
 
@@ -138,7 +144,7 @@ def test_invoke_custom_agent_config(test_client, mock_agent) -> None:
     assert config["configurable"]["additional_param"] == "value_foo"
 
     # Verify the response is still correct
-    output = ChatMessage.model_validate(response.json())
+    output = ChatMessage.model_validate(response.json()["data"])
     assert output.type == "ai"
     assert output.content == ANSWER
 
@@ -166,7 +172,7 @@ def test_invoke_interrupt(test_client, mock_agent) -> None:
     input_message = mock_agent.ainvoke.await_args.kwargs["input"]["messages"][0]
     assert input_message.content == QUESTION
 
-    output = ChatMessage.model_validate(response.json())
+    output = ChatMessage.model_validate(response.json()["data"])
     assert output.type == "ai"
     assert output.content == INTERRUPT
 
@@ -182,7 +188,11 @@ def test_feedback(mock_client: langsmith.Client, test_client) -> None:
     }
     response = test_client.post("/feedback", json=body)
     assert response.status_code == 200
-    assert response.json() == {"status": "success"}
+    assert response.json() == {
+        "code": 200,
+        "message": "success",
+        "data": {"status": "success"},
+    }
     ls_instance.create_feedback.assert_called_once_with(
         run_id="847c6285-8fc9-4560-a83f-4e6285809254",
         key="human-feedback-stars",
@@ -211,7 +221,7 @@ def test_history(test_client, mock_agent) -> None:
     )
     assert response.status_code == 200
 
-    output = ChatHistory.model_validate(response.json())
+    output = ChatHistory.model_validate(response.json()["data"])
     assert output.messages[0].type == "human"
     assert output.messages[0].content == QUESTION
     assert output.messages[1].type == "ai"
@@ -269,7 +279,7 @@ def test_history_custom_agent(test_client) -> None:
         custom_mock.aget_state.assert_awaited_once()
         default_mock.aget_state.assert_not_awaited()
 
-        output = ChatHistory.model_validate(response.json())
+        output = ChatHistory.model_validate(response.json()["data"])
         assert output.messages[0].type == "human"
         assert output.messages[0].content == QUESTION
         assert output.messages[1].type == "ai"
@@ -429,7 +439,10 @@ def test_info(test_client, mock_settings) -> None:
     with patch.dict("agents.agents.agents", {"base-agent": base_agent}, clear=True):
         response = test_client.get("/info")
         assert response.status_code == 200
-        output = ServiceMetadata.model_validate(response.json())
+        payload = response.json()
+        assert payload["code"] == 200
+        assert payload["message"] == "success"
+        output = ServiceMetadata.model_validate(payload["data"])
 
     assert output.default_agent == "research-assistant"
     assert len(output.agents) == 1
@@ -438,3 +451,41 @@ def test_info(test_client, mock_settings) -> None:
 
     assert output.default_model == OpenAIModelName.GPT_5_NANO
     assert output.models == [OpenAIModelName.GPT_5_MINI, OpenAIModelName.GPT_5_NANO]
+
+
+def test_health_uses_standard_response_envelope(test_client) -> None:
+    response = test_client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "code": 200,
+        "message": "success",
+        "data": {"status": "ok"},
+    }
+
+
+def test_stream_validation_keeps_fastapi_protocol_error(test_client) -> None:
+    response = test_client.post("/stream", json={})
+
+    assert response.status_code == 422
+    assert "detail" in response.json()
+    assert "code" not in response.json()
+
+
+def test_unhandled_errors_use_standard_response_envelope() -> None:
+    error_app = FastAPI()
+    error_app.add_exception_handler(Exception, api_unhandled_exception_handler)
+
+    @error_app.get("/boom")
+    async def boom() -> None:
+        raise RuntimeError("boom")
+
+    with TestClient(error_app, raise_server_exceptions=False) as client:
+        response = client.get("/boom")
+
+    assert response.status_code == 500
+    assert response.json() == {
+        "code": 500,
+        "message": "Internal server error",
+        "data": None,
+    }

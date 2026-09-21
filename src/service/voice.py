@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request, WebSocket
@@ -10,6 +11,7 @@ from fastapi import APIRouter, FastAPI, HTTPException, Request, WebSocket
 from agents import get_agent, get_all_agent_info
 from core import settings
 from memory.postgres import get_postgres_connection_string
+from schema import ApiResponse, api_success
 from schema.voice import VoiceSession, VoiceSessionInput, client_event_adapter
 from service.access import authenticate, authorize_thread, bind_user, principal, repository
 from service.agent_runner import thread_guard
@@ -66,40 +68,42 @@ async def owned_session(repo: VoiceRepository, session_id: UUID, identity) -> Vo
     return session
 
 
-@router.get("/capabilities")
-async def capabilities(request: Request):
+@router.get("/capabilities", response_model=ApiResponse[dict[str, Any]])
+async def capabilities(request: Request) -> ApiResponse[dict[str, Any]]:
     principal(request)
-    return {
-        "enabled": settings.VOICE_ENABLED,
-        "protocol_version": 1,
-        "input_format": "pcm16_16000_mono",
-        "output_format": "pcm16_24000_mono",
-        "audio_header_bytes": 45,
-        "max_audio_payload_bytes": 6400,
-        "voices": settings.VOICE_REALTIME_VOICES,
-        "stt_model": settings.VOICE_REALTIME_STT_MODEL,
-        "tts_model": settings.VOICE_REALTIME_TTS_MODEL,
-        "session_seconds": settings.VOICE_SESSION_SECONDS,
-        "agents": [
-            {
-                "id": a.key,
-                "description": a.description,
-                "speech_mode": "streaming" if a.key == "chatbot" else "final_message",
-                "cancel_execution": a.key == "chatbot",
-            }
-            for a in get_all_agent_info()
-        ],
-    }
+    return api_success(
+        {
+            "enabled": settings.VOICE_ENABLED,
+            "protocol_version": 1,
+            "input_format": "pcm16_16000_mono",
+            "output_format": "pcm16_24000_mono",
+            "audio_header_bytes": 45,
+            "max_audio_payload_bytes": 6400,
+            "voices": settings.VOICE_REALTIME_VOICES,
+            "stt_model": settings.VOICE_REALTIME_STT_MODEL,
+            "tts_model": settings.VOICE_REALTIME_TTS_MODEL,
+            "session_seconds": settings.VOICE_SESSION_SECONDS,
+            "agents": [
+                {
+                    "id": a.key,
+                    "description": a.description,
+                    "speech_mode": "streaming" if a.key == "chatbot" else "final_message",
+                    "cancel_execution": a.key == "chatbot",
+                }
+                for a in get_all_agent_info()
+            ],
+        }
+    )
 
 
-@router.get("/protocol")
-async def protocol(request: Request):
+@router.get("/protocol", response_model=ApiResponse[dict[str, Any]])
+async def protocol(request: Request) -> ApiResponse[dict[str, Any]]:
     principal(request)
-    return client_event_adapter.json_schema()
+    return api_success(client_event_adapter.json_schema())
 
 
-@router.post("/sessions", response_model=VoiceSession, status_code=201)
-async def create_session(body: VoiceSessionInput, request: Request):
+@router.post("/sessions", response_model=ApiResponse[VoiceSession])
+async def create_session(body: VoiceSessionInput, request: Request) -> ApiResponse[VoiceSession]:
     identity = principal(request)
     repo = require_voice(request)
     user_id = bind_user(identity, body.user_id)
@@ -125,37 +129,40 @@ async def create_session(body: VoiceSessionInput, request: Request):
             expires_at=datetime.now(UTC) + timedelta(seconds=settings.VOICE_SESSION_SECONDS),
         )
         await repo.save_session(session)
-    return session
+    return api_success(session)
 
 
-@router.get("/sessions/{session_id}", response_model=VoiceSession)
-async def get_session(session_id: UUID, request: Request):
-    return await owned_session(require_voice(request), session_id, principal(request))
+@router.get("/sessions/{session_id}", response_model=ApiResponse[VoiceSession])
+async def get_session(session_id: UUID, request: Request) -> ApiResponse[VoiceSession]:
+    session = await owned_session(require_voice(request), session_id, principal(request))
+    return api_success(session)
 
 
-@router.get("/sessions/{session_id}/turns")
-async def get_turns(session_id: UUID, request: Request):
+@router.get("/sessions/{session_id}/turns", response_model=ApiResponse[dict[str, Any]])
+async def get_turns(session_id: UUID, request: Request) -> ApiResponse[dict[str, Any]]:
     repo = require_voice(request)
     session = await owned_session(repo, session_id, principal(request))
-    return {
-        "turns": [
-            t for t in await repo.turns(session.thread_id) if t.session_id == session.session_id
-        ]
-    }
+    return api_success(
+        {
+            "turns": [
+                t for t in await repo.turns(session.thread_id) if t.session_id == session.session_id
+            ]
+        }
+    )
 
 
-@router.delete("/sessions/{session_id}")
-async def close_session(session_id: UUID, request: Request):
+@router.delete("/sessions/{session_id}", response_model=ApiResponse[dict[str, str]])
+async def close_session(session_id: UUID, request: Request) -> ApiResponse[dict[str, str]]:
     repo = require_voice(request)
     session = await owned_session(repo, session_id, principal(request))
     connection = request.app.state.voice_connections.get(str(session_id))
     if connection:
         await connection.stop()
-        return {"status": "closing"}
+        return api_success({"status": "closing"})
     async with repo.guard(f"voice-session:{session_id}"):
         session.status = "closed"
         await repo.save_session(session)
-    return {"status": "closed"}
+    return api_success({"status": "closed"})
 
 
 @router.websocket("/sessions/{session_id}/ws")

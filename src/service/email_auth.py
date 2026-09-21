@@ -23,6 +23,7 @@ from redis.exceptions import RedisError
 
 from core import settings
 from memory.postgres import get_postgres_connection_string
+from schema.api import ApiResponse, api_success
 from schema.auth import (
     EmailAuthResponse,
     EmailCodeAccepted,
@@ -360,10 +361,12 @@ def _service(request: Request) -> EmailAuthService:
     return service
 
 
-@router.post("/code", response_model=EmailCodeAccepted, status_code=status.HTTP_202_ACCEPTED)
-async def request_email_code(body: EmailCodeRequest, request: Request) -> EmailCodeAccepted:
+@router.post("/code", response_model=ApiResponse[EmailCodeAccepted])
+async def request_email_code(
+    body: EmailCodeRequest, request: Request
+) -> ApiResponse[EmailCodeAccepted]:
     try:
-        return await _service(request).request_code(body)
+        return api_success(await _service(request).request_code(body))
     except EmailRateLimitError as exc:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
@@ -380,10 +383,12 @@ async def request_email_code(body: EmailCodeRequest, request: Request) -> EmailC
         ) from None
 
 
-@router.post("/verify", response_model=EmailAuthResponse)
-async def verify_email_code(body: EmailCodeVerify, request: Request) -> EmailAuthResponse:
+@router.post("/verify", response_model=ApiResponse[EmailAuthResponse])
+async def verify_email_code(
+    body: EmailCodeVerify, request: Request
+) -> ApiResponse[EmailAuthResponse]:
     try:
-        return await _service(request).verify(body)
+        return api_success(await _service(request).verify(body))
     except InvalidVerificationCodeError:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED, "Invalid or expired verification code"

@@ -8,7 +8,13 @@ from typing import Annotated, Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, status
-from fastapi.responses import StreamingResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import (
+    http_exception_handler,
+    request_validation_exception_handler,
+)
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from fastapi.routing import APIRoute
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from langchain_core._api import LangChainBetaWarning
@@ -25,11 +31,13 @@ from langfuse.langchain import (
 from langgraph.types import Command
 from langsmith import Client as LangsmithClient
 from langsmith import uuid7
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info, load_agent
 from core import settings
 from memory import initialize_database, initialize_store
 from schema import (
+    ApiResponse,
     ChatHistory,
     ChatHistoryInput,
     ChatMessage,
@@ -40,6 +48,7 @@ from schema import (
     UserInput,
     UserThreads,
     UserThreadsInput,
+    api_success,
 )
 from service.access import authenticate, authorize_thread, bind_user, repository
 from service.access import router as auth_router
@@ -142,15 +151,66 @@ router = APIRouter(dependencies=[Depends(verify_bearer)])
 router.include_router(agui_router)
 
 
-@router.get("/info")
-async def info() -> ServiceMetadata:
+def _uses_protocol_response(path: str) -> bool:
+    return (
+        path == "/agui"
+        or path.startswith("/agui/")
+        or path == "/stream"
+        or path.endswith("/stream")
+        or (path.startswith("/voice/") and path.endswith("/ws"))
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def api_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if _uses_protocol_response(request.url.path):
+        return await http_exception_handler(request, exc)
+    detail = exc.detail
+    message = detail if isinstance(detail, str) else "Request failed"
+    data = None if isinstance(detail, str) else detail
+    response = ApiResponse[Any](code=exc.status_code, message=message, data=data)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=jsonable_encoder(response),
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def api_validation_exception_handler(request: Request, exc: RequestValidationError):
+    if _uses_protocol_response(request.url.path):
+        return await request_validation_exception_handler(request, exc)
+    response = ApiResponse[list[dict[str, Any]]](
+        code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        message="Validation error",
+        data=exc.errors(),
+    )
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+        content=jsonable_encoder(response),
+    )
+
+
+@app.exception_handler(Exception)
+async def api_unhandled_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled request error", exc_info=exc)
+    if _uses_protocol_response(request.url.path):
+        return PlainTextResponse("Internal Server Error", status_code=500)
+    response = ApiResponse[Any](code=500, message="Internal server error", data=None)
+    return JSONResponse(status_code=500, content=jsonable_encoder(response))
+
+
+@router.get("/info", response_model=ApiResponse[ServiceMetadata])
+async def info() -> ApiResponse[ServiceMetadata]:
     models = list(settings.AVAILABLE_MODELS)
     models.sort()
-    return ServiceMetadata(
-        agents=get_all_agent_info(),
-        models=models,
-        default_agent=DEFAULT_AGENT,
-        default_model=settings.DEFAULT_MODEL,
+    return api_success(
+        ServiceMetadata(
+            agents=get_all_agent_info(),
+            models=models,
+            default_agent=DEFAULT_AGENT,
+            default_model=settings.DEFAULT_MODEL,
+        )
     )
 
 
@@ -229,7 +289,7 @@ async def _handle_input(
 @router.post("/invoke")
 async def invoke(
     user_input: UserInput, request: Request, agent_id: str = DEFAULT_AGENT
-) -> ChatMessage:
+) -> ApiResponse[ChatMessage]:
     repo = repository(request)
     identity = request.state.principal
     user_input.user_id = bind_user(identity, user_input.user_id)
@@ -239,7 +299,7 @@ async def invoke(
         await authorize_thread(
             repo, agent, user_input.thread_id, agent_id, identity, user_input.user_id, create=True
         )
-        return await _invoke(user_input, agent_id, repo)
+        return api_success(await _invoke(user_input, agent_id, repo))
 
 
 async def _invoke(
@@ -378,8 +438,8 @@ async def stream(
     )
 
 
-@router.post("/feedback")
-async def feedback(feedback: Feedback, request: Request) -> FeedbackResponse:
+@router.post("/feedback", response_model=ApiResponse[FeedbackResponse])
+async def feedback(feedback: Feedback, request: Request) -> ApiResponse[FeedbackResponse]:
     """
     Record feedback for a run to LangSmith.
 
@@ -402,14 +462,14 @@ async def feedback(feedback: Feedback, request: Request) -> FeedbackResponse:
         score=feedback.score,
         **kwargs,
     )
-    return FeedbackResponse()
+    return api_success(FeedbackResponse())
 
 
 @router.post("/{agent_id}/history", operation_id="history_with_agent_id")
 @router.post("/history")
 async def history(
     input: ChatHistoryInput, request: Request, agent_id: str = DEFAULT_AGENT
-) -> ChatHistory:
+) -> ApiResponse[ChatHistory]:
     """
     Get chat history for a thread and agent.
 
@@ -433,7 +493,7 @@ async def history(
             state_snapshot = await agent.aget_state(config=config)
             messages = state_snapshot.values["messages"]
         chat_messages: list[ChatMessage] = [langchain_to_chat_message(m) for m in messages]
-        return ChatHistory(messages=chat_messages)
+        return api_success(ChatHistory(messages=chat_messages))
     except Exception as e:
         logger.error(f"An exception occurred: {e}")
         raise HTTPException(status_code=500, detail="Unexpected error")
@@ -443,7 +503,7 @@ async def history(
 @router.get("/threads")
 async def threads(
     request: Request, input: UserThreadsInput = Depends(), agent_id: str = DEFAULT_AGENT
-) -> UserThreads:
+) -> ApiResponse[UserThreads]:
     """
     List a user's conversation threads for an agent, most recently updated first.
 
@@ -454,7 +514,7 @@ async def threads(
     agent: AgentGraph = get_agent(agent_id)
     checkpointer = getattr(agent, "checkpointer", None)
     if not checkpointer:
-        return UserThreads(threads=[])
+        return api_success(UserThreads(threads=[]))
 
     try:
         summaries = await list_user_threads(checkpointer, input.user_id, agent_id, input.limit)
@@ -462,11 +522,11 @@ async def threads(
         logger.error(f"An exception occurred: {e}")
         raise HTTPException(status_code=500, detail="Unexpected error")
 
-    return UserThreads(threads=summaries)
+    return api_success(UserThreads(threads=summaries))
 
 
-@app.get("/health")
-async def health_check():
+@app.get("/health", response_model=ApiResponse[dict[str, str]])
+async def health_check() -> ApiResponse[dict[str, str]]:
     """Health check endpoint."""
 
     health_status = {"status": "ok"}
@@ -479,7 +539,7 @@ async def health_check():
             logger.error(f"Langfuse connection error: {e}")
             health_status["langfuse"] = "disconnected"
 
-    return health_status
+    return api_success(health_status)
 
 
 app.include_router(auth_router)

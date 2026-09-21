@@ -159,7 +159,7 @@ def voice_env(monkeypatch):
             headers={"Authorization": "Bearer test-admin-secret"},
         )
         assert response.status_code == 200
-        return {"Authorization": f"Bearer {response.json()['access_token']}"}
+        return {"Authorization": f"Bearer {response.json()['data']['access_token']}"}
 
     yield client, repo, agents, headers
     client.close()
@@ -167,8 +167,8 @@ def voice_env(monkeypatch):
 
 def create(client, headers, **body):
     response = client.post("/voice/sessions", headers=headers, json=body)
-    assert response.status_code == 201, response.text
-    return response.json()
+    assert response.status_code == 200, response.text
+    return response.json()["data"]
 
 
 def event(ws, kind, **data):
@@ -232,7 +232,7 @@ def test_voice_roundtrip_streams_and_persists(voice_env):
         "/chatbot/history", json={"thread_id": session["thread_id"]}, headers=auth
     )
     assert history.status_code == 200
-    assert [m["type"] for m in history.json()["messages"]] == ["human", "ai"]
+    assert [m["type"] for m in history.json()["data"]["messages"]] == ["human", "ai"]
 
 
 def test_tokens_bind_user_and_protect_every_thread_entry(voice_env):
@@ -250,7 +250,7 @@ def test_tokens_bind_user_and_protect_every_thread_entry(voice_env):
         client.get("/chatbot/threads", params={"user_id": "alice"}, headers=bob).status_code == 403
     )
     assert client.post("/auth/token", headers=bob, json={"user_id": "alice"}).status_code == 403
-    run = client.post("/chatbot/invoke", headers=alice, json={"message": "hello"}).json()
+    run = client.post("/chatbot/invoke", headers=alice, json={"message": "hello"}).json()["data"]
     assert (
         client.post(
             "/feedback",
@@ -309,7 +309,7 @@ def test_cancel_invalidates_audio_and_recovers_functional_history(voice_env):
     assert turns[0].interrupted and turns[0].execution_status == "cancelled"
     history = client.post(
         "/chatbot/history", headers=auth, json={"thread_id": session["thread_id"]}
-    ).json()
+    ).json()["data"]
     contents = [m["content"] for m in history["messages"]]
     assert "第一个问题" in contents and "第二个问题" in contents
     assert any("第一句话。" in c and "语音播放记录" in c for c in contents)

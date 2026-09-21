@@ -128,7 +128,7 @@ def streamed_messages(events: list[dict[str, Any]]) -> list[tuple[str, Any]]:
 async def history_of(client: httpx.AsyncClient, path: str, thread_id: str) -> list[tuple[str, str]]:
     response = await client.post(path, json={"thread_id": thread_id})
     assert response.status_code == 200
-    return [(m["type"], m["content"]) for m in response.json()["messages"]]
+    return [(m["type"], m["content"]) for m in response.json()["data"]["messages"]]
 
 
 @pytest.mark.asyncio
@@ -140,7 +140,7 @@ async def test_invoke_resumes_an_interrupted_thread(checkpointer) -> None:
             "/interrupt-graph/invoke", json={"message": "hi", "thread_id": "t"}
         )
         assert first.status_code == 200
-        assert (first.json()["type"], first.json()["content"]) == (
+        assert (first.json()["data"]["type"], first.json()["data"]["content"]) == (
             "ai",
             "What is your favorite color?",
         )
@@ -149,7 +149,7 @@ async def test_invoke_resumes_an_interrupted_thread(checkpointer) -> None:
             "/interrupt-graph/invoke", json={"message": "blue", "thread_id": "t"}
         )
         assert second.status_code == 200
-        assert (second.json()["type"], second.json()["content"]) == (
+        assert (second.json()["data"]["type"], second.json()["data"]["content"]) == (
             "ai",
             "Your favorite color is blue",
         )
@@ -195,7 +195,7 @@ async def test_invoke_accumulates_state_across_turns(checkpointer) -> None:
                 "/counting-agent/invoke", json={"message": message, "thread_id": "t"}
             )
             assert response.status_code == 200
-            contents.append(response.json()["content"])
+            contents.append(response.json()["data"]["content"])
 
         assert contents == ["heard 1 messages", "heard 3 messages"]
         assert await history_of(client, "/counting-agent/history", "t") == [
@@ -215,7 +215,10 @@ async def test_invoke_returns_only_the_final_message() -> None:
             "/two-step-agent/invoke", json={"message": "hi", "thread_id": "t"}
         )
         assert response.status_code == 200
-        assert (response.json()["type"], response.json()["content"]) == ("ai", "all done")
+        assert (response.json()["data"]["type"], response.json()["data"]["content"]) == (
+            "ai",
+            "all done",
+        )
 
         assert await history_of(client, "/two-step-agent/history", "t") == [
             ("human", "hi"),

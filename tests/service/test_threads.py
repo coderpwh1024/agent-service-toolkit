@@ -108,7 +108,11 @@ def test_threads_without_checkpointer_returns_empty(test_client, mock_agent) -> 
     response = test_client.get("/threads", params={"user_id": "user-123", "limit": 10})
 
     assert response.status_code == 200
-    assert response.json() == {"threads": []}
+    assert response.json() == {
+        "code": 200,
+        "message": "success",
+        "data": {"threads": []},
+    }
 
 
 def test_threads_filters_by_agent_id(test_client) -> None:
@@ -139,7 +143,7 @@ def test_threads_filters_by_agent_id(test_client) -> None:
         response = test_client.get("/custom-agent/threads", params={"user_id": "user-123"})
 
     assert response.status_code == 200
-    payload = response.json()
+    payload = response.json()["data"]
     assert [thread["thread_id"] for thread in payload["threads"]] == ["thread-mine"]
     assert checkpointer.alist_filters == [
         {"user_id": "user-123", "agent_id": "custom-agent", "step": -1}
@@ -155,6 +159,8 @@ def test_threads_rejects_out_of_range_limit(test_client, mock_agent, limit: int)
     response = test_client.get("/threads", params={"user_id": "user-123", "limit": limit})
 
     assert response.status_code == 422
+    assert response.json()["code"] == 422
+    assert response.json()["message"] == "Validation error"
 
 
 def test_threads_skips_checkpoints_with_mismatched_metadata(test_client, mock_agent) -> None:
@@ -175,7 +181,7 @@ def test_threads_skips_checkpoints_with_mismatched_metadata(test_client, mock_ag
     response = test_client.get("/threads", params={"user_id": "user-123", "limit": 10})
 
     assert response.status_code == 200
-    assert [t["thread_id"] for t in response.json()["threads"]] == ["thread-mine"]
+    assert [t["thread_id"] for t in response.json()["data"]["threads"]] == ["thread-mine"]
 
 
 def test_threads_pages_past_subgraph_heads(test_client, mock_agent) -> None:
@@ -193,7 +199,7 @@ def test_threads_pages_past_subgraph_heads(test_client, mock_agent) -> None:
         response = test_client.get("/threads", params={"user_id": "user-123", "limit": 30})
 
     assert response.status_code == 200
-    threads = response.json()["threads"]
+    threads = response.json()["data"]["threads"]
     assert len(threads) == 30
     assert threads[0]["thread_id"] == "thread-29"
 
@@ -213,7 +219,7 @@ def test_threads_bounds_total_rows_scanned(test_client, mock_agent) -> None:
 
     assert response.status_code == 200
     assert len(checkpointer.alist_filters) == 5
-    assert len(response.json()["threads"]) == 10
+    assert len(response.json()["data"]["threads"]) == 10
 
 
 def test_threads_tolerates_missing_timestamp(test_client, mock_agent) -> None:
@@ -225,7 +231,7 @@ def test_threads_tolerates_missing_timestamp(test_client, mock_agent) -> None:
     response = test_client.get("/threads", params={"user_id": "user-123", "limit": 10})
 
     assert response.status_code == 200
-    payload = response.json()
+    payload = response.json()["data"]
     assert payload["threads"][0]["thread_id"] == "thread-no-ts"
     assert payload["threads"][0]["updated_at"] is None
 
@@ -240,3 +246,8 @@ def test_threads_checkpointer_error_returns_500(test_client, mock_agent) -> None
 
     response = test_client.get("/threads", params={"user_id": "user-123", "limit": 10})
     assert response.status_code == 500
+    assert response.json() == {
+        "code": 500,
+        "message": "Unexpected error",
+        "data": None,
+    }

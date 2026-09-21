@@ -288,11 +288,15 @@ def test_email_auth_routes_and_strict_input_validation(auth_components):
 
     assert invalid.status_code == 422
     assert removed_fields.status_code == 422
-    assert requested.status_code == 202
-    assert requested.json() == {"expires_in_seconds": 180}
+    assert requested.status_code == 200
+    assert requested.json() == {
+        "code": 200,
+        "message": "success",
+        "data": {"expires_in_seconds": 180},
+    }
     assert invalid_code.status_code == 422
     assert verified.status_code == 200
-    assert verified.json()["is_new_user"] is True
+    assert verified.json()["data"]["is_new_user"] is True
 
 
 def test_email_auth_route_is_unavailable_when_disabled():
@@ -306,3 +310,40 @@ def test_email_auth_route_is_unavailable_when_disabled():
         )
 
     assert response.status_code == 503
+
+
+@pytest.mark.parametrize(
+    ("error", "expected_status", "expected_retry_after"),
+    [
+        (EmailRateLimitError(123), 429, "123"),
+        (email_auth.EmailDeliveryError(), 502, None),
+        (email_auth.RedisError(), 503, None),
+    ],
+)
+def test_email_code_route_maps_known_errors(
+    error: Exception,
+    expected_status: int,
+    expected_retry_after: str | None,
+) -> None:
+    service = SimpleNamespace(request_code=AsyncMock(side_effect=error))
+    app = FastAPI()
+    app.state.email_auth_service = service
+    app.include_router(router)
+
+    with TestClient(app) as client:
+        response = client.post("/auth/email/code", json={"email": "user@example.com"})
+
+    assert response.status_code == expected_status
+    assert response.headers.get("Retry-After") == expected_retry_after
+
+
+def test_email_code_route_returns_500_for_unhandled_errors() -> None:
+    service = SimpleNamespace(request_code=AsyncMock(side_effect=RuntimeError("unexpected")))
+    app = FastAPI()
+    app.state.email_auth_service = service
+    app.include_router(router)
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        response = client.post("/auth/email/code", json={"email": "user@example.com"})
+
+    assert response.status_code == 500

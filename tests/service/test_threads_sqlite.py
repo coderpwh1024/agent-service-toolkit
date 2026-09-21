@@ -105,7 +105,7 @@ async def test_threads_lists_single_and_multi_turn_threads(seeded) -> None:
     response = await seeded.get("/graph-agent/threads", params={"user_id": "alice"})
 
     assert response.status_code == 200
-    threads = response.json()["threads"]
+    threads = response.json()["data"]["threads"]
     assert [t["thread_id"] for t in threads] == ["g-alice-multi", "g-alice-single"]
     assert [t["title"] for t in threads] == ["first turn", "only turn"]
     assert all(t["updated_at"] for t in threads)
@@ -116,7 +116,7 @@ async def test_threads_isolates_users_and_agents(seeded) -> None:
     async def thread_ids(agent_id: str, user_id: str) -> list[str]:
         response = await seeded.get(f"/{agent_id}/threads", params={"user_id": user_id})
         assert response.status_code == 200
-        return sorted(t["thread_id"] for t in response.json()["threads"])
+        return sorted(t["thread_id"] for t in response.json()["data"]["threads"])
 
     assert await thread_ids("graph-agent", "alice") == ["g-alice-multi", "g-alice-single"]
     assert await thread_ids("graph-agent", "bob") == ["g-bob-single"]
@@ -131,7 +131,7 @@ async def test_threads_titles_functional_api_agent(seeded) -> None:
     response = await seeded.get("/functional-agent/threads", params={"user_id": "alice"})
 
     assert response.status_code == 200
-    threads = response.json()["threads"]
+    threads = response.json()["data"]["threads"]
     assert [t["thread_id"] for t in threads] == ["f-alice-multi", "f-alice-single"]
     assert [t["title"] for t in threads] == ["fn first turn", "fn only turn"]
 
@@ -155,7 +155,7 @@ async def test_threads_lists_subgraph_threads_once(seeded) -> None:
         response = await seeded.get("/subgraph-agent/threads", params={"user_id": "alice"})
 
     assert response.status_code == 200
-    threads = response.json()["threads"]
+    threads = response.json()["data"]["threads"]
     assert [t["thread_id"] for t in threads] == ["s-alice-multi", "s-alice-single"]
     assert [t["title"] for t in threads] == ["sub first turn", "sub only turn"]
     assert sorted(tip_lookups) == ["s-alice-multi", "s-alice-single"]
@@ -165,7 +165,7 @@ async def test_threads_lists_subgraph_threads_once(seeded) -> None:
 async def test_threads_orders_by_most_recent_update(seeded) -> None:
     """A reply to the oldest thread should move it to the top of the list."""
     before = await seeded.get("/graph-agent/threads", params={"user_id": "alice"})
-    assert before.json()["threads"][-1]["thread_id"] == "g-alice-single"
+    assert before.json()["data"]["threads"][-1]["thread_id"] == "g-alice-single"
 
     response = await seeded.post(
         "/graph-agent/invoke",
@@ -174,7 +174,7 @@ async def test_threads_orders_by_most_recent_update(seeded) -> None:
     assert response.status_code == 200
 
     after = await seeded.get("/graph-agent/threads", params={"user_id": "alice"})
-    assert [t["thread_id"] for t in after.json()["threads"]] == [
+    assert [t["thread_id"] for t in after.json()["data"]["threads"]] == [
         "g-alice-single",
         "g-alice-multi",
     ]
@@ -185,7 +185,7 @@ async def test_threads_respects_limit(seeded) -> None:
     response = await seeded.get("/graph-agent/threads", params={"user_id": "alice", "limit": 1})
 
     assert response.status_code == 200
-    assert [t["thread_id"] for t in response.json()["threads"]] == ["g-alice-multi"]
+    assert [t["thread_id"] for t in response.json()["data"]["threads"]] == ["g-alice-multi"]
 
 
 @pytest.mark.asyncio
@@ -205,7 +205,7 @@ async def test_agui_runs_are_listed_by_threads(seeded) -> None:
     )
     assert response.status_code == 200
 
-    threads = (await seeded.get("/graph-agent/threads", params={"user_id": "alice"})).json()
+    threads = (await seeded.get("/graph-agent/threads", params={"user_id": "alice"})).json()["data"]
     listed = {t["thread_id"]: t for t in threads["threads"]}
     assert "agui-thread" in listed
     assert listed["agui-thread"]["title"] == "from ag-ui"
@@ -220,6 +220,6 @@ async def test_history_returns_full_conversation(seeded) -> None:
     ]:
         response = await seeded.post(f"/{agent_id}/history", json={"thread_id": thread_id})
         assert response.status_code == 200
-        messages = response.json()["messages"]
+        messages = response.json()["data"]["messages"]
         assert [m["type"] for m in messages] == ["human", "ai"] * turns
         assert messages[0]["content"] == first

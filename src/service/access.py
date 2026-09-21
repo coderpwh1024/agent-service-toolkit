@@ -12,6 +12,7 @@ from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field, SecretStr
 
 from core import settings
+from schema import ApiResponse, api_success
 from voice.persistence import VoiceRepository
 
 router = APIRouter(prefix="/auth")
@@ -141,11 +142,11 @@ def create_access_token(user_id: str, config: Any = settings) -> tuple[str, int]
     return token, int(expiry.timestamp())
 
 
-@router.post("/token")
-async def issue_token(body: TokenInput, request: Request) -> dict[str, Any]:
+@router.post("/token", response_model=ApiResponse[dict[str, Any]])
+async def issue_token(body: TokenInput, request: Request) -> ApiResponse[dict[str, Any]]:
     if not settings.AUTH_SECRET or not settings.APP_TOKEN_SECRET:
         raise HTTPException(503, "AUTH_SECRET and APP_TOKEN_SECRET must be configured")
     if not principal(request).admin:
         raise HTTPException(403, "Only a trusted service can provision app tokens")
     token, expires_at = create_access_token(body.user_id)
-    return {"access_token": token, "token_type": "bearer", "expires_at": expires_at}
+    return api_success({"access_token": token, "token_type": "bearer", "expires_at": expires_at})

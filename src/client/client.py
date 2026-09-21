@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from schema import (
+    ApiResponse,
     ChatHistory,
     ChatHistoryInput,
     ChatMessage,
@@ -20,6 +21,21 @@ from schema import (
 
 class AgentClientError(Exception):
     pass
+
+
+def _response_data(response: httpx.Response) -> Any:
+    try:
+        payload = response.json()
+    except (TypeError, ValueError) as exc:
+        raise AgentClientError("Server returned an invalid response envelope") from exc
+    if not isinstance(payload, dict) or not {"code", "message", "data"}.issubset(payload):
+        return payload
+    envelope = ApiResponse[Any].model_validate(payload)
+    if envelope.code != response.status_code:
+        raise AgentClientError(
+            f"Response code mismatch: HTTP {response.status_code}, body {envelope.code}"
+        )
+    return envelope.data
 
 
 class AgentClient:
@@ -70,7 +86,7 @@ class AgentClient:
         except httpx.HTTPError as e:
             raise AgentClientError(f"Error getting service info: {e}")
 
-        self.info = ServiceMetadata.model_validate(response.json())
+        self.info = ServiceMetadata.model_validate(_response_data(response))
         if not self.agent or self.agent not in [a.key for a in self.info.agents]:
             self.agent = self.info.default_agent
 
@@ -129,7 +145,7 @@ class AgentClient:
             except httpx.HTTPError as e:
                 raise AgentClientError(f"Error: {e}")
 
-        return ChatMessage.model_validate(response.json())
+        return ChatMessage.model_validate(_response_data(response))
 
     def invoke(
         self,
@@ -174,7 +190,7 @@ class AgentClient:
         except httpx.HTTPError as e:
             raise AgentClientError(f"Error: {e}")
 
-        return ChatMessage.model_validate(response.json())
+        return ChatMessage.model_validate(_response_data(response))
 
     def _parse_stream_line(self, line: str) -> ChatMessage | str | None:
         line = line.strip()
@@ -338,7 +354,7 @@ class AgentClient:
                     timeout=self.timeout,
                 )
                 response.raise_for_status()
-                response.json()
+                _response_data(response)
             except httpx.HTTPError as e:
                 raise AgentClientError(f"Error: {e}")
 
@@ -364,7 +380,7 @@ class AgentClient:
         except httpx.HTTPError as e:
             raise AgentClientError(f"Error: {e}")
 
-        return ChatHistory.model_validate(response.json())
+        return ChatHistory.model_validate(_response_data(response))
 
     def _user_threads_request(
         self, user_id: str, agent: str | None, limit: int
@@ -396,7 +412,7 @@ class AgentClient:
         except httpx.HTTPError as e:
             raise AgentClientError(f"Error: {e}")
 
-        return UserThreads.model_validate(response.json())
+        return UserThreads.model_validate(_response_data(response))
 
     async def aget_user_threads(
         self, user_id: str, agent: str | None = None, limit: int = 20
@@ -422,4 +438,4 @@ class AgentClient:
             except httpx.HTTPError as e:
                 raise AgentClientError(f"Error: {e}")
 
-        return UserThreads.model_validate(response.json())
+        return UserThreads.model_validate(_response_data(response))
