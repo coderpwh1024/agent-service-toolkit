@@ -186,6 +186,100 @@ SMTP_USE_SSL: true
     assert config.SMTP_USE_SSL is True
 
 
+def test_spring_style_mail_settings_are_mapped_to_smtp_settings() -> None:
+    config = make_settings()
+
+    updated = nacos.apply_remote_settings(
+        config,
+        """mail:
+  host: smtp.example.com
+  port: 465
+  username: mailer@example.com
+  password: remote-password
+  default-encoding: UTF-8
+  properties:
+    mail:
+      smtp:
+        ssl:
+          enable: true
+        socketFactory:
+          fallback: false
+          class: com.example.MailSocketFactory
+""",
+    )
+
+    assert updated == [
+        "SMTP_FROM_EMAIL",
+        "SMTP_HOST",
+        "SMTP_PASSWORD",
+        "SMTP_PORT",
+        "SMTP_USERNAME",
+        "SMTP_USE_SSL",
+        "SMTP_USE_TLS",
+    ]
+    assert config.SMTP_HOST == "smtp.example.com"
+    assert config.SMTP_PORT == 465
+    assert config.SMTP_USERNAME == "mailer@example.com"
+    assert config.SMTP_PASSWORD == SecretStr("remote-password")
+    assert str(config.SMTP_FROM_EMAIL) == "mailer@example.com"
+    assert config.SMTP_USE_TLS is False
+    assert config.SMTP_USE_SSL is True
+
+
+def test_spring_mail_wrapper_and_starttls_are_supported() -> None:
+    config = make_settings()
+
+    nacos.apply_remote_settings(
+        config,
+        """spring:
+  mail:
+    host: smtp.example.com
+    port: 587
+    username: mailer@example.com
+    password: remote-password
+    properties:
+      mail:
+        smtp:
+          starttls:
+            required: true
+""",
+    )
+
+    assert config.SMTP_USE_TLS is True
+    assert config.SMTP_USE_SSL is False
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("mail:\n  unknown: value\n", "Unknown Nacos mail settings"),
+        (
+            "mail:\n  default-encoding: GBK\n",
+            "mail.default-encoding must be UTF-8",
+        ),
+        (
+            "mail:\n  host: nested\nSMTP_HOST: flat\n",
+            "conflicts with SMTP_HOST",
+        ),
+        (
+            """mail:
+  properties:
+    mail:
+      smtp:
+        ssl:
+          enable: true
+        starttls:
+          enable: true
+""",
+            "SSL and STARTTLS cannot both be enabled",
+        ),
+    ],
+)
+def test_spring_style_mail_settings_reject_invalid_payloads(content: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        nacos.apply_remote_settings(make_settings(), content)
+
+
 def test_remote_storage_config_overrides_local_values() -> None:
     config = make_settings(
         REDIS_URL="redis://local:6379/0",

@@ -36,10 +36,136 @@ _REMOTE_STORAGE_FIELDS = {
     "POSTGRES_USER",
     "REDIS_URL",
 }
+_MAIL_FIELDS = {
+    "host": "SMTP_HOST",
+    "password": "SMTP_PASSWORD",
+    "port": "SMTP_PORT",
+    "username": "SMTP_USERNAME",
+}
+_MISSING = object()
 
 
 def _settings_values(config: Settings) -> dict[str, Any]:
     return {name: getattr(config, name) for name in type(config).model_fields}
+
+
+def _require_mapping(value: Any, path: str) -> dict[str, Any]:
+    if not isinstance(value, dict) or any(not isinstance(name, str) for name in value):
+        raise ValueError(f"Nacos {path} must be a YAML mapping with string keys")
+    return value
+
+
+def _require_boolean(value: Any, path: str) -> bool:
+    if not isinstance(value, bool):
+        raise ValueError(f"Nacos {path} must be a boolean")
+    return value
+
+
+def _reject_unknown_fields(value: dict[str, Any], allowed: set[str], path: str) -> None:
+    unknown = set(value) - allowed
+    if unknown:
+        raise ValueError(f"Unknown Nacos {path} settings: {', '.join(sorted(unknown))}")
+
+
+def _mail_transport_settings(mail: dict[str, Any]) -> dict[str, Any]:
+    properties = _require_mapping(mail.get("properties", {}), "mail.properties")
+    _reject_unknown_fields(properties, {"mail"}, "mail.properties")
+    mail_properties = _require_mapping(properties.get("mail", {}), "mail.properties.mail")
+    _reject_unknown_fields(mail_properties, {"smtp"}, "mail.properties.mail")
+    smtp = _require_mapping(mail_properties.get("smtp", {}), "mail.properties.mail.smtp")
+    _reject_unknown_fields(
+        smtp,
+        {"auth", "socketFactory", "ssl", "starttls"},
+        "mail.properties.mail.smtp",
+    )
+
+    if "auth" in smtp:
+        _require_boolean(smtp["auth"], "mail.properties.mail.smtp.auth")
+
+    ssl_settings = _require_mapping(smtp.get("ssl", {}), "mail.properties.mail.smtp.ssl")
+    _reject_unknown_fields(ssl_settings, {"enable"}, "mail.properties.mail.smtp.ssl")
+    starttls_settings = _require_mapping(
+        smtp.get("starttls", {}), "mail.properties.mail.smtp.starttls"
+    )
+    _reject_unknown_fields(
+        starttls_settings,
+        {"enable", "required"},
+        "mail.properties.mail.smtp.starttls",
+    )
+    socket_factory = _require_mapping(
+        smtp.get("socketFactory", {}), "mail.properties.mail.smtp.socketFactory"
+    )
+    _reject_unknown_fields(
+        socket_factory,
+        {"class", "fallback", "port"},
+        "mail.properties.mail.smtp.socketFactory",
+    )
+    if "fallback" in socket_factory:
+        _require_boolean(
+            socket_factory["fallback"],
+            "mail.properties.mail.smtp.socketFactory.fallback",
+        )
+
+    ssl_enabled = None
+    if "enable" in ssl_settings:
+        ssl_enabled = _require_boolean(
+            ssl_settings["enable"], "mail.properties.mail.smtp.ssl.enable"
+        )
+    starttls_enabled = None
+    if "enable" in starttls_settings:
+        starttls_enabled = _require_boolean(
+            starttls_settings["enable"], "mail.properties.mail.smtp.starttls.enable"
+        )
+    if "required" in starttls_settings:
+        required = _require_boolean(
+            starttls_settings["required"], "mail.properties.mail.smtp.starttls.required"
+        )
+        if required and starttls_enabled is False:
+            raise ValueError("Nacos mail STARTTLS cannot be required when it is disabled")
+        if required and starttls_enabled is None:
+            starttls_enabled = True
+
+    if ssl_enabled and starttls_enabled:
+        raise ValueError("Nacos mail SSL and STARTTLS cannot both be enabled")
+    if ssl_enabled is None and starttls_enabled is None:
+        return {}
+    return {
+        "SMTP_USE_SSL": ssl_enabled or False,
+        "SMTP_USE_TLS": starttls_enabled or False,
+    }
+
+
+def _normalize_mail_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    mail_value = normalized.pop("mail", _MISSING)
+    if "spring" in normalized:
+        spring = _require_mapping(normalized.pop("spring"), "spring")
+        _reject_unknown_fields(spring, {"mail"}, "spring")
+        if mail_value is not _MISSING:
+            raise ValueError("Nacos configuration cannot contain both mail and spring.mail")
+        if "mail" not in spring:
+            raise ValueError("Nacos spring configuration must contain mail")
+        mail_value = spring["mail"]
+    if mail_value is _MISSING:
+        return normalized
+
+    mail = _require_mapping(mail_value, "mail")
+    _reject_unknown_fields(mail, set(_MAIL_FIELDS) | {"default-encoding", "properties"}, "mail")
+    encoding = mail.get("default-encoding")
+    if encoding is not None and (
+        not isinstance(encoding, str) or encoding.lower().replace("-", "") != "utf8"
+    ):
+        raise ValueError("Nacos mail.default-encoding must be UTF-8")
+
+    mapped = {setting: mail[name] for name, setting in _MAIL_FIELDS.items() if name in mail}
+    mapped.update(_mail_transport_settings(mail))
+    for name, value in mapped.items():
+        if name in normalized and normalized[name] != value:
+            raise ValueError(f"Nacos mail configuration conflicts with {name}")
+        normalized[name] = value
+    if "SMTP_FROM_EMAIL" not in normalized and "username" in mail:
+        normalized["SMTP_FROM_EMAIL"] = mail["username"]
+    return normalized
 
 
 def apply_remote_settings(
@@ -58,6 +184,7 @@ def apply_remote_settings(
         raise ValueError("Nacos configuration must be a YAML mapping")
     if any(not isinstance(name, str) for name in payload):
         raise ValueError("Nacos configuration keys must be strings")
+    payload = _normalize_mail_settings(payload)
 
     missing = (required_fields or set()) - set(payload)
     if missing:
