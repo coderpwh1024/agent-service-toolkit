@@ -156,6 +156,18 @@ docker compose watch
 
 此代码仓库包含一个通用的 `src/client/client.AgentClient`，可用于与智能体服务交互。该客户端设计灵活，可用于在智能体之上构建其他应用。它同时支持同步和异步调用，以及流式和非流式请求。
 
+除流式和事件协议外，HTTP 业务接口统一返回 `code`、`message`、`data`：
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {}
+}
+```
+
+HTTP 状态码与响应体中的 `code` 保持一致。成功默认使用 200；未处理异常默认使用 500；参数校验、认证、限流等已知异常保留各自的 HTTP 状态码。`/stream`、`/{agent_id}/stream` 使用 SSE，`/agui/*` 使用 AG-UI 协议，`/voice/sessions/{session_id}/ws` 使用 WebSocket 事件协议，因此不套用该 JSON 封装。FastAPI 自带的 `/docs`、`/redoc` 和 `/openapi.json` 也保持框架原有格式。
+
 有关如何使用 `AgentClient` 的完整示例，请参阅 `src/run_client.py` 文件。下面是一个简短示例：
 
 ```python
@@ -244,6 +256,31 @@ SMTP_FROM_EMAIL: mailer@example.com
 SMTP_USE_TLS: false
 SMTP_USE_SSL: true
 ```
+
+也兼容已有 Java/Spring 风格的 `mail`（或 `spring.mail`）节点，例如：
+
+```yaml
+mail:
+  host: smtp.example.com
+  port: 465
+  username: mailer@example.com
+  password: replace-with-smtp-client-password
+  default-encoding: UTF-8
+  properties:
+    mail:
+      smtp:
+        ssl:
+          enable: true
+        socketFactory:
+          fallback: false
+          class: com.example.MailSocketFactory
+```
+
+`host`、`port`、`username` 和 `password` 会映射为对应的 `SMTP_*` 设置；未单独提供
+`SMTP_FROM_EMAIL` 时使用 `username`。`ssl.enable=true` 会启用 465 常用的隐式 SSL 并关闭
+STARTTLS；也支持 `starttls.enable`/`starttls.required`。`socketFactory` 是 Java 专属设置，加载时
+仅做兼容性校验，Python SMTP 不会使用其中的类名。当前邮件模板固定使用 UTF-8，因此其他
+`default-encoding` 值会被拒绝。
 
 远程配置会在 PostgreSQL、Redis、邮箱认证、智能体和其他服务资源初始化前加载。当 `NACOS_STORAGE_CONFIG_REQUIRED=true` 时，Redis/PostgreSQL 六个存储字段任一缺失、内容为空、类型错误或 Nacos 不可用都会导致启动失败，不会回退到 `.env` 或代码默认值。启用邮箱认证时，`APP_TOKEN_SECRET` 以及完整的 `SMTP_*` 字段也必须存在且有效。远程值会覆盖本地环境中的同名设置，因此数据库连接池、RAG、邮件认证和检查点存储均使用 Nacos 配置。
 

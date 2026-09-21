@@ -17,7 +17,7 @@ PostgreSQL 是必需依赖。服务启动时会幂等创建 `app_thread_owners`�
 
 百炼上游默认直连，不继承操作系统代理。确实需要 HTTP 代理时显式配置 `VOICE_REALTIME_PROXY`；SOCKS 代理还需在部署镜像中安装 `websockets` 所需的 SOCKS 可选依赖。
 
-移动 App 通过 `POST /auth/email/code` 和 `POST /auth/email/verify` 完成邮箱验证码登录，详见[账号与认证说明](Accounts_and_Credentials.md)。验证成功后直接返回用户短期令牌。兼容的可信后台也可以配置 `AUTH_SECRET`，在自行验证用户后调用：
+移动 App 通过 `POST /auth/email/code` 和 `POST /auth/email/verify` 完成邮箱验证码登录，详见[账号与认证说明](Accounts_and_Credentials.md)。验证成功后，用户短期令牌位于统一响应的 `data.access_token`。兼容的可信后台也可以配置 `AUTH_SECRET`，在自行验证用户后调用：
 
 ```http
 POST /auth/token
@@ -27,7 +27,7 @@ Content-Type: application/json
 {"user_id":"user-123"}
 ```
 
-返回的 `access_token` 是带 `sub`、`exp`、`aud` 和 `iss` 的短期 HS256 JWT。Flutter 后续 HTTP 和 WebSocket 握手都使用 `Authorization: Bearer <access_token>`。Token 用户不能读取其他用户的线程、语音会话、运行或反馈记录。
+返回的 `data.access_token` 是带 `sub`、`exp`、`aud` 和 `iss` 的短期 HS256 JWT。Flutter 后续 HTTP 和 WebSocket 握手都使用 `Authorization: Bearer <access_token>`。Token 用户不能读取其他用户的线程、语音会话、运行或反馈记录。
 
 ## HTTP 接口
 
@@ -39,6 +39,8 @@ Content-Type: application/json
 | `GET /voice/sessions/{session_id}` | 查询会话及重连状态 |
 | `GET /voice/sessions/{session_id}/turns` | 查询该语音会话的轮次和播放记录 |
 | `DELETE /voice/sessions/{session_id}` | 幂等关闭会话，不删除聊天历史 |
+
+这些 HTTP 接口统一返回 `code`、`message`、`data`，成功时 HTTP 状态码和 `code` 均为 200。后续示例中的业务字段均位于 `data`。WebSocket 消息是独立事件协议，不使用该封装。
 
 创建会话示例：
 
@@ -52,7 +54,7 @@ Content-Type: application/json
 }
 ```
 
-响应包含 `session_id`、最终采用的 `thread_id`、过期时间和协议版本。默认每个用户最多有两个未过期会话；整个进程的 WebSocket 容量由 `VOICE_MAX_SESSIONS` 限制。
+响应的 `data` 包含 `session_id`、最终采用的 `thread_id`、过期时间和协议版本。默认每个用户最多有两个未过期会话；整个进程的 WebSocket 容量由 `VOICE_MAX_SESSIONS` 限制。
 
 ## 建立 WebSocket
 
