@@ -1,4 +1,5 @@
-from unittest.mock import AsyncMock
+import os
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import SecretStr
@@ -22,6 +23,166 @@ def test_apply_remote_settings_validates_and_updates_shared_settings() -> None:
     assert updated == ["RAG_COLLECTION_NAME", "RAG_TOP_K"]
     assert config.RAG_TOP_K == 9
     assert config.RAG_COLLECTION_NAME == "nacos-collection"
+
+
+def test_nacos_bootstrap_loads_model_provider_from_remote_config() -> None:
+    with patch.dict(os.environ, {}, clear=True):
+        config = Settings(
+            _env_file=None,
+            NACOS_ENABLED=True,
+            NACOS_CONFIG_DATA_ID="agent-service-toolkit.yaml",
+        )
+
+    nacos.apply_remote_settings(config, "DASHSCOPE_API_KEY: remote-key\n")
+
+    assert config.DASHSCOPE_API_KEY == SecretStr("remote-key")
+    assert config.AVAILABLE_MODELS
+
+
+def test_nacos_remote_config_must_resolve_model_provider() -> None:
+    with patch.dict(os.environ, {}, clear=True):
+        config = Settings(
+            _env_file=None,
+            NACOS_ENABLED=True,
+            NACOS_CONFIG_DATA_ID="agent-service-toolkit.yaml",
+        )
+
+    with pytest.raises(ValueError, match="At least one LLM API key must be provided"):
+        nacos.apply_remote_settings(config, "RAG_TOP_K: 7\n")
+
+
+def test_nested_nacos_config_maps_sections_to_settings() -> None:
+    config = make_settings()
+
+    updated = nacos.apply_remote_settings(
+        config,
+        """models:
+  dashscope:
+    api_key: remote-key
+authentication:
+  email:
+    enabled: true
+storage:
+  redis:
+    url: redis://remote:6379/0
+voice:
+  enabled: true
+  realtime:
+    voices:
+      - Cherry
+  session:
+    max_sessions: 12
+  vad:
+    silence_ms: 750
+rag:
+  top_k: 9
+""",
+    )
+
+    assert updated == [
+        "DASHSCOPE_API_KEY",
+        "EMAIL_AUTH_ENABLED",
+        "RAG_TOP_K",
+        "REDIS_URL",
+        "VOICE_ENABLED",
+        "VOICE_MAX_SESSIONS",
+        "VOICE_REALTIME_VOICES",
+        "VOICE_VAD_SILENCE_MS",
+    ]
+    assert config.DASHSCOPE_API_KEY == SecretStr("remote-key")
+    assert config.EMAIL_AUTH_ENABLED is True
+    assert config.REDIS_URL == SecretStr("redis://remote:6379/0")
+    assert config.VOICE_ENABLED is True
+    assert config.VOICE_REALTIME_VOICES == ["Cherry"]
+    assert config.VOICE_MAX_SESSIONS == 12
+    assert config.VOICE_VAD_SILENCE_MS == 750
+    assert config.RAG_TOP_K == 9
+
+
+def test_complete_nested_nacos_yaml_is_accepted() -> None:
+    config = make_settings()
+
+    updated = nacos.apply_remote_settings(
+        config,
+        """models:
+  dashscope:
+    api_key: remote-key
+    base_url: https://dashscope.example.com/v1
+    embedding_model: embedding-model
+authentication:
+  admin_secret: remote-admin-secret
+  service_account_id: 0
+  app_token:
+    secret: remote-app-token-secret-at-least-32-characters
+    ttl_seconds: 3600
+  email:
+    enabled: true
+    smtp:
+      host: smtp.example.com
+      port: 465
+      username: mailer@example.com
+      password: remote-password
+      from_email: mailer@example.com
+      use_tls: false
+      use_ssl: true
+storage:
+  database_type: postgres
+  redis:
+    url: redis://remote:6379/0
+  postgres:
+    user: remote-user
+    password: remote-password
+    host: remote-postgres
+    port: 5432
+    database: agent_service
+    application_name: agent-service-toolkit
+    pool:
+      min_connections: 1
+      max_connections: 1
+rag:
+  collection_name: remote-collection
+  top_k: 5
+voice:
+  enabled: true
+  realtime:
+    url: wss://dashscope.example.com/realtime
+    proxy: null
+    stt_model: realtime-stt
+    tts_model: realtime-tts
+    voices:
+      - Cherry
+    upstream_timeout: 30
+  session:
+    max_sessions: 8
+    duration_seconds: 1800
+    idle_seconds: 120
+    queue_size: 64
+  vad:
+    silence_ms: 500
+    threshold: 0.2
+""",
+        required_fields=nacos._REMOTE_STORAGE_FIELDS,
+    )
+
+    assert "VOICE_ENABLED" in updated
+    assert config.VOICE_ENABLED is True
+    assert config.VOICE_REALTIME_VOICES == ["Cherry"]
+    assert config.POSTGRES_DB == "agent_service"
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("voice:\n  unknown: true\n", "Unknown Nacos voice settings"),
+        (
+            "voice:\n  enabled: true\nVOICE_ENABLED: false\n",
+            "conflicts with VOICE_ENABLED",
+        ),
+    ],
+)
+def test_nested_nacos_config_rejects_invalid_sections(content: str, message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        nacos.apply_remote_settings(make_settings(), content)
 
 
 @pytest.mark.parametrize(

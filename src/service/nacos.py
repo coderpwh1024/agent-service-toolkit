@@ -42,6 +42,78 @@ _MAIL_FIELDS = {
     "port": "SMTP_PORT",
     "username": "SMTP_USERNAME",
 }
+_NESTED_SETTINGS: dict[str, Any] = {
+    "models": {
+        "dashscope": {
+            "api_key": "DASHSCOPE_API_KEY",
+            "base_url": "DASHSCOPE_BASE_URL",
+            "embedding_model": "DASHSCOPE_EMBEDDING_MODEL",
+        },
+    },
+    "authentication": {
+        "admin_secret": "AUTH_SECRET",
+        "service_account_id": "AUTH_SERVICE_ACCOUNT_ID",
+        "app_token": {
+            "secret": "APP_TOKEN_SECRET",
+            "ttl_seconds": "APP_TOKEN_TTL_SECONDS",
+        },
+        "email": {
+            "enabled": "EMAIL_AUTH_ENABLED",
+            "smtp": {
+                "host": "SMTP_HOST",
+                "port": "SMTP_PORT",
+                "username": "SMTP_USERNAME",
+                "password": "SMTP_PASSWORD",
+                "from_email": "SMTP_FROM_EMAIL",
+                "use_tls": "SMTP_USE_TLS",
+                "use_ssl": "SMTP_USE_SSL",
+            },
+        },
+    },
+    "storage": {
+        "database_type": "DATABASE_TYPE",
+        "redis": {
+            "url": "REDIS_URL",
+        },
+        "postgres": {
+            "user": "POSTGRES_USER",
+            "password": "POSTGRES_PASSWORD",
+            "host": "POSTGRES_HOST",
+            "port": "POSTGRES_PORT",
+            "database": "POSTGRES_DB",
+            "application_name": "POSTGRES_APPLICATION_NAME",
+            "pool": {
+                "min_connections": "POSTGRES_MIN_CONNECTIONS_PER_POOL",
+                "max_connections": "POSTGRES_MAX_CONNECTIONS_PER_POOL",
+            },
+        },
+    },
+    "rag": {
+        "collection_name": "RAG_COLLECTION_NAME",
+        "top_k": "RAG_TOP_K",
+    },
+    "voice": {
+        "enabled": "VOICE_ENABLED",
+        "realtime": {
+            "url": "VOICE_REALTIME_URL",
+            "proxy": "VOICE_REALTIME_PROXY",
+            "stt_model": "VOICE_REALTIME_STT_MODEL",
+            "tts_model": "VOICE_REALTIME_TTS_MODEL",
+            "voices": "VOICE_REALTIME_VOICES",
+            "upstream_timeout": "VOICE_UPSTREAM_TIMEOUT",
+        },
+        "session": {
+            "max_sessions": "VOICE_MAX_SESSIONS",
+            "duration_seconds": "VOICE_SESSION_SECONDS",
+            "idle_seconds": "VOICE_IDLE_SECONDS",
+            "queue_size": "VOICE_QUEUE_SIZE",
+        },
+        "vad": {
+            "silence_ms": "VOICE_VAD_SILENCE_MS",
+            "threshold": "VOICE_VAD_THRESHOLD",
+        },
+    },
+}
 _MISSING = object()
 
 
@@ -65,6 +137,42 @@ def _reject_unknown_fields(value: dict[str, Any], allowed: set[str], path: str) 
     unknown = set(value) - allowed
     if unknown:
         raise ValueError(f"Unknown Nacos {path} settings: {', '.join(sorted(unknown))}")
+
+
+def _flatten_nested_settings(
+    value: Any,
+    schema: dict[str, Any],
+    path: str,
+) -> dict[str, Any]:
+    section = _require_mapping(value, path)
+    _reject_unknown_fields(section, set(schema), path)
+    flattened: dict[str, Any] = {}
+    for name, item in section.items():
+        target = schema[name]
+        if isinstance(target, str):
+            flattened[target] = item
+            continue
+        flattened.update(_flatten_nested_settings(item, target, f"{path}.{name}"))
+    return flattened
+
+
+def _normalize_nested_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(payload)
+    for section_name, schema in _NESTED_SETTINGS.items():
+        if section_name not in normalized:
+            continue
+        mapped = _flatten_nested_settings(
+            normalized.pop(section_name),
+            schema,
+            section_name,
+        )
+        for setting_name, value in mapped.items():
+            if setting_name in normalized and normalized[setting_name] != value:
+                raise ValueError(
+                    f"Nacos {section_name} configuration conflicts with {setting_name}"
+                )
+            normalized[setting_name] = value
+    return normalized
 
 
 def _mail_transport_settings(mail: dict[str, Any]) -> dict[str, Any]:
@@ -184,6 +292,7 @@ def apply_remote_settings(
         raise ValueError("Nacos configuration must be a YAML mapping")
     if any(not isinstance(name, str) for name in payload):
         raise ValueError("Nacos configuration keys must be strings")
+    payload = _normalize_nested_settings(payload)
     payload = _normalize_mail_settings(payload)
 
     missing = (required_fields or set()) - set(payload)
@@ -213,6 +322,7 @@ def apply_remote_settings(
         values["DEFAULT_MODEL"] = None
 
     validated = type(config)(_env_file=None, **values)
+    validated.require_model_provider()
     for name in type(config).model_fields:
         setattr(config, name, getattr(validated, name))
     return sorted(payload)

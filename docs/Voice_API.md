@@ -4,18 +4,25 @@
 
 ## 启用服务
 
-至少配置：
+语音配置统一维护在 Nacos 的 `agent-service-toolkit.yaml` 中，至少配置：
 
-```dotenv
-DASHSCOPE_API_KEY=...
-AUTH_SECRET=只供可信后台使用的随机管理密钥
-APP_TOKEN_SECRET=至少32字符的随机签名密钥
-VOICE_ENABLED=true
+```yaml
+models:
+  dashscope:
+    api_key: replace-with-bailian-api-key
+
+authentication:
+  admin_secret: replace-with-a-long-random-service-secret
+  app_token:
+    secret: replace-with-at-least-32-random-characters
+
+voice:
+  enabled: true
 ```
 
 PostgreSQL 是必需依赖。服务启动时会幂等创建 `app_thread_owners`、`app_runs`、`voice_sessions` 和 `voice_turns`。生产环境使用 HTTPS/WSS，并让反向代理允许 WebSocket Upgrade，空闲超时需大于 `VOICE_IDLE_SECONDS`。
 
-百炼上游默认直连，不继承操作系统代理。确实需要 HTTP 代理时显式配置 `VOICE_REALTIME_PROXY`；SOCKS 代理还需在部署镜像中安装 `websockets` 所需的 SOCKS 可选依赖。
+百炼上游默认直连，不继承操作系统代理。确实需要 HTTP 代理时设置 `voice.realtime.proxy`；SOCKS 代理还需在部署镜像中安装 `websockets` 所需的 SOCKS 可选依赖。完整语音配置维护在 Nacos 的 `agent-service-toolkit.yaml` 中。
 
 移动 App 通过 `POST /auth/email/code` 和 `POST /auth/email/verify` 完成邮箱验证码登录，详见[账号与认证说明](Accounts_and_Credentials.md)。验证成功后，用户短期令牌位于统一响应的 `data.access_token`。兼容的可信后台也可以配置 `AUTH_SECRET`，在自行验证用户后调用：
 

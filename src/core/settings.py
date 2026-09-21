@@ -216,6 +216,8 @@ class Settings(BaseSettings):
         }
         active_keys = [k for k, v in api_keys.items() if v]
         if not active_keys:
+            if self.NACOS_ENABLED and self.NACOS_CONFIG_DATA_ID:
+                return
             raise ValueError("At least one LLM API key must be provided.")
 
         # USE_FAKE_MODEL must win the default even when real provider keys are present.
@@ -300,6 +302,11 @@ class Settings(BaseSettings):
                         raise ValueError(f"Missing required Azure deployments: {missing_models}")
                 case _:
                     raise ValueError(f"Unknown provider: {provider}")
+
+    def require_model_provider(self) -> None:
+        """Reject a resolved runtime configuration without an available model provider."""
+        if not self.AVAILABLE_MODELS:
+            raise ValueError("At least one LLM API key must be provided.")
 
     @computed_field  # type: ignore[prop-decorator]
     @property

@@ -23,7 +23,7 @@
 
 ```sh
 # 默认使用阿里云百炼千问 3.8 Max，并使用 PostgreSQL 持久化记忆与 RAG。
-# 配置方式参见 .env.example。
+# .env 只配置 Nacos 连接；应用配置维护在 Nacos 配置中心。
 
 # 推荐使用 uv 安装 agent-service-toolkit，但也可以使用 "pip install ."
 # 有关 uv 的安装方式，请参阅：https://docs.astral.sh/uv/getting-started/installation/
@@ -42,7 +42,7 @@ streamlit run src/streamlit_app.py
 使用 Docker 运行
 
 ```sh
-# compose.yaml 会将宿主机中的 DASHSCOPE_API_KEY 传入服务容器；.env 可选。
+# 先维护 Nacos 中的 agent-service-toolkit.yaml，再配置 .env 中的 Nacos 连接。
 docker compose watch
 ```
 
@@ -89,8 +89,8 @@ docker compose watch
    cd agent-service-toolkit
    ```
 
-2. 设置环境变量：
-   至少需要一个 LLM API 密钥或相关配置。推荐在当前 shell 中配置 `DASHSCOPE_API_KEY`；Redis、PostgreSQL、App Token 和 SMTP 连接信息统一维护在 Nacos YAML 中。本地引导配置参考 [`.env.example`](./.env.example)，其他服务账号及认证边界见[账号、凭据与用户身份梳理](docs/Accounts_and_Credentials.md)。
+2. 配置 Nacos：
+   在 Nacos 配置中心创建或维护 Data ID `agent-service-toolkit.yaml`（类型为 `YAML`）。`.env` 仅保存连接 Nacos 所需的引导配置，可从 [`.env.example`](./.env.example) 复制。其他服务账号及认证边界见[账号、凭据与用户身份梳理](docs/Accounts_and_Credentials.md)。
 
 3. 现在，你可以使用 Docker 或仅使用 Python，在本地运行智能体服务和 Streamlit 应用。推荐使用 Docker，以简化环境配置，并在代码发生更改时立即重新加载服务。
 
@@ -122,11 +122,11 @@ docker compose watch
 
 1. 确保系统中已安装 Docker 和 Docker Compose（>= [v2.24.0](https://docs.docker.com/compose/release-notes/#2240)）。
 
-2. 默认使用阿里云百炼的千问 3.8 Max。如果宿主机当前环境已经配置 `DASHSCOPE_API_KEY`，`compose.yaml` 会自动将它传入服务容器，无需创建 `.env`。否则，可根据 `.env.example` 创建 `.env`：
+2. 配置好 Nacos 中的 `agent-service-toolkit.yaml` 后，根据 `.env.example` 创建只包含 Nacos 引导配置的 `.env`：
 
    ```sh
    cp .env.example .env
-   # 编辑 .env，添加你的 API 密钥
+   # 编辑 .env，填写 Nacos 地址和认证信息
    ```
 
 3. 以监视模式构建并启动服务：
@@ -238,23 +238,36 @@ PORT=8000
 
 使用 Docker Compose 运行应用、Nacos 运行在宿主机时，将 `NACOS_SERVER_ADDR` 改为 `host.docker.internal:8848`，并将 `NACOS_SERVICE_IP` 设置为调用方可以访问的地址。`NACOS_NAMESPACE_ID` 使用命名空间 ID（留空代表 public），`NACOS_GROUP_NAME` 默认为 `DEFAULT_GROUP`。
 
-已创建的存储配置使用 `public` 命名空间、`DEFAULT_GROUP` 分组和 `agent-service-toolkit.yaml` Data ID，配置类型为 `YAML`。配置内容必须是 YAML 映射，并包含完整的 Redis/PostgreSQL 连接字段：
+已创建的存储配置使用 `public` 命名空间、`DEFAULT_GROUP` 分组和 `agent-service-toolkit.yaml` Data ID，配置类型为 `YAML`。配置直接在 Nacos 配置中心维护，并采用按功能分类的多级结构，例如：
 
 ```yaml
-REDIS_URL: redis://redis-host:6379/0
-POSTGRES_USER: database-user
-POSTGRES_PASSWORD: database-password
-POSTGRES_HOST: postgres-host
-POSTGRES_PORT: 5432
-POSTGRES_DB: agent_service
-APP_TOKEN_SECRET: replace-with-at-least-32-random-characters
-SMTP_HOST: smtp.example.com
-SMTP_PORT: 465
-SMTP_USERNAME: mailer@example.com
-SMTP_PASSWORD: replace-with-smtp-client-password
-SMTP_FROM_EMAIL: mailer@example.com
-SMTP_USE_TLS: false
-SMTP_USE_SSL: true
+models:
+  dashscope:
+    api_key: replace-with-bailian-api-key
+
+storage:
+  redis:
+    url: redis://redis-host:6379/0
+  postgres:
+    user: database-user
+    password: database-password
+    host: postgres-host
+    port: 5432
+    database: agent_service
+
+voice:
+  enabled: true
+  realtime:
+    stt_model: qwen3-asr-flash-realtime
+    tts_model: qwen3-tts-flash-realtime
+    voices:
+      - Cherry
+  session:
+    max_sessions: 8
+    duration_seconds: 1800
+  vad:
+    silence_ms: 500
+    threshold: 0.2
 ```
 
 也兼容已有 Java/Spring 风格的 `mail`（或 `spring.mail`）节点，例如：
@@ -282,7 +295,7 @@ STARTTLS；也支持 `starttls.enable`/`starttls.required`。`socketFactory` 是
 仅做兼容性校验，Python SMTP 不会使用其中的类名。当前邮件模板固定使用 UTF-8，因此其他
 `default-encoding` 值会被拒绝。
 
-远程配置会在 PostgreSQL、Redis、邮箱认证、智能体和其他服务资源初始化前加载。当 `NACOS_STORAGE_CONFIG_REQUIRED=true` 时，Redis/PostgreSQL 六个存储字段任一缺失、内容为空、类型错误或 Nacos 不可用都会导致启动失败，不会回退到 `.env` 或代码默认值。启用邮箱认证时，`APP_TOKEN_SECRET` 以及完整的 `SMTP_*` 字段也必须存在且有效。远程值会覆盖本地环境中的同名设置，因此数据库连接池、RAG、邮件认证和检查点存储均使用 Nacos 配置。
+远程配置会在 PostgreSQL、Redis、邮箱认证、智能体和其他服务资源初始化前加载。分类式多级 YAML 会映射到现有 `Settings` 字段；为兼容已有部署，原有顶层大写字段以及 `mail`/`spring.mail` 格式仍可使用，但同一字段不能在扁平和多级结构中配置不同值。启用 Nacos 且配置 `NACOS_CONFIG_DATA_ID` 后，模型 API 密钥可以只保存在远程 YAML 中；远程配置应用完成后仍会校验至少有一个可用模型 Provider。当 `NACOS_STORAGE_CONFIG_REQUIRED=true` 时，Redis/PostgreSQL 六个存储字段任一缺失、内容为空、类型错误或 Nacos 不可用都会导致启动失败，不会回退到 `.env` 或代码默认值。启用邮箱认证时，`APP_TOKEN_SECRET` 以及完整的 SMTP 字段也必须存在且有效。远程值会覆盖本地环境中的同名设置，因此数据库连接池、RAG、邮件认证、语音、模型和检查点存储均优先使用 Nacos 配置。
 
 `NACOS_*` 连接参数以及 `HOST`、`PORT`、`MODE`、`LOG_LEVEL`、`GRACEFUL_SHUTDOWN_TIMEOUT` 属于引导配置，只能通过环境变量设置。当前实现只在启动时加载配置，修改 Nacos 配置后需重启应用。若仅使用服务注册与发现，可显式设置 `NACOS_STORAGE_CONFIG_REQUIRED=false` 并不配置 `NACOS_CONFIG_DATA_ID`。若只使用配置中心而不注册当前服务，可设置 `NACOS_REGISTER_SERVICE=false`。运行期间可从 `app.state.nacos.list_instances(...)` 查询健康实例。
 
