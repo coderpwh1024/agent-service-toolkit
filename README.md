@@ -254,6 +254,13 @@ storage:
     host: postgres-host
     port: 5432
     database: agent_service
+  qiniu:
+    ak: xxx
+    sk: xxx
+    bucket_name: agent-service-toolkit-avatars
+    public_base_url: https://cdn.example.com
+    upload_token_ttl_seconds: 3600
+    avatar_max_bytes: 5242880
 
 voice:
   enabled: true
@@ -294,6 +301,11 @@ mail:
 STARTTLS；也支持 `starttls.enable`/`starttls.required`。`socketFactory` 是 Java 专属设置，加载时
 仅做兼容性校验，Python SMTP 不会使用其中的类名。当前邮件模板固定使用 UTF-8，因此其他
 `default-encoding` 值会被拒绝。
+
+`storage.qiniu` 用于用户头像上传。`ak`、`sk` 和 `public_base_url` 必须在部署前替换为
+七牛账号的真实访问密钥和桶绑定域名；`bucket_name` 对应预先创建的对象存储空间。服务端只
+接受 JPEG、PNG、GIF 和 WebP，默认最大 5 MiB。数据库保存由 `public_base_url` 和服务端
+生成对象键组成的完整 URL，不保存本地临时路径或客户端文件名。
 
 远程配置会在 PostgreSQL、Redis、邮箱认证、智能体和其他服务资源初始化前加载。分类式多级 YAML 会映射到现有 `Settings` 字段；为兼容已有部署，原有顶层大写字段以及 `mail`/`spring.mail` 格式仍可使用，但同一字段不能在扁平和多级结构中配置不同值。启用 Nacos 且配置 `NACOS_CONFIG_DATA_ID` 后，模型 API 密钥可以只保存在远程 YAML 中；远程配置应用完成后仍会校验至少有一个可用模型 Provider。当 `NACOS_STORAGE_CONFIG_REQUIRED=true` 时，Redis/PostgreSQL 六个存储字段任一缺失、内容为空、类型错误或 Nacos 不可用都会导致启动失败，不会回退到 `.env` 或代码默认值。启用邮箱认证时，`APP_TOKEN_SECRET` 以及完整的 SMTP 字段也必须存在且有效。远程值会覆盖本地环境中的同名设置，因此数据库连接池、RAG、邮件认证、语音、模型和检查点存储均优先使用 Nacos 配置。
 

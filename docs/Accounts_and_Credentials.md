@@ -15,6 +15,7 @@
 | `APP_TOKEN_SECRET` | App 短期访问令牌的 HS256 签名密钥，至少 32 字符 | 由 Nacos YAML 加载；启用邮箱认证或实时语音时必需 |
 | `REDIS_URL` | Redis 连接地址 | 邮箱验证码的 3 分钟有效期、失败次数和 24 小时发送上限 |
 | `SMTP_*` | 验证邮件发送配置 | 由 Nacos YAML 加载；支持 STARTTLS 或隐式 SSL，二者不能同时启用 |
+| `QINIU_*` | 用户头像对象存储 | 由 Nacos `storage.qiniu` 加载；AK/SK 仅保存在服务端 |
 
 模型、认证、Redis、PostgreSQL、SMTP、RAG 和实时语音配置统一维护在 Nacos YAML 中，不在 `.env` 重复保存。数据库凭据不是聊天界面的登录账号；数据库当前用于会话检查点、跨会话记忆及 RAG 数据。
 
@@ -83,6 +84,7 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 - 同一邮箱在滚动 24 小时内最多请求 6 封验证码邮件。Redis 使用邮箱 SHA-256 作为键的一部分，仅保存验证码 HMAC 摘要及待注册资料；明文验证码不会写入 Redis 或日志。
 - 验证成功时会再次查询用户表。存在的有效邮箱直接登录；不存在时依靠数据库唯一索引原子注册，避免并发创建重复账号。
 - 可信服务携带 `AUTH_SECRET` 调用 `POST /auth/token`，为已完成登录校验的 `user_id` 签发短期令牌。普通 App Token 不能再次签发令牌。
+- App Token 用户可调用 `PATCH /users/me`，以 multipart 的 `nickname` 和/或 `image` 更新自己的资料。邮箱是登录标识，不允许通过该接口修改；可信服务管理令牌也不能冒充当前用户。头像上传成功后数据库保存七牛公开域名下的完整 URL。
 - App Token 的 `user_id` 取自 JWT `sub`。服务端对 HTTP、SSE、AG-UI 和语音入口执行线程归属校验，对反馈执行运行归属校验；跨用户访问返回 403。
 - [Python 客户端](../src/client/client.py) 从自己的进程环境读取 `AUTH_SECRET` 并添加 `Authorization: Bearer ...`；它不会自动建立用户登录会话。
 
@@ -110,7 +112,7 @@ Compose 中的 Redis 配置面向本地开发，默认没有密码并映射宿�
 
 ## 配置放在哪里
 
-1. **Nacos YAML**：模型、认证、Redis、PostgreSQL、SMTP、RAG 和实时语音字段由服务启动时优先从 Nacos 的 `agent-service-toolkit.yaml` 读取，并覆盖 Settings 中的本地值；邮件配置也继续兼容 Java/Spring 风格的 `mail` 或 `spring.mail` 节点。
+1. **Nacos YAML**：模型、认证、Redis、PostgreSQL、SMTP、七牛对象存储、RAG 和实时语音字段由服务启动时优先从 Nacos 的 `agent-service-toolkit.yaml` 读取，并覆盖 Settings 中的本地值；邮件配置也继续兼容 Java/Spring 风格的 `mail` 或 `spring.mail` 节点。
 2. **本地 Python 运行**：项目 `.env` 只保存 `NACOS_*` 引导配置，包括地址、认证、命名空间、分组和 Data ID。Settings 使用 `find_dotenv()`；服务启动入口和 Streamlit 入口还调用 `load_dotenv()`。
 3. **Docker Compose**：服务端和 Streamlit 都通过 `env_file` 读取可选的引导配置。[Compose](../compose.yaml) 会启动 PostgreSQL 和启用 AOF 的 Redis，但应用连接信息仍以 Nacos YAML 为准。
 4. **文件凭据**：开发用文件可放在 `privatecredentials/`，Compose 挂载到 `/privatecredentials`。本地路径和容器路径不同，`GOOGLE_APPLICATION_CREDENTIALS` 应指向运行进程能读取的路径。

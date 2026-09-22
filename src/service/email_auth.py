@@ -32,6 +32,7 @@ from schema.auth import (
     UserProfile,
 )
 from service.access import create_access_token
+from service.user_profiles import QiniuAvatarStorage, UserProfileService
 
 VERIFICATION_CODE_TTL_SECONDS = 180
 EMAIL_SEND_LIMIT = 6
@@ -161,6 +162,29 @@ class UserRepository:
                     WHERE email = %s AND is_delete = 0
                     """,
                     (email,),
+                )
+            ).fetchone()
+        return UserProfile.model_validate(row) if row else None
+
+    async def update_profile(
+        self,
+        user_id: int,
+        nickname: str | None,
+        image_url: str | None,
+    ) -> UserProfile | None:
+        async with self.pool.connection() as conn:
+            row = await (
+                await conn.execute(
+                    """
+                    UPDATE app_users
+                    SET nickname = COALESCE(%s, nickname),
+                        image_url = COALESCE(%s, image_url),
+                        update_by = %s,
+                        update_time = CURRENT_TIMESTAMP
+                    WHERE id = %s AND is_delete = 0
+                    RETURNING id, nickname, email, image_url
+                    """,
+                    (nickname, image_url, user_id, user_id),
                 )
             ).fetchone()
         return UserProfile.model_validate(row) if row else None
@@ -417,6 +441,7 @@ def _validate_email_auth_settings(config: Any) -> str:
 @asynccontextmanager
 async def email_auth_lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.email_auth_service = None
+    app.state.user_profile_service = None
     if not settings.EMAIL_AUTH_ENABLED:
         yield
         return
@@ -433,8 +458,14 @@ async def email_auth_lifespan(app: FastAPI) -> AsyncIterator[None]:
             SMTPEmailSender(settings),
             token_secret,
         )
+        app.state.user_profile_service = UserProfileService(
+            users,
+            QiniuAvatarStorage(settings),
+            settings.QINIU_AVATAR_MAX_BYTES,
+        )
         yield
     finally:
         app.state.email_auth_service = None
+        app.state.user_profile_service = None
         await codes.close()
         await users.close()

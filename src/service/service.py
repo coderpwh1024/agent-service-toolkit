@@ -58,6 +58,7 @@ from service.email_auth import email_auth_lifespan
 from service.email_auth import router as email_auth_router
 from service.nacos import NacosIntegration
 from service.threads import list_user_threads
+from service.user_profiles import router as user_profile_router
 from service.utils import (
     ensure_model_available,
     langchain_to_chat_message,
@@ -544,5 +545,6 @@ async def health_check() -> ApiResponse[dict[str, str]]:
 
 app.include_router(auth_router)
 app.include_router(email_auth_router)
+app.include_router(user_profile_router)
 app.include_router(voice_router)
 app.include_router(router)

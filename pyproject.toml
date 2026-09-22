@@ -64,6 +64,8 @@ dependencies = [
     "ag-ui-langgraph~=0.0.42",
     "nacos-sdk-python~=3.2.0",
     "pyyaml~=6.0.3",
+    "qiniu~=7.18.0",
+    "python-multipart~=0.0.32",
 ]
 
 # Supply-chain cooldown: resolution only considers releases >=14 days old. Needs the

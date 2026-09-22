@@ -166,6 +166,13 @@ class Settings(BaseSettings):
     RAG_COLLECTION_NAME: str = "acmetech-employee-handbook"
     RAG_TOP_K: int = Field(default=5, ge=1, le=50)
 
+    QINIU_ACCESS_KEY: SecretStr | None = None
+    QINIU_SECRET_KEY: SecretStr | None = None
+    QINIU_BUCKET_NAME: str | None = None
+    QINIU_PUBLIC_BASE_URL: str | None = None
+    QINIU_UPLOAD_TOKEN_TTL_SECONDS: int = Field(default=3600, ge=60, le=86400)
+    QINIU_AVATAR_MAX_BYTES: int = Field(default=5 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
+
     # Nacos 3.x service discovery and startup configuration.
     NACOS_ENABLED: bool = False
     NACOS_SERVER_ADDR: str = "127.0.0.1:8848"

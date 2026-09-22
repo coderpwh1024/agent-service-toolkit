@@ -139,6 +139,13 @@ storage:
     pool:
       min_connections: 1
       max_connections: 1
+  qiniu:
+    ak: qiniu-access-key
+    sk: qiniu-secret-key
+    bucket_name: agent-service-toolkit-avatars
+    public_base_url: https://cdn.example.com
+    upload_token_ttl_seconds: 3600
+    avatar_max_bytes: 5242880
 rag:
   collection_name: remote-collection
   top_k: 5
@@ -168,6 +175,9 @@ voice:
     assert config.VOICE_ENABLED is True
     assert config.VOICE_REALTIME_VOICES == ["Cherry"]
     assert config.POSTGRES_DB == "agent_service"
+    assert config.QINIU_ACCESS_KEY == SecretStr("qiniu-access-key")
+    assert config.QINIU_SECRET_KEY == SecretStr("qiniu-secret-key")
+    assert config.QINIU_BUCKET_NAME == "agent-service-toolkit-avatars"
 
 
 @pytest.mark.parametrize(

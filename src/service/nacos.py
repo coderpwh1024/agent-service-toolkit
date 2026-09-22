@@ -87,6 +87,14 @@ _NESTED_SETTINGS: dict[str, Any] = {
                 "max_connections": "POSTGRES_MAX_CONNECTIONS_PER_POOL",
             },
         },
+        "qiniu": {
+            "ak": "QINIU_ACCESS_KEY",
+            "sk": "QINIU_SECRET_KEY",
+            "bucket_name": "QINIU_BUCKET_NAME",
+            "public_base_url": "QINIU_PUBLIC_BASE_URL",
+            "upload_token_ttl_seconds": "QINIU_UPLOAD_TOKEN_TTL_SECONDS",
+            "avatar_max_bytes": "QINIU_AVATAR_MAX_BYTES",
+        },
     },
     "rag": {
         "collection_name": "RAG_COLLECTION_NAME",
