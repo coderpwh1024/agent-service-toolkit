@@ -1,4 +1,4 @@
-"""Authenticated user profile updates and Qiniu avatar storage."""
+"""Authenticated user profile access and Qiniu avatar storage."""
 
 import asyncio
 import logging
@@ -29,6 +29,8 @@ _IMAGE_FORMATS: tuple[tuple[str, str, Callable[[bytes], bool]], ...] = (
 
 
 class UserProfileRepositoryProtocol(Protocol):
+    async def get_by_id(self, user_id: int) -> UserProfile | None: ...
+
     async def update_profile(
         self,
         user_id: int,
@@ -166,6 +168,12 @@ class UserProfileService:
         self.avatars = avatars
         self.max_avatar_bytes = max_avatar_bytes
 
+    async def get(self, user_id: int) -> UserProfile:
+        user = await self.users.get_by_id(user_id)
+        if user is None:
+            raise UserNotFoundError
+        return user
+
     async def update(
         self,
         user_id: int,
@@ -241,6 +249,28 @@ def _service(request: Request) -> UserProfileService:
     return service
 
 
+def _current_user_id(request: Request) -> int:
+    identity = principal(request)
+    if identity.admin or identity.user_id is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "An app user token is required")
+    try:
+        user_id = int(identity.user_id)
+        if user_id <= 0:
+            raise ValueError
+    except ValueError:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid app user identity") from None
+    return user_id
+
+
+@router.get("/me", response_model=ApiResponse[UserProfile])
+async def get_current_user(request: Request) -> ApiResponse[UserProfile]:
+    try:
+        user = await _service(request).get(_current_user_id(request))
+    except UserNotFoundError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found") from None
+    return api_success(user)
+
+
 @router.patch("/me", response_model=ApiResponse[UserProfile])
 async def update_current_user(
     request: Request,
@@ -261,17 +291,9 @@ async def _update_current_user(
     image: UploadFile | None,
     email: str | None,
 ) -> ApiResponse[UserProfile]:
-    identity = principal(request)
-    if identity.admin or identity.user_id is None:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "An app user token is required")
+    user_id = _current_user_id(request)
     if email is not None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Email cannot be changed")
-    try:
-        user_id = int(identity.user_id)
-        if user_id <= 0:
-            raise ValueError
-    except ValueError:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid app user identity") from None
 
     try:
         user = await _service(request).update(user_id, nickname, image)

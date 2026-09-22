@@ -15,6 +15,7 @@ from service.email_auth import UserRepository
 from service.user_profiles import (
     AvatarTooLargeError,
     QiniuAvatarStorage,
+    UserNotFoundError,
     UserProfileService,
     router,
 )
@@ -26,6 +27,12 @@ class FakeUsers:
     def __init__(self):
         self.updated: tuple[int, str | None, str | None] | None = None
         self.error: Exception | None = None
+        self.profile: UserProfile | None = None
+
+    async def get_by_id(self, user_id: int) -> UserProfile | None:
+        if self.error:
+            raise self.error
+        return self.profile
 
     async def update_profile(
         self,
@@ -62,6 +69,58 @@ class FakeAvatars:
 
     async def delete(self, object_key: str) -> None:
         self.deleted.append(object_key)
+
+
+@pytest.mark.asyncio
+async def test_user_repository_get_by_id_returns_active_user() -> None:
+    row = {
+        "id": 7,
+        "nickname": "昵称",
+        "email": "member@example.com",
+        "image_url": None,
+    }
+
+    class Cursor:
+        async def fetchone(self):
+            return row
+
+    class Connection:
+        def __init__(self):
+            self.query = ""
+            self.params = ()
+
+        async def execute(self, query, params):
+            self.query = query
+            self.params = params
+            return Cursor()
+
+    class ConnectionContext:
+        def __init__(self, connection):
+            self.connection_value = connection
+
+        async def __aenter__(self):
+            return self.connection_value
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class Pool:
+        def __init__(self):
+            self.connection_value = Connection()
+
+        def connection(self):
+            return ConnectionContext(self.connection_value)
+
+    repository = object.__new__(UserRepository)
+    repository.pool = Pool()
+
+    user = await repository.get_by_id(7)
+
+    query = repository.pool.connection_value.query
+    assert "SELECT id, nickname, email, image_url" in query
+    assert "WHERE id = %s AND is_delete = 0" in query
+    assert repository.pool.connection_value.params == (7,)
+    assert user == UserProfile.model_validate(row)
 
 
 @pytest.mark.asyncio
@@ -232,13 +291,67 @@ def test_profile_route_updates_current_app_user_and_rejects_email(monkeypatch) -
     assert rejected.json()["detail"] == "Email cannot be changed"
 
 
+def test_profile_route_returns_current_app_user(monkeypatch) -> None:
+    profile = UserProfile(
+        id=7,
+        nickname="昵称",
+        email="member@example.com",
+        image_url="https://cdn.example.com/avatar.png",
+    )
+    service = SimpleNamespace(get=AsyncMock(return_value=profile))
+    app = FastAPI()
+    app.state.user_profile_service = service
+    app.include_router(router)
+    monkeypatch.setattr(
+        user_profiles,
+        "principal",
+        lambda _request: Principal(user_id="7"),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/users/me")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "code": 200,
+        "message": "success",
+        "data": {
+            "id": 7,
+            "nickname": "昵称",
+            "email": "member@example.com",
+            "image_url": "https://cdn.example.com/avatar.png",
+        },
+    }
+    service.get.assert_awaited_once_with(7)
+
+
+def test_profile_route_returns_404_when_current_user_no_longer_exists(monkeypatch) -> None:
+    service = SimpleNamespace(get=AsyncMock(side_effect=UserNotFoundError))
+    app = FastAPI()
+    app.state.user_profile_service = service
+    app.include_router(router)
+    monkeypatch.setattr(
+        user_profiles,
+        "principal",
+        lambda _request: Principal(user_id="7"),
+    )
+
+    with TestClient(app) as client:
+        response = client.get("/users/me")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "User not found"
+
+
 def test_profile_route_rejects_admin_identity(monkeypatch) -> None:
     app = FastAPI()
-    app.state.user_profile_service = SimpleNamespace(update=AsyncMock())
+    app.state.user_profile_service = SimpleNamespace(get=AsyncMock(), update=AsyncMock())
     app.include_router(router)
     monkeypatch.setattr(user_profiles, "principal", lambda _request: Principal(admin=True))
 
     with TestClient(app) as client:
-        response = client.patch("/users/me", data={"nickname": "nickname"})
+        get_response = client.get("/users/me")
+        update_response = client.patch("/users/me", data={"nickname": "nickname"})
 
-    assert response.status_code == 403
+    assert get_response.status_code == 403
+    assert update_response.status_code == 403

@@ -84,7 +84,7 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 - 同一邮箱在滚动 24 小时内最多请求 6 封验证码邮件。Redis 使用邮箱 SHA-256 作为键的一部分，仅保存验证码 HMAC 摘要及待注册资料；明文验证码不会写入 Redis 或日志。
 - 验证成功时会再次查询用户表。存在的有效邮箱直接登录；不存在时依靠数据库唯一索引原子注册，避免并发创建重复账号。
 - 可信服务携带 `AUTH_SECRET` 调用 `POST /auth/token`，为已完成登录校验的 `user_id` 签发短期令牌。普通 App Token 不能再次签发令牌。
-- App Token 用户可调用 `PATCH /users/me`，以 multipart 的 `nickname` 和/或 `image` 更新自己的资料。邮箱是登录标识，不允许通过该接口修改；可信服务管理令牌也不能冒充当前用户。头像上传成功后数据库保存七牛公开域名下的完整 URL。
+- App Token 用户可调用 `GET /users/me` 获取自己的 `id`、昵称、邮箱和头像完整 URL；也可调用 `PATCH /users/me`，以 multipart 的 `nickname` 和/或 `image` 更新自己的资料。邮箱是登录标识，不允许通过编辑接口修改；可信服务管理令牌也不能冒充当前用户。头像上传成功后数据库保存七牛公开域名下的完整 URL。
 - App Token 的 `user_id` 取自 JWT `sub`。服务端对 HTTP、SSE、AG-UI 和语音入口执行线程归属校验，对反馈执行运行归属校验；跨用户访问返回 403。
 - [Python 客户端](../src/client/client.py) 从自己的进程环境读取 `AUTH_SECRET` 并添加 `Authorization: Bearer ...`；它不会自动建立用户登录会话。
 

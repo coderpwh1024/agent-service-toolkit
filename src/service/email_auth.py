@@ -166,6 +166,20 @@ class UserRepository:
             ).fetchone()
         return UserProfile.model_validate(row) if row else None
 
+    async def get_by_id(self, user_id: int) -> UserProfile | None:
+        async with self.pool.connection() as conn:
+            row = await (
+                await conn.execute(
+                    """
+                    SELECT id, nickname, email, image_url
+                    FROM app_users
+                    WHERE id = %s AND is_delete = 0
+                    """,
+                    (user_id,),
+                )
+            ).fetchone()
+        return UserProfile.model_validate(row) if row else None
+
     async def update_profile(
         self,
         user_id: int,
