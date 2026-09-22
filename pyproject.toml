@@ -1,6 +1,6 @@
 [project]
 name = "agent-service-toolkit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Full toolkit for running an AI agent service built with LangGraph, FastAPI and Streamlit"
 readme = "README.md"
 authors = [{ name = "Joshua Carroll", email = "carroll.joshk@gmail.com" }]
