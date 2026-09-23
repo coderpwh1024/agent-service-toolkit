@@ -18,7 +18,31 @@ authentication:
 
 voice:
   enabled: true
+  realtime:
+    stt_model: qwen3-asr-flash-realtime
+    tts_model: qwen3-tts-flash-realtime
+    voices:
+      - id: Cherry
+        name: 芊悦
+        description: 阳光积极、亲切自然
+      - id: Serena
+        name: 苏瑶
+        description: 温柔自然
+      - id: Ethan
+        name: 晨煦
+        description: 阳光、温暖、活力
+      - id: Maia
+        name: 四月
+        description: 知性温柔
+      - id: Kai
+        name: 凯
+        description: 舒缓自然
+      - id: Neil
+        name: 阿闻
+        description: 字正腔圆的新闻主持风格
 ```
+
+以上候选均来自百炼当前的 [Qwen-TTS 实时音色列表](https://help.aliyun.com/zh/model-studio/qwen-tts-voice-list)。音色偏好具有主观性，上线前仍应在目标设备和实际文案中试听。
 
 PostgreSQL 是必需依赖。服务启动时会幂等创建 `app_thread_owners`、`app_runs`、`voice_sessions` 和 `voice_turns`。生产环境使用 HTTPS/WSS，并让反向代理允许 WebSocket Upgrade，空闲超时需大于 `VOICE_IDLE_SECONDS`。
 
@@ -49,6 +73,8 @@ Content-Type: application/json
 
 这些 HTTP 接口统一返回 `code`、`message`、`data`，成功时 HTTP 状态码和 `code` 均为 200。后续示例中的业务字段均位于 `data`。WebSocket 消息是独立事件协议，不使用该封装。
 
+`GET /voice/capabilities` 的 `voices` 保留为音色 ID 字符串数组，以兼容已有客户端；`default_voice` 是 Nacos 列表中的第一项，`voice_options` 提供 `id`、`name` 和 `description`，供前端直接展示选择器。旧的 Nacos 字符串列表写法仍可读取，但不会提供独立的中文展示名和描述。
+
 创建会话示例：
 
 ```json
@@ -60,6 +86,8 @@ Content-Type: application/json
   "turn_detection": "server_vad"
 }
 ```
+
+`voice` 可省略；省略时后端采用 `default_voice`。传入的值必须来自 `capabilities.data.voices`，否则返回 422。
 
 响应的 `data` 包含 `session_id`、最终采用的 `thread_id`、过期时间和协议版本。默认每个用户最多有两个未过期会话；整个进程的 WebSocket 容量由 `VOICE_MAX_SESSIONS` 限制。
 
@@ -131,7 +159,9 @@ JSON 事件通常包含 `event_id`、`sequence`、`session_id` 和 `connection_i
 - 回答：`response.started`、`text.delta`、`audio.segment.started`、`audio.segment.done`、`response.cancelled`、`response.done`
 - Agent：`tool.started`、`tool.finished`、`agent.custom`、`approval.required`
 
-`response.done` 表示生成/TTS 流程结束，不表示用户已经听完。只有 App 上报 `playback.finished` 或完整的 `playback.progress` 后，后端才记录已播放。`response.cancelled.execution_status` 单独说明 Agent 是否也已取消；含外部工具的复杂 Agent 可能继续完成业务执行，因此 App 不应把停播解释为事务回滚。
+`response.done` 表示生成/TTS 流程结束，不表示用户已经听完。事件中的 `execution_status` 表示 Agent 执行结果，`audio_status` 表示 TTS 交付结果，两者独立；例如 Agent 已生成完整文字但 TTS 失败时，`execution_status` 为 `completed`、`audio_status` 和总 `status` 为 `failed`。App 应让已经进入播放缓冲的音频自然播完，并在原生播放器确认结束后再进入监听状态。只有 App 上报 `playback.finished` 或完整的 `playback.progress` 后，后端才记录已播放。`response.cancelled.execution_status` 单独说明 Agent 是否也已取消；含外部工具的复杂 Agent 可能继续完成业务执行，因此 App 不应把停播解释为事务回滚。
+
+后端对 Agent → TTS 和 TTS → WebSocket 使用有界队列进行自然背压。队列暂时满载不代表失败，也不会丢弃剩余文字；只有上游 TTS 明确失败、回答被取消或连接关闭时才停止语音交付。
 
 控制事件使用优先队列。取消后仍可能有旧数据已经进入网络，App 必须立刻把对应 `response_id` 加入无效集合，并丢弃随后到达的文字、段事件和音频帧。
 

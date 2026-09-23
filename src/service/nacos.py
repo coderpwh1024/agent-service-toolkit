@@ -331,6 +331,7 @@ def apply_remote_settings(
 
     validated = type(config)(_env_file=None, **values)
     validated.require_model_provider()
+    validated.require_voice_configuration()
     for name in type(config).model_fields:
         setattr(config, name, getattr(validated, name))
     return sorted(payload)

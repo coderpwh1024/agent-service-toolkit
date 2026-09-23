@@ -17,7 +17,7 @@ from pydantic import SecretStr
 from starlette.websockets import WebSocketDisconnect
 
 from core import settings
-from schema.voice import ZERO_UUID, decode_audio, encode_audio
+from schema.voice import ZERO_UUID, VoiceOption, VoiceTurn, decode_audio, encode_audio
 from service import app
 
 
@@ -120,6 +120,26 @@ class FakeSpeech:
         yield b"\0\0" * 480
 
 
+class SlowFirstSpeech(FakeSpeech):
+    def __init__(self, config):
+        super().__init__(config)
+        self.synthesis_calls = 0
+
+    async def synthesize(self, ws, text):
+        self.synthesis_calls += 1
+        if self.synthesis_calls == 1:
+            await asyncio.sleep(2.1)
+        yield b"\0\0" * 480
+
+
+class FailingSpeech(FakeSpeech):
+    async def synthesize(self, ws, text):
+        await asyncio.sleep(0.05)
+        if False:
+            yield b""
+        raise RuntimeError("synthetic TTS failure")
+
+
 def build_chatbot(responses=None, sleep=0):
     model = FakeListChatModel(responses=responses or ["你好。这是一段语音回答。"], sleep=sleep)
 
@@ -144,6 +164,14 @@ def voice_env(monkeypatch):
     monkeypatch.setattr(settings, "AUTH_SECRET", SecretStr("test-admin-secret"))
     monkeypatch.setattr(settings, "APP_TOKEN_SECRET", SecretStr("a" * 48))
     monkeypatch.setattr(settings, "VOICE_ENABLED", True)
+    monkeypatch.setattr(
+        settings,
+        "VOICE_REALTIME_VOICES",
+        [
+            VoiceOption(id="Cherry", name="芊悦", description="阳光积极、亲切自然"),
+            VoiceOption(id="Serena", name="苏瑶", description="温柔自然"),
+        ],
+    )
     monkeypatch.setattr(settings, "VOICE_SESSION_SECONDS", 60)
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", FakeSpeech)
     for module in (service, voice_routes, agui):
@@ -205,6 +233,7 @@ def test_voice_roundtrip_streams_and_persists(voice_env):
     client, repo, agents, headers = voice_env
     auth = headers()
     session = create(client, auth)
+    assert session["voice"] == "Cherry"
     with connect(client, session, auth) as ws:
         ready = configure(ws)
         frame = encode_audio(b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, 0, kind=1)
@@ -227,12 +256,141 @@ def test_voice_roundtrip_streams_and_persists(voice_env):
     assert len(repo.records) == 1
     turn = next(iter(repo.records.values()))
     assert turn.status == "completed"
+    assert turn.audio_status == "completed"
     assert all(s.played_samples == s.samples > 0 for s in turn.segments)
     history = client.post(
         "/chatbot/history", json={"thread_id": session["thread_id"]}, headers=auth
     )
     assert history.status_code == 200
     assert [m["type"] for m in history.json()["data"]["messages"]] == ["human", "ai"]
+
+
+@pytest.mark.parametrize(
+    ("status", "interrupted", "error_code", "audio_status"),
+    [
+        ("completed", False, None, "completed"),
+        ("failed", False, "agent_failed", "completed"),
+        ("completed", False, "tts_backpressure", "failed"),
+        ("cancelled", True, None, "cancelled"),
+    ],
+)
+def test_legacy_voice_turn_infers_audio_status(status, interrupted, error_code, audio_status):
+    turn = VoiceTurn.model_validate(
+        {
+            "session_id": str(uuid4()),
+            "thread_id": str(uuid4()),
+            "input_id": str(uuid4()),
+            "input_text": "legacy",
+            "status": status,
+            "execution_status": status,
+            "interrupted": interrupted,
+            "error_code": error_code,
+        }
+    )
+
+    assert turn.audio_status == audio_status
+
+
+def test_slow_tts_applies_backpressure_without_truncating_audio(voice_env, monkeypatch):
+    from service import voice as voice_routes
+
+    client, repo, agents, headers = voice_env
+    response = "".join(f"这是第{index}句。" for index in range(1, 21))
+    agents["chatbot"] = build_chatbot([response])
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", SlowFirstSpeech)
+    auth = headers()
+    session = create(client, auth)
+
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="请完整朗读")
+        events = read_until(ws, "response.done")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    done = events[-1]
+    completed_segments = [item for item in events if item["type"] == "audio.segment.done"]
+    assert "".join(item["text"] for item in events if item["type"] == "text.delta") == response
+    assert len(completed_segments) == 20
+    assert done["status"] == "completed"
+    assert done["execution_status"] == "completed"
+    assert done["audio_status"] == "completed"
+    assert done["error_code"] is None
+    assert not any(
+        item["type"] == "error" and item.get("code") == "tts_backpressure" for item in events
+    )
+    turn = next(iter(repo.records.values()))
+    assert len(turn.segments) == 20
+    assert all(segment.complete and segment.samples > 0 for segment in turn.segments)
+
+
+def test_tts_failure_finishes_without_deadlock_or_false_success(voice_env, monkeypatch):
+    from service import voice as voice_routes
+
+    client, repo, agents, headers = voice_env
+    agents["chatbot"] = build_chatbot(["".join(f"这是第{index}句。" for index in range(1, 21))])
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", FailingSpeech)
+    auth = headers()
+    session = create(client, auth)
+
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="测试语音失败")
+        events = read_until(ws, "response.done")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    done = events[-1]
+    error = next(item for item in events if item["type"] == "error")
+    assert error["response_id"] == done["response_id"]
+    assert error["code"] == "tts_failed"
+    assert done["status"] == "failed"
+    assert done["execution_status"] == "completed"
+    assert done["audio_status"] == "failed"
+    assert done["error_code"] == "tts_failed"
+    turn = next(iter(repo.records.values()))
+    assert turn.status == "failed"
+    assert turn.execution_status == "completed"
+    assert turn.audio_status == "failed"
+
+
+def test_voice_capabilities_expose_compatible_ids_and_display_metadata(voice_env):
+    client, _, _, headers = voice_env
+    auth = headers()
+
+    response = client.get("/voice/capabilities", headers=auth)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["voices"] == ["Cherry", "Serena"]
+    assert data["default_voice"] == "Cherry"
+    assert data["voice_options"] == [
+        {"id": "Cherry", "name": "芊悦", "description": "阳光积极、亲切自然"},
+        {"id": "Serena", "name": "苏瑶", "description": "温柔自然"},
+    ]
+
+
+def test_voice_session_accepts_configured_voice_and_rejects_unknown_voice(voice_env):
+    client, _, _, headers = voice_env
+    auth = headers()
+
+    selected = create(client, auth, voice="Serena")
+    rejected = client.post("/voice/sessions", headers=auth, json={"voice": "Unknown"})
+
+    assert selected["voice"] == "Serena"
+    assert rejected.status_code == 422
+    assert rejected.json()["message"] == "Unsupported voice"
+
+
+def test_voice_session_fails_cleanly_when_no_voice_is_configured(voice_env, monkeypatch):
+    client, _, _, headers = voice_env
+    auth = headers()
+    monkeypatch.setattr(settings, "VOICE_REALTIME_VOICES", [])
+
+    response = client.post("/voice/sessions", headers=auth, json={})
+
+    assert response.status_code == 503
+    assert response.json()["message"] == "No realtime voices are configured"
 
 
 def test_tokens_bind_user_and_protect_every_thread_entry(voice_env):
@@ -307,6 +465,7 @@ def test_cancel_invalidates_audio_and_recovers_functional_history(voice_env):
         read_until(ws, "session.closed")
     turns = list(repo.records.values())
     assert turns[0].interrupted and turns[0].execution_status == "cancelled"
+    assert turns[0].audio_status == "cancelled"
     history = client.post(
         "/chatbot/history", headers=auth, json={"thread_id": session["thread_id"]}
     ).json()["data"]

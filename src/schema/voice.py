@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from schema.models import AllModelEnum
 
@@ -15,13 +15,29 @@ MAX_AUDIO_BYTES = 6400
 ZERO_UUID = UUID(int=0)
 
 
+class VoiceOption(BaseModel):
+    """Configured TTS voice metadata exposed to voice clients."""
+
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=100)
+    description: str = Field(default="", max_length=300)
+
+    @model_validator(mode="before")
+    @classmethod
+    def accept_legacy_voice_id(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return {"id": value, "name": value}
+        return value
+
+
 class VoiceSessionInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     agent_id: str = Field(default="chatbot", min_length=1, max_length=100)
     model: AllModelEnum | None = None
     thread_id: str | None = Field(default=None, min_length=1, max_length=128)
     user_id: str | None = Field(default=None, min_length=1, max_length=128)
-    voice: str = Field(default="Cherry", min_length=1, max_length=100)
+    voice: str | None = Field(default=None, min_length=1, max_length=100)
     language: Literal["zh", "en", "auto"] = "zh"
     turn_detection: Literal["server_vad", "manual"] = "server_vad"
 
@@ -29,7 +45,7 @@ class VoiceSessionInput(BaseModel):
 class VoiceSession(BaseModel):
     agent_id: str = "chatbot"
     model: AllModelEnum | None = None
-    voice: str = "Cherry"
+    voice: str
     language: Literal["zh", "en", "auto"] = "zh"
     turn_detection: Literal["server_vad", "manual"] = "server_vad"
     session_id: str = Field(default_factory=lambda: str(uuid4()))
@@ -64,11 +80,28 @@ class VoiceTurn(BaseModel):
     execution_status: Literal[
         "queued", "running", "completed", "cancelled", "failed", "waiting_approval"
     ] = "queued"
+    audio_status: Literal["queued", "running", "completed", "cancelled", "failed"] = "queued"
     generated_text: str = ""
     segments: list[AudioSegment] = Field(default_factory=list)
     interrupted: bool = False
     error_code: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="before")
+    @classmethod
+    def infer_legacy_audio_status(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or "audio_status" in value:
+            return value
+        migrated = dict(value)
+        if migrated.get("error_code") in {"tts_failed", "tts_backpressure"}:
+            migrated["audio_status"] = "failed"
+        elif migrated.get("status") == "cancelled" or migrated.get("interrupted"):
+            migrated["audio_status"] = "cancelled"
+        elif migrated.get("status") in {"completed", "failed", "waiting_approval"}:
+            migrated["audio_status"] = "completed"
+        else:
+            migrated["audio_status"] = migrated.get("status", "queued")
+        return migrated
 
 
 class Event(BaseModel):

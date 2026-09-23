@@ -268,7 +268,24 @@ voice:
     stt_model: qwen3-asr-flash-realtime
     tts_model: qwen3-tts-flash-realtime
     voices:
-      - Cherry
+      - id: Cherry
+        name: 芊悦
+        description: 阳光积极、亲切自然
+      - id: Serena
+        name: 苏瑶
+        description: 温柔自然
+      - id: Ethan
+        name: 晨煦
+        description: 阳光、温暖、活力
+      - id: Maia
+        name: 四月
+        description: 知性温柔
+      - id: Kai
+        name: 凯
+        description: 舒缓自然
+      - id: Neil
+        name: 阿闻
+        description: 字正腔圆的新闻主持风格
   session:
     max_sessions: 8
     duration_seconds: 1800

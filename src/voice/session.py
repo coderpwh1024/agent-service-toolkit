@@ -105,8 +105,7 @@ class VoiceConnection:
             "connection_id": self.connection_id,
             **data,
         }
-        async with asyncio.timeout(2):
-            await self.outgoing.put((0 if urgent else 10, self.sequence, event))
+        await self.outgoing.put((0 if urgent else 10, self.sequence, event))
 
     async def emit_audio(self, pcm: bytes, turn: VoiceTurn, segment: AudioSegment) -> None:
         for offset in range(0, len(pcm), 4096):
@@ -122,8 +121,7 @@ class VoiceConnection:
                 segment.index,
                 self.audio_sequence,
             )
-            async with asyncio.timeout(2):
-                await self.outgoing.put((10, self.sequence, (turn.response_id, frame)))
+            await self.outgoing.put((10, self.sequence, (turn.response_id, frame)))
             segment.samples += len(part) // 2
             self.activity = time.monotonic()
 
@@ -163,6 +161,7 @@ class VoiceConnection:
         self.invalid.add(response_id)
         turn.interrupted = True
         turn.status = "cancelled"
+        turn.audio_status = "cancelled"
         if self.current is turn:
             if self.tts_task and not self.tts_task.done():
                 self.tts_task.cancel()
@@ -352,12 +351,16 @@ class VoiceConnection:
                     self.close_reason = "asr_finished"
                     return
 
-    async def speak(self, turn: VoiceTurn, text_queue: asyncio.Queue) -> None:
+    async def speak(self, turn: VoiceTurn, text_queue: asyncio.Queue[str | None]) -> None:
         try:
             async with self.provider.synthesizer(self.session) as tts:
                 while True:
                     text = await text_queue.get()
-                    if text is None or turn.response_id in self.invalid:
+                    if turn.response_id in self.invalid:
+                        turn.audio_status = "cancelled"
+                        return
+                    if text is None:
+                        turn.audio_status = "completed"
                         return
                     segment = AudioSegment(index=len(turn.segments) + 1, text=text)
                     turn.segments.append(segment)
@@ -377,16 +380,38 @@ class VoiceConnection:
                         samples=segment.samples,
                     )
         except asyncio.CancelledError:
+            turn.audio_status = "cancelled"
             raise
         except Exception:
             logger.exception("Voice synthesis failed for response %s", turn.response_id)
+            turn.audio_status = "failed"
             turn.error_code = "tts_failed"
             await self.emit(
                 "error", response_id=turn.response_id, code="tts_failed", recoverable=True
             )
 
+    async def enqueue_speech(self, text_queue: asyncio.Queue[str | None], text: str | None) -> bool:
+        tts_task = self.tts_task
+        if tts_task is None or tts_task.done():
+            return False
+        put_task = asyncio.create_task(text_queue.put(text))
+        try:
+            done, _ = await asyncio.wait((put_task, tts_task), return_when=asyncio.FIRST_COMPLETED)
+        except asyncio.CancelledError:
+            put_task.cancel()
+            await asyncio.gather(put_task, return_exceptions=True)
+            raise
+        if put_task in done:
+            return True
+        put_task.cancel()
+        await asyncio.gather(put_task, return_exceptions=True)
+        return False
+
     async def generate(
-        self, turn: VoiceTurn, resume: dict | None, text_queue: asyncio.Queue
+        self,
+        turn: VoiceTurn,
+        resume: dict | None,
+        text_queue: asyncio.Queue[str | None],
     ) -> None:
         from service.service import _handle_input
 
@@ -402,14 +427,8 @@ class VoiceConnection:
                 turn.generated_text += text
                 await self.emit("text.delta", response_id=turn.response_id, text=text)
             for phrase in speech.feed(text, final=final):
-                if self.tts_task and not self.tts_task.done():
-                    try:
-                        async with asyncio.timeout(2):
-                            await text_queue.put(phrase)
-                    except TimeoutError:
-                        self.tts_task.cancel()
-                        turn.error_code = "tts_backpressure"
-                        await self.emit("error", code="tts_backpressure", recoverable=True)
+                if not await self.enqueue_speech(text_queue, phrase):
+                    break
 
         try:
             async with asyncio.timeout(180), thread_guard(self.repo, self.session.thread_id):
@@ -517,7 +536,8 @@ class VoiceConnection:
         self.current = turn
         turn.status = "running"
         turn.execution_status = "running"
-        queue: asyncio.Queue = asyncio.Queue(16)
+        turn.audio_status = "running"
+        queue: asyncio.Queue[str | None] = asyncio.Queue(16)
         self.tts_task = asyncio.create_task(self.speak(turn, queue))
         self.agent_task = asyncio.create_task(self.generate(turn, resume, queue))
         try:
@@ -526,21 +546,22 @@ class VoiceConnection:
             if not self.agent_task.done():
                 raise
         if self.tts_task and not self.tts_task.done():
-            try:
-                async with asyncio.timeout(2):
-                    await queue.put(None)
-            except TimeoutError:
-                self.tts_task.cancel()
+            await self.enqueue_speech(queue, None)
         with contextlib.suppress(asyncio.CancelledError):
             await self.tts_task
         if not turn.interrupted:
-            turn.status = turn.execution_status
+            turn.status = (
+                "failed"
+                if turn.execution_status == "failed" or turn.audio_status == "failed"
+                else turn.execution_status
+            )
         await self.repo.save_turn(turn)
         await self.emit(
             "response.done",
             response_id=turn.response_id,
             status=turn.status,
             execution_status=turn.execution_status,
+            audio_status=turn.audio_status,
             error_code=turn.error_code,
         )
 
@@ -622,6 +643,7 @@ class VoiceConnection:
                     self.invalid.add(turn.response_id)
                     turn.interrupted = True
                     turn.status = "cancelled"
+                    turn.audio_status = "cancelled"
                     if turn.execution_status == "queued":
                         turn.execution_status = "cancelled"
             if self.tts_task:

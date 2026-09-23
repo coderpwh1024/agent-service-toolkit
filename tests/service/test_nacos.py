@@ -93,7 +93,8 @@ rag:
     assert config.EMAIL_AUTH_ENABLED is True
     assert config.REDIS_URL == SecretStr("redis://remote:6379/0")
     assert config.VOICE_ENABLED is True
-    assert config.VOICE_REALTIME_VOICES == ["Cherry"]
+    assert [voice.id for voice in config.VOICE_REALTIME_VOICES] == ["Cherry"]
+    assert config.VOICE_REALTIME_VOICES[0].name == "Cherry"
     assert config.VOICE_MAX_SESSIONS == 12
     assert config.VOICE_VAD_SILENCE_MS == 750
     assert config.RAG_TOP_K == 9
@@ -157,7 +158,12 @@ voice:
     stt_model: realtime-stt
     tts_model: realtime-tts
     voices:
-      - Cherry
+      - id: Cherry
+        name: 芊悦
+        description: 阳光积极、亲切自然
+      - id: Serena
+        name: 苏瑶
+        description: 温柔自然
     upstream_timeout: 30
   session:
     max_sessions: 8
@@ -173,7 +179,9 @@ voice:
 
     assert "VOICE_ENABLED" in updated
     assert config.VOICE_ENABLED is True
-    assert config.VOICE_REALTIME_VOICES == ["Cherry"]
+    assert [voice.id for voice in config.VOICE_REALTIME_VOICES] == ["Cherry", "Serena"]
+    assert config.VOICE_REALTIME_VOICES[0].name == "芊悦"
+    assert config.VOICE_REALTIME_VOICES[1].description == "温柔自然"
     assert config.POSTGRES_DB == "agent_service"
     assert config.QINIU_ACCESS_KEY == SecretStr("qiniu-access-key")
     assert config.QINIU_SECRET_KEY == SecretStr("qiniu-secret-key")

@@ -43,6 +43,40 @@ def test_settings_default_values():
     assert settings.NACOS_ENABLED is False
     assert settings.NACOS_SERVER_ADDR == "127.0.0.1:8848"
     assert settings.NACOS_SERVICE_NAME == "agent-service-toolkit"
+    assert [voice.id for voice in settings.VOICE_REALTIME_VOICES] == ["Cherry"]
+
+
+def test_settings_accepts_legacy_and_structured_voice_options():
+    settings = Settings(
+        _env_file=None,
+        USE_FAKE_MODEL=True,
+        VOICE_ENABLED=True,
+        VOICE_REALTIME_VOICES=[
+            "Cherry",
+            {"id": "Serena", "name": "苏瑶", "description": "温柔自然"},
+        ],
+    )
+
+    assert [voice.id for voice in settings.VOICE_REALTIME_VOICES] == ["Cherry", "Serena"]
+    assert settings.VOICE_REALTIME_VOICES[0].name == "Cherry"
+    assert settings.VOICE_REALTIME_VOICES[1].name == "苏瑶"
+
+
+def test_voice_configuration_requires_unique_nonempty_options_when_enabled():
+    with pytest.raises(ValueError, match="must not be empty"):
+        Settings(
+            _env_file=None,
+            USE_FAKE_MODEL=True,
+            VOICE_ENABLED=True,
+            VOICE_REALTIME_VOICES=[],
+        ).require_voice_configuration()
+
+    with pytest.raises(ValidationError, match="unique voice IDs"):
+        Settings(
+            _env_file=None,
+            USE_FAKE_MODEL=True,
+            VOICE_REALTIME_VOICES=["Cherry", "Cherry"],
+        )
 
 
 def test_nacos_credentials_must_be_configured_together():

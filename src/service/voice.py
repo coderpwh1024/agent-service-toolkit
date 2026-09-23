@@ -38,6 +38,7 @@ async def voice_lifespan(app: FastAPI):
         raise ValueError("APP_TOKEN_SECRET must contain at least 32 characters")
     if settings.VOICE_ENABLED and not settings.DASHSCOPE_API_KEY:
         raise ValueError("DASHSCOPE_API_KEY is required for realtime voice")
+    settings.require_voice_configuration()
     repo = VoiceRepository(get_postgres_connection_string())
     try:
         await repo.open()
@@ -71,6 +72,8 @@ async def owned_session(repo: VoiceRepository, session_id: UUID, identity) -> Vo
 @router.get("/capabilities", response_model=ApiResponse[dict[str, Any]])
 async def capabilities(request: Request) -> ApiResponse[dict[str, Any]]:
     principal(request)
+    voice_options = settings.VOICE_REALTIME_VOICES
+    voice_ids = [voice.id for voice in voice_options]
     return api_success(
         {
             "enabled": settings.VOICE_ENABLED,
@@ -79,7 +82,9 @@ async def capabilities(request: Request) -> ApiResponse[dict[str, Any]]:
             "output_format": "pcm16_24000_mono",
             "audio_header_bytes": 45,
             "max_audio_payload_bytes": 6400,
-            "voices": settings.VOICE_REALTIME_VOICES,
+            "voices": voice_ids,
+            "default_voice": voice_ids[0] if voice_ids else None,
+            "voice_options": [voice.model_dump() for voice in voice_options],
             "stt_model": settings.VOICE_REALTIME_STT_MODEL,
             "tts_model": settings.VOICE_REALTIME_TTS_MODEL,
             "session_seconds": settings.VOICE_SESSION_SECONDS,
@@ -111,7 +116,11 @@ async def create_session(body: VoiceSessionInput, request: Request) -> ApiRespon
         agent = get_agent(body.agent_id)
     except KeyError:
         raise HTTPException(404, "Agent not found") from None
-    if body.voice not in settings.VOICE_REALTIME_VOICES:
+    voice_ids = [voice.id for voice in settings.VOICE_REALTIME_VOICES]
+    if not voice_ids:
+        raise HTTPException(503, "No realtime voices are configured")
+    voice = body.voice or voice_ids[0]
+    if voice not in voice_ids:
         raise HTTPException(422, "Unsupported voice")
     if body.model is not None:
         ensure_model_available(body.model)
@@ -123,7 +132,8 @@ async def create_session(body: VoiceSessionInput, request: Request) -> ApiRespon
             repo, agent, thread_id, body.agent_id, identity, user_id, create=True
         )
         session = VoiceSession(
-            **body.model_dump(exclude={"thread_id", "user_id"}),
+            **body.model_dump(exclude={"thread_id", "user_id", "voice"}),
+            voice=voice,
             thread_id=thread_id,
             user_id=user_id,
             expires_at=datetime.now(UTC) + timedelta(seconds=settings.VOICE_SESSION_SECONDS),

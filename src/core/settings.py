@@ -32,6 +32,7 @@ from schema.models import (
     Provider,
     VertexAIModelName,
 )
+from schema.voice import VoiceOption
 
 
 class DatabaseType(StrEnum):
@@ -98,7 +99,9 @@ class Settings(BaseSettings):
     VOICE_REALTIME_PROXY: str | None = None
     VOICE_REALTIME_STT_MODEL: str = "qwen3-asr-flash-realtime"
     VOICE_REALTIME_TTS_MODEL: str = "qwen3-tts-flash-realtime"
-    VOICE_REALTIME_VOICES: list[str] = ["Cherry"]
+    VOICE_REALTIME_VOICES: list[VoiceOption] = Field(
+        default_factory=lambda: [VoiceOption(id="Cherry", name="Cherry")]
+    )
     VOICE_MAX_SESSIONS: int = Field(default=8, ge=1, le=1000)
     VOICE_SESSION_SECONDS: int = Field(default=1800, ge=60, le=7200)
     VOICE_IDLE_SECONDS: int = Field(default=120, ge=10, le=600)
@@ -205,6 +208,10 @@ class Settings(BaseSettings):
         has_nacos_password = bool(self.NACOS_PASSWORD and self.NACOS_PASSWORD.get_secret_value())
         if bool(self.NACOS_USERNAME) != has_nacos_password:
             raise ValueError("NACOS_USERNAME and NACOS_PASSWORD must be configured together")
+
+        voice_ids = [voice.id for voice in self.VOICE_REALTIME_VOICES]
+        if len(voice_ids) != len(set(voice_ids)):
+            raise ValueError("VOICE_REALTIME_VOICES must contain unique voice IDs")
 
         api_keys = {
             Provider.ALIBABA: self.DASHSCOPE_API_KEY,
@@ -314,6 +321,11 @@ class Settings(BaseSettings):
         """Reject a resolved runtime configuration without an available model provider."""
         if not self.AVAILABLE_MODELS:
             raise ValueError("At least one LLM API key must be provided.")
+
+    def require_voice_configuration(self) -> None:
+        """Reject an enabled realtime voice service without configured voice options."""
+        if self.VOICE_ENABLED and not self.VOICE_REALTIME_VOICES:
+            raise ValueError("VOICE_REALTIME_VOICES must not be empty when voice is enabled")
 
     @computed_field  # type: ignore[prop-decorator]
     @property

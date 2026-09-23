@@ -60,7 +60,7 @@ App 是轻业务客户端，但必须包含音频终端能力。AEC 与实际停
 
 百炼提供实时 ASR 的 WebSocket 交互和流式 TTS。实时适配器需要实现相应协议，不能只替换当前 HTTP Provider 的模型名称。[实时 ASR](https://help.aliyun.com/zh/model-studio/real-time-speech-recognition-user-guide)、[实时 TTS](https://help.aliyun.com/zh/model-studio/realtime-tts-user-guide)
 
-语音配置已加入后端 Settings，包括 `VOICE_ENABLED`、`VOICE_REALTIME_STT_MODEL`、`VOICE_REALTIME_TTS_MODEL`、`VOICE_REALTIME_VOICES` 和 `VOICE_REALTIME_URL`。它与现有录音文件 Provider 配置分开，百炼 Key 只留在服务端，端点可按账号地域配置。
+语音配置已加入后端 Settings，包括 `VOICE_ENABLED`、`VOICE_REALTIME_STT_MODEL`、`VOICE_REALTIME_TTS_MODEL`、`VOICE_REALTIME_VOICES` 和 `VOICE_REALTIME_URL`。音色 ID、展示名称和描述统一来自 Nacos；App 从能力接口读取选项，不内置音色清单。它与现有录音文件 Provider 配置分开，百炼 Key 只留在服务端，端点可按账号地域配置。
 
 `uv.lock` 已含 `websockets`，但不应依赖偶然的传递依赖；实现时将实际使用的 WebSocket 库声明为直接依赖，并验证服务端 WebSocket 支持。
 
