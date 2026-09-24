@@ -1,9 +1,11 @@
+import os
 from enum import StrEnum
 from json import loads
+from pathlib import Path
 from tempfile import gettempdir
 from typing import Annotated, Any
 
-from dotenv import find_dotenv
+from dotenv import dotenv_values, find_dotenv
 from pydantic import (
     BeforeValidator,
     EmailStr,
@@ -39,6 +41,11 @@ class DatabaseType(StrEnum):
     POSTGRES = "postgres"
 
 
+class AppEnvironment(StrEnum):
+    LOCAL = "local"
+    TEST = "test"
+
+
 class LogLevel(StrEnum):
     DEBUG = "DEBUG"
     INFO = "INFO"
@@ -65,14 +72,46 @@ def check_str_is_http(x: str) -> str:
     return str(http_url_adapter.validate_python(x))
 
 
+def project_root() -> Path:
+    dotenv_path = find_dotenv(usecwd=True)
+    return Path(dotenv_path).parent if dotenv_path else Path.cwd()
+
+
+def selected_app_environment(dotenv_path: Path | None = None) -> AppEnvironment:
+    value = os.getenv("APP_ENV")
+    if value is None:
+        path = dotenv_path or project_root() / ".env"
+        value = dotenv_values(path).get("APP_ENV") if path.is_file() else None
+
+    try:
+        return AppEnvironment(value or AppEnvironment.LOCAL)
+    except ValueError as exc:
+        supported = ", ".join(environment.value for environment in AppEnvironment)
+        raise ValueError(f"APP_ENV must be one of: {supported}") from exc
+
+
+def settings_env_files(
+    environment: AppEnvironment | None = None,
+    root: Path | None = None,
+) -> tuple[Path, ...]:
+    root = root or project_root()
+    environment = environment or selected_app_environment(root / ".env")
+    return (
+        root / ".env",
+        root / "config" / "environments" / f"{environment.value}.env",
+        root / f".env.{environment.value}",
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=find_dotenv(),
+        env_file=settings_env_files(),
         env_file_encoding="utf-8",
         env_ignore_empty=True,
         extra="ignore",
         validate_default=False,
     )
+    APP_ENV: AppEnvironment = AppEnvironment.LOCAL
     MODE: str | None = None
 
     HOST: str = "0.0.0.0"
@@ -179,6 +218,7 @@ class Settings(BaseSettings):
     # Nacos 3.x service discovery and startup configuration.
     NACOS_ENABLED: bool = False
     NACOS_SERVER_ADDR: str = "127.0.0.1:8848"
+    NACOS_CONSOLE_URL: Annotated[str, BeforeValidator(check_str_is_http)] = "http://127.0.0.1:8080/"
     NACOS_CONTEXT_PATH: str = "/nacos"
     NACOS_USERNAME: str | None = None
     NACOS_PASSWORD: SecretStr | None = None

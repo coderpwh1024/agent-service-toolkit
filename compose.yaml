@@ -33,10 +33,16 @@ services:
       context: .
       dockerfile: docker/Dockerfile.service
     ports:
-      - "8080:8080"
+      - "${AGENT_HOST_PORT:-8080}:8080"
     env_file:
       - path: .env
         required: false
+      - path: config/environments/${APP_ENV:-local}.env
+        required: true
+      - path: .env.${APP_ENV:-local}
+        required: false
+      - path: config/environments/${APP_ENV:-local}.compose.env
+        required: true
     environment:
       # Prefer values inherited by `docker compose` from the host shell. Compose
       # also uses a project .env file for interpolation when one is present.
@@ -67,29 +73,13 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-agent_service}
       RAG_COLLECTION_NAME: ${RAG_COLLECTION_NAME:-acmetech-employee-handbook}
       RAG_TOP_K: ${RAG_TOP_K:-5}
-      NACOS_ENABLED: ${NACOS_ENABLED:-false}
-      NACOS_SERVER_ADDR: ${NACOS_SERVER_ADDR:-host.docker.internal:8848}
-      NACOS_CONTEXT_PATH: ${NACOS_CONTEXT_PATH:-/nacos}
-      NACOS_USERNAME: ${NACOS_USERNAME:-}
-      NACOS_PASSWORD: ${NACOS_PASSWORD:-}
-      NACOS_NAMESPACE_ID: ${NACOS_NAMESPACE_ID:-}
-      NACOS_GROUP_NAME: ${NACOS_GROUP_NAME:-DEFAULT_GROUP}
-      NACOS_CONFIG_DATA_ID: ${NACOS_CONFIG_DATA_ID:-}
-      NACOS_STORAGE_CONFIG_REQUIRED: ${NACOS_STORAGE_CONFIG_REQUIRED:-true}
-      NACOS_REGISTER_SERVICE: ${NACOS_REGISTER_SERVICE:-true}
-      NACOS_SERVICE_NAME: ${NACOS_SERVICE_NAME:-agent-service-toolkit}
-      NACOS_SERVICE_IP: ${NACOS_SERVICE_IP:-}
-      NACOS_SERVICE_PORT: ${NACOS_SERVICE_PORT:-}
-      NACOS_CLUSTER_NAME: ${NACOS_CLUSTER_NAME:-DEFAULT}
-      NACOS_METADATA: '${NACOS_METADATA:-{}}'
-      NACOS_GRPC_PORT_OFFSET: ${NACOS_GRPC_PORT_OFFSET:-1000}
-      NACOS_CACHE_DIR: ${NACOS_CACHE_DIR:-/tmp/agent-service-toolkit/nacos/cache}
-      NACOS_LOG_DIR: ${NACOS_LOG_DIR:-/tmp/agent-service-toolkit/nacos/logs}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 5s
@@ -132,6 +122,12 @@ services:
     env_file:
       - path: .env
         required: false
+      - path: config/environments/${APP_ENV:-local}.env
+        required: true
+      - path: .env.${APP_ENV:-local}
+        required: false
+      - path: config/environments/${APP_ENV:-local}.compose.env
+        required: true
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8501/healthz"]
       interval: 5s

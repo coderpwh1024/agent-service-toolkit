@@ -1,12 +1,21 @@
 import json
 import logging
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from core.settings import DatabaseType, LogLevel, Settings, check_str_is_http
+from core.settings import (
+    AppEnvironment,
+    DatabaseType,
+    LogLevel,
+    Settings,
+    check_str_is_http,
+    selected_app_environment,
+    settings_env_files,
+)
 from schema.models import (
     AlibabaModelName,
     AnthropicModelName,
@@ -42,8 +51,84 @@ def test_settings_default_values():
     assert settings.SMTP_USE_SSL is False
     assert settings.NACOS_ENABLED is False
     assert settings.NACOS_SERVER_ADDR == "127.0.0.1:8848"
+    assert settings.NACOS_CONSOLE_URL == "http://127.0.0.1:8080/"
     assert settings.NACOS_SERVICE_NAME == "agent-service-toolkit"
     assert [voice.id for voice in settings.VOICE_REALTIME_VOICES] == ["Cherry"]
+
+
+def test_selected_app_environment_uses_dotenv_and_process_override(tmp_path: Path):
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("APP_ENV=test\n", encoding="utf-8")
+
+    with patch.dict(os.environ, {}, clear=True):
+        assert selected_app_environment(dotenv_path) == AppEnvironment.TEST
+
+    with patch.dict(os.environ, {"APP_ENV": "local"}, clear=True):
+        assert selected_app_environment(dotenv_path) == AppEnvironment.LOCAL
+
+
+def test_environment_files_apply_profile_and_secret_overrides(tmp_path: Path):
+    environment_dir = tmp_path / "config" / "environments"
+    environment_dir.mkdir(parents=True)
+    (tmp_path / ".env").write_text("APP_ENV=test\nUSE_FAKE_MODEL=true\n", encoding="utf-8")
+    (environment_dir / "test.env").write_text(
+        "APP_ENV=test\nNACOS_SERVER_ADDR=124.221.238.140:8848\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".env.test").write_text(
+        "NACOS_USERNAME=nacos\nNACOS_PASSWORD=test-secret\n",
+        encoding="utf-8",
+    )
+
+    with patch.dict(os.environ, {}, clear=True):
+        settings = Settings(
+            _env_file=settings_env_files(AppEnvironment.TEST, tmp_path),
+        )
+
+    assert settings.APP_ENV == AppEnvironment.TEST
+    assert settings.NACOS_SERVER_ADDR == "124.221.238.140:8848"
+    assert settings.NACOS_USERNAME == "nacos"
+    assert settings.NACOS_PASSWORD == SecretStr("test-secret")
+
+
+def test_selected_app_environment_rejects_unknown_value(tmp_path: Path):
+    dotenv_path = tmp_path / ".env"
+    dotenv_path.write_text("APP_ENV=staging\n", encoding="utf-8")
+
+    with patch.dict(os.environ, {}, clear=True):
+        with pytest.raises(ValueError, match="APP_ENV must be one of: local, test"):
+            selected_app_environment(dotenv_path)
+
+
+@pytest.mark.parametrize(
+    ("environment", "server_addr", "console_url", "mode"),
+    [
+        (AppEnvironment.LOCAL, "127.0.0.1:8848", "http://127.0.0.1:8080/", "dev"),
+        (
+            AppEnvironment.TEST,
+            "124.221.238.140:8848",
+            "http://124.221.238.140:8080/",
+            "prod",
+        ),
+    ],
+)
+def test_committed_environment_profiles(
+    environment: AppEnvironment,
+    server_addr: str,
+    console_url: str,
+    mode: str,
+):
+    root = Path(__file__).parents[2]
+
+    with patch.dict(os.environ, {}, clear=True):
+        settings = Settings(
+            _env_file=(root / "config" / "environments" / f"{environment.value}.env",),
+        )
+
+    assert settings.APP_ENV == environment
+    assert settings.MODE == mode
+    assert settings.NACOS_SERVER_ADDR == server_addr
+    assert settings.NACOS_CONSOLE_URL == console_url
 
 
 def test_settings_accepts_legacy_and_structured_voice_options():

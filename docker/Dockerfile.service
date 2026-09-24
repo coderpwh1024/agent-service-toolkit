@@ -17,6 +17,7 @@ COPY src/schema/ ./schema/
 COPY src/service/ ./service/
 COPY src/voice/ ./voice/
 COPY src/rag/ ./rag/
+COPY config/ ./config/
 COPY src/run_service.py .
 
 CMD ["python", "run_service.py"]

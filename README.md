@@ -23,7 +23,7 @@
 
 ```sh
 # 默认使用阿里云百炼千问 3.8 Max，并使用 PostgreSQL 持久化记忆与 RAG。
-# .env 只配置 Nacos 连接；应用配置维护在 Nacos 配置中心。
+# .env 选择 local/test 环境并保存本地私密覆盖；应用配置维护在 Nacos 配置中心。
 
 # 推荐使用 uv 安装 agent-service-toolkit，但也可以使用 "pip install ."
 # 有关 uv 的安装方式，请参阅：https://docs.astral.sh/uv/getting-started/installation/
@@ -42,7 +42,7 @@ streamlit run src/streamlit_app.py
 使用 Docker 运行
 
 ```sh
-# 先维护 Nacos 中的 agent-service-toolkit.yaml，再配置 .env 中的 Nacos 连接。
+# 先维护 Nacos 中的 agent-service-toolkit.yaml，再在 .env 中选择 APP_ENV。
 docker compose watch
 ```
 
@@ -90,7 +90,7 @@ docker compose watch
    ```
 
 2. 配置 Nacos：
-   在 Nacos 配置中心创建或维护 Data ID `agent-service-toolkit.yaml`（类型为 `YAML`）。`.env` 仅保存连接 Nacos 所需的引导配置，可从 [`.env.example`](./.env.example) 复制。其他服务账号及认证边界见[账号、凭据与用户身份梳理](docs/Accounts_and_Credentials.md)。
+   在 Nacos 配置中心创建或维护 Data ID `agent-service-toolkit.yaml`（类型为 `YAML`）。从 [`.env.example`](./.env.example) 创建 `.env` 并通过 `APP_ENV=local|test` 选择环境，私密覆盖保存在 `.env.local` 或 `.env.test`。完整规则见[本地与测试环境配置说明](docs/Environment_Configuration.md)，其他服务账号及认证边界见[账号、凭据与用户身份梳理](docs/Accounts_and_Credentials.md)。
 
 3. 现在，你可以使用 Docker 或仅使用 Python，在本地运行智能体服务和 Streamlit 应用。推荐使用 Docker，以简化环境配置，并在代码发生更改时立即重新加载服务。
 
@@ -122,11 +122,13 @@ docker compose watch
 
 1. 确保系统中已安装 Docker 和 Docker Compose（>= [v2.24.0](https://docs.docker.com/compose/release-notes/#2240)）。
 
-2. 配置好 Nacos 中的 `agent-service-toolkit.yaml` 后，根据 `.env.example` 创建只包含 Nacos 引导配置的 `.env`：
+2. 配置好 Nacos 中的 `agent-service-toolkit.yaml` 后，根据示例创建环境选择和私密配置文件：
 
    ```sh
    cp .env.example .env
-   # 编辑 .env，填写 Nacos 地址和认证信息
+   cp .env.local.example .env.local
+   cp .env.test.example .env.test
+   # 编辑 .env 选择 APP_ENV；在对应的私密文件中填写 Nacos 凭据
    ```
 
 3. 以监视模式构建并启动服务：
@@ -146,7 +148,7 @@ docker compose watch
 
 5. 在 Web 浏览器中访问 `http://localhost:8501`，即可打开 Streamlit 应用。
 
-6. 智能体服务 API 可通过 `http://0.0.0.0:8080` 访问。也可以通过 `http://0.0.0.0:8080/redoc` 查看 OpenAPI 文档。
+6. 智能体服务 API 的宿主机端口由 `AGENT_HOST_PORT` 决定；`.env.example` 使用 `8000`，因此可通过 `http://127.0.0.1:8000` 访问，也可通过 `http://127.0.0.1:8000/redoc` 查看 OpenAPI 文档。
 
 7. 使用 `docker compose down` 停止服务。
 
@@ -221,6 +223,8 @@ response.pretty_print()
 ### Nacos 3.x
 
 项目使用官方 `nacos-sdk-python` 连接 Nacos 3.x。Nacos 3 默认将控制台和客户端服务分开：控制台可位于 `http://127.0.0.1:8080/`，应用 SDK 应连接服务器端口 `127.0.0.1:8848`，并确保对应的 gRPC 端口 `9848` 可访问。
+
+项目内置 `local` 与 `test` 两套非敏感引导配置。修改 `.env` 中的 `APP_ENV=local|test` 即可切换，密码分别保存在不提交的 `.env.local` 与 `.env.test`；地址、加载优先级、Compose 差异和排障方式见[环境配置说明](docs/Environment_Configuration.md)。
 
 在 `.env` 中启用本地 Nacos。由于本项目也默认监听 `8080`，Nacos 控制台已经占用该端口时，需要同时为应用设置其他端口：
 
@@ -326,7 +330,7 @@ STARTTLS；也支持 `starttls.enable`/`starttls.required`。`socketFactory` 是
 
 远程配置会在 PostgreSQL、Redis、邮箱认证、智能体和其他服务资源初始化前加载。分类式多级 YAML 会映射到现有 `Settings` 字段；为兼容已有部署，原有顶层大写字段以及 `mail`/`spring.mail` 格式仍可使用，但同一字段不能在扁平和多级结构中配置不同值。启用 Nacos 且配置 `NACOS_CONFIG_DATA_ID` 后，模型 API 密钥可以只保存在远程 YAML 中；远程配置应用完成后仍会校验至少有一个可用模型 Provider。当 `NACOS_STORAGE_CONFIG_REQUIRED=true` 时，Redis/PostgreSQL 六个存储字段任一缺失、内容为空、类型错误或 Nacos 不可用都会导致启动失败，不会回退到 `.env` 或代码默认值。启用邮箱认证时，`APP_TOKEN_SECRET` 以及完整的 SMTP 字段也必须存在且有效。远程值会覆盖本地环境中的同名设置，因此数据库连接池、RAG、邮件认证、语音、模型和检查点存储均优先使用 Nacos 配置。
 
-`NACOS_*` 连接参数以及 `HOST`、`PORT`、`MODE`、`LOG_LEVEL`、`GRACEFUL_SHUTDOWN_TIMEOUT` 属于引导配置，只能通过环境变量设置。当前实现只在启动时加载配置，修改 Nacos 配置后需重启应用。若仅使用服务注册与发现，可显式设置 `NACOS_STORAGE_CONFIG_REQUIRED=false` 并不配置 `NACOS_CONFIG_DATA_ID`。若只使用配置中心而不注册当前服务，可设置 `NACOS_REGISTER_SERVICE=false`。运行期间可从 `app.state.nacos.list_instances(...)` 查询健康实例。
+`APP_ENV`、`NACOS_*` 连接参数以及 `HOST`、`PORT`、`MODE`、`LOG_LEVEL`、`GRACEFUL_SHUTDOWN_TIMEOUT` 属于引导配置，不能由 Nacos 远程 YAML 覆盖。当前实现只在启动时加载配置，修改环境选择或 Nacos 配置后需重启应用。若仅使用服务注册与发现，可显式设置 `NACOS_STORAGE_CONFIG_REQUIRED=false` 并不配置 `NACOS_CONFIG_DATA_ID`。若只使用配置中心而不注册当前服务，可设置 `NACOS_REGISTER_SERVICE=false`。运行期间可从 `app.state.nacos.list_instances(...)` 查询健康实例。
 
 ## 使用 agent-service-toolkit 构建或受其启发的项目
 

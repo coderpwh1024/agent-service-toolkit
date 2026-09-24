@@ -22,6 +22,7 @@ from core.settings import Settings
 logger = logging.getLogger(__name__)
 
 _NACOS_BOOTSTRAP_FIELDS = {
+    "APP_ENV",
     "GRACEFUL_SHUTDOWN_TIMEOUT",
     "HOST",
     "LOG_LEVEL",

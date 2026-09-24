@@ -113,16 +113,16 @@ Compose 中的 Redis 配置面向本地开发，默认没有密码并映射宿�
 ## 配置放在哪里
 
 1. **Nacos YAML**：模型、认证、Redis、PostgreSQL、SMTP、七牛对象存储、RAG 和实时语音字段由服务启动时优先从 Nacos 的 `agent-service-toolkit.yaml` 读取，并覆盖 Settings 中的本地值；邮件配置也继续兼容 Java/Spring 风格的 `mail` 或 `spring.mail` 节点。
-2. **本地 Python 运行**：项目 `.env` 只保存 `NACOS_*` 引导配置，包括地址、认证、命名空间、分组和 Data ID。Settings 使用 `find_dotenv()`；服务启动入口和 Streamlit 入口还调用 `load_dotenv()`。
-3. **Docker Compose**：服务端和 Streamlit 都通过 `env_file` 读取可选的引导配置。[Compose](../compose.yaml) 会启动 PostgreSQL 和启用 AOF 的 Redis，但应用连接信息仍以 Nacos YAML 为准。
+2. **本地 Python 运行**：项目 `.env` 选择 `APP_ENV=local|test`，`config/environments/*.env` 保存非敏感 Nacos 引导配置，`.env.local` 和 `.env.test` 保存各环境认证信息。Settings 按层加载选中的配置，进程环境变量优先级最高。
+3. **Docker Compose**：服务端和 Streamlit 读取相同环境配置，并额外应用 `*.compose.env` 中的容器地址覆盖。[Compose](../compose.yaml) 会启动 PostgreSQL 和启用 AOF 的 Redis，但应用连接信息仍以 Nacos YAML 为准。完整切换方式见[环境配置说明](Environment_Configuration.md)。
 4. **文件凭据**：开发用文件可放在 `privatecredentials/`，Compose 挂载到 `/privatecredentials`。本地路径和容器路径不同，`GOOGLE_APPLICATION_CREDENTIALS` 应指向运行进程能读取的路径。
 5. **服务与 App 令牌**：Streamlit/Python 服务客户端可读取 `AUTH_SECRET`。移动 App 只保存短期 App Token，不保存 `AUTH_SECRET` 或 `APP_TOKEN_SECRET`。实时语音流程见 [Voice API](Voice_API.md)。浏览器直连 AG-UI 的认证处理见 [AG-UI 说明](AGUI.md)。
 
 ## 本次梳理发现的待处理项
 
-- `.env.example` 只列出连接 Nacos 所需的引导配置；应用配置统一在 Nacos 的 `agent-service-toolkit.yaml` 中维护。
+- `.env.example` 负责选择环境；非敏感 Nacos 引导配置位于 `config/environments/`，私密认证信息位于不提交的 `.env.local` 或 `.env.test`。应用配置统一在 Nacos 的 `agent-service-toolkit.yaml` 中维护。
 - Compose 的服务端健康检查访问公开的 `/health`，启用认证后仍可正常探活。
-- 现有 README 和文件凭据文档声称私有文件被 Git 和 Docker 构建忽略，但当前工作树缺少根目录 `.gitignore` 和 `.dockerignore`。现有文档的这一保证不能直接视为已落实；本机 Git 排除配置也不能替代随仓库分发的规则。
+- 根目录 `.gitignore` 和 `.dockerignore` 已明确排除环境密钥、私有凭据、运行缓存、日志和本地数据库；安全示例文件继续纳入版本控制。
 - 邮箱注册和登录已经实现；登出、刷新令牌及账号资料管理尚未实现。
 
 以上是代码与配置层面的盘点。本次没有读取真实密钥内容、验证外部账号，也没有调整运行中的服务配置。

@@ -208,6 +208,7 @@ def test_nested_nacos_config_rejects_invalid_sections(content: str, message: str
     [
         ("- item", "YAML mapping"),
         ("UNKNOWN_SETTING: true", "Unknown Nacos settings"),
+        ("APP_ENV: test", "bootstrap settings"),
         ("PORT: 9000", "bootstrap settings"),
         ("NACOS_SERVICE_NAME: other", "bootstrap settings"),
         ("1: value", "keys must be strings"),
