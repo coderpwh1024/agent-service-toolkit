@@ -54,6 +54,7 @@ APP_ENV=test uv run python src/run_service.py
 - `.env.test` 是当前机器的真实测试环境私密配置，由模板复制后填写真实凭据。
 - 只有 `APP_ENV=test` 时才加载 `.env.test`；`APP_ENV=local` 时不会加载它。
 - `.env.test` 可以覆盖 `test.env` 中的同名字段，但建议只保存用户名、密码、服务注册地址等不可提交或机器相关的值。
+- 本地进程连接共享测试 Nacos 时设置 `NACOS_REGISTER_SERVICE=false`，避免把不可达的本机地址注册成测试环境服务实例；正式测试部署可通过进程环境变量显式开启注册并提供可达的 `NACOS_SERVICE_IP`。
 
 ### `.env.local` 与 `.env.local.example`
 
@@ -67,7 +68,7 @@ APP_ENV=test uv run python src/run_service.py
 这两个文件是可提交的环境公共配置，包含运行模式、Nacos SDK 地址、控制台地址、Namespace、Group、Data ID、服务名等非敏感引导字段：
 
 - `local.env`：本地 Python 进程连接 `127.0.0.1:8848`，运行模式为 `dev`；应用监听 `8000`，避免与本地 Nacos 控制台的 `8080` 冲突。
-- `test.env`：连接测试 Nacos `124.221.238.140:8848`，运行模式为 `prod`。
+- `test.env`：连接测试 Nacos `124.221.238.140:8848`，运行模式为 `prod`；本地应用同样监听 `8000`，切换环境时前端地址保持不变。
 - 两个文件都不得保存真实密码、令牌或业务数据库凭据。
 - 启动时只会加载与 `APP_ENV` 对应的一个文件，不会同时加载 `local.env` 和 `test.env`。
 

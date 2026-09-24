@@ -101,14 +101,15 @@ def test_selected_app_environment_rejects_unknown_value(tmp_path: Path):
 
 
 @pytest.mark.parametrize(
-    ("environment", "server_addr", "console_url", "mode"),
+    ("environment", "server_addr", "console_url", "mode", "port"),
     [
-        (AppEnvironment.LOCAL, "127.0.0.1:8848", "http://127.0.0.1:8080/", "dev"),
+        (AppEnvironment.LOCAL, "127.0.0.1:8848", "http://127.0.0.1:8080/", "dev", 8000),
         (
             AppEnvironment.TEST,
             "124.221.238.140:8848",
             "http://124.221.238.140:8080/",
             "prod",
+            8000,
         ),
     ],
 )
@@ -117,6 +118,7 @@ def test_committed_environment_profiles(
     server_addr: str,
     console_url: str,
     mode: str,
+    port: int,
 ):
     root = Path(__file__).parents[2]
 
@@ -127,8 +129,25 @@ def test_committed_environment_profiles(
 
     assert settings.APP_ENV == environment
     assert settings.MODE == mode
+    assert settings.PORT == port
     assert settings.NACOS_SERVER_ADDR == server_addr
     assert settings.NACOS_CONSOLE_URL == console_url
+
+
+def test_test_environment_template_does_not_register_local_instance():
+    root = Path(__file__).parents[2]
+
+    with patch.dict(os.environ, {}, clear=True):
+        settings = Settings(
+            _env_file=(
+                root / "config" / "environments" / "test.env",
+                root / ".env.test.example",
+            ),
+        )
+
+    assert settings.APP_ENV == AppEnvironment.TEST
+    assert settings.NACOS_REGISTER_SERVICE is False
+    assert settings.PORT == 8000
 
 
 def test_settings_accepts_legacy_and_structured_voice_options():
