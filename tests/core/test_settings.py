@@ -46,6 +46,7 @@ def test_settings_default_values():
     assert settings.USE_AWS_BEDROCK is False
     assert settings.USE_FAKE_MODEL is False
     assert settings.EMAIL_AUTH_ENABLED is False
+    assert settings.APP_TOKEN_TTL_SECONDS == 1_296_000
     assert settings.REDIS_URL == SecretStr("redis://127.0.0.1:6379/0")
     assert settings.SMTP_PORT == 587
     assert settings.SMTP_USE_SSL is False
@@ -54,6 +55,11 @@ def test_settings_default_values():
     assert settings.NACOS_CONSOLE_URL == "http://127.0.0.1:8080/"
     assert settings.NACOS_SERVICE_NAME == "agent-service-toolkit"
     assert [voice.id for voice in settings.VOICE_REALTIME_VOICES] == ["Cherry"]
+
+
+def test_app_token_ttl_is_limited_to_fifteen_days():
+    with pytest.raises(ValidationError, match="APP_TOKEN_TTL_SECONDS"):
+        Settings(_env_file=None, APP_TOKEN_TTL_SECONDS=1_296_001)
 
 
 def test_selected_app_environment_uses_dotenv_and_process_override(tmp_path: Path):

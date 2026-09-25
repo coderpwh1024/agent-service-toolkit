@@ -15,6 +15,7 @@ authentication:
   admin_secret: replace-with-a-long-random-service-secret
   app_token:
     secret: replace-with-at-least-32-random-characters
+    ttl_seconds: 1296000
 
 voice:
   enabled: true
@@ -59,7 +60,7 @@ PostgreSQL 是必需依赖。服务启动时会幂等创建 `app_thread_owners`�
 
 百炼上游默认直连，不继承操作系统代理。确实需要 HTTP 代理时设置 `voice.realtime.proxy`；SOCKS 代理还需在部署镜像中安装 `websockets` 所需的 SOCKS 可选依赖。完整语音配置维护在 Nacos 的 `agent-service-toolkit.yaml` 中。
 
-移动 App 通过 `POST /auth/email/code` 和 `POST /auth/email/verify` 完成邮箱验证码登录，详见[账号与认证说明](Accounts_and_Credentials.md)。验证成功后，用户短期令牌位于统一响应的 `data.access_token`。兼容的可信后台也可以配置 `AUTH_SECRET`，在自行验证用户后调用：
+移动 App 通过 `POST /auth/email/code` 和 `POST /auth/email/verify` 完成邮箱验证码登录，详见[账号与认证说明](Accounts_and_Credentials.md)。验证成功后，用户令牌位于统一响应的 `data.access_token`，默认有效期为 15 天。兼容的可信后台也可以配置 `AUTH_SECRET`，在自行验证用户后调用：
 
 ```http
 POST /auth/token
@@ -69,7 +70,7 @@ Content-Type: application/json
 {"user_id":"user-123"}
 ```
 
-返回的 `data.access_token` 是带 `sub`、`exp`、`aud` 和 `iss` 的短期 HS256 JWT。Flutter 后续 HTTP 和 WebSocket 握手都使用 `Authorization: Bearer <access_token>`。Token 用户不能读取其他用户的线程、语音会话、运行或反馈记录。
+返回的 `data.access_token` 是带 `sub`、`exp`、`aud` 和 `iss` 的 HS256 JWT，`data.expires_at` 是过期时间的 Unix 秒数。Flutter 后续 HTTP 和 WebSocket 握手都使用 `Authorization: Bearer <access_token>`。Token 用户不能读取其他用户的线程、语音会话、运行或反馈记录。已有令牌不会因配置变更自动延长；更新配置并重启服务后，用户下次登录获取的新令牌才有 15 天有效期。
 
 ## HTTP 接口
 

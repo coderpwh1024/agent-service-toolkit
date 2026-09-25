@@ -121,7 +121,7 @@ class Settings(BaseSettings):
 
     AUTH_SECRET: SecretStr | None = None
     APP_TOKEN_SECRET: SecretStr | None = None
-    APP_TOKEN_TTL_SECONDS: int = Field(default=3600, ge=60, le=86400)
+    APP_TOKEN_TTL_SECONDS: int = Field(default=1_296_000, ge=60, le=1_296_000)
     EMAIL_AUTH_ENABLED: bool = False
     AUTH_SERVICE_ACCOUNT_ID: int = Field(default=0, ge=0)
     REDIS_URL: SecretStr = SecretStr("redis://127.0.0.1:6379/0")

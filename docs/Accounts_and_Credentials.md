@@ -12,7 +12,7 @@
 | `POSTGRES_USER`、`POSTGRES_PASSWORD` | PostgreSQL 数据库身份 | 服务端连接数据库；Compose 用于初始化数据库 |
 | `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB` | 数据库连接目标 | 本地默认 `127.0.0.1:5432/agent_service`；服务容器内使用 `postgres:5432` |
 | `AUTH_SECRET` | 可信后台服务凭据，由部署者自行设置 | 服务端管理调用和现有 Streamlit/Python 客户端；不能内置到移动 App |
-| `APP_TOKEN_SECRET` | App 短期访问令牌的 HS256 签名密钥，至少 32 字符 | 由 Nacos YAML 加载；启用邮箱认证或实时语音时必需 |
+| `APP_TOKEN_SECRET` | App 访问令牌的 HS256 签名密钥，至少 32 字符 | 由 Nacos YAML 加载；启用邮箱认证或实时语音时必需 |
 | `REDIS_URL` | Redis 连接地址 | 邮箱验证码的 3 分钟有效期、失败次数和 24 小时发送上限 |
 | `SMTP_*` | 验证邮件发送配置 | 由 Nacos YAML 加载；支持 STARTTLS 或隐式 SSL，二者不能同时启用 |
 | `QINIU_*` | 用户头像对象存储 | 由 Nacos `storage.qiniu` 加载；AK/SK 仅保存在服务端 |
@@ -60,7 +60,7 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 
 ## 应用内用户身份与认证
 
-后端支持无密码邮箱登录与注册。`EMAIL_AUTH_ENABLED=true` 时，新邮箱验证成功后写入 `app_users`，已存在邮箱验证成功后直接登录；两种路径都签发相同的短期 App Token。登出、刷新令牌和账号资料管理仍未实现。
+后端支持无密码邮箱登录与注册。`EMAIL_AUTH_ENABLED=true` 时，新邮箱验证成功后写入 `app_users`，已存在邮箱验证成功后直接登录；两种路径都签发相同的 App Token，默认有效期为 15 天。服务端尚无刷新令牌接口，到期后需要重新登录。
 
 `app_users` 使用自增 `BIGINT` 主键，包含必填昵称、规范化邮箱、可选图片 URL，以及 `create_by`、`update_by`、`create_time`、`update_time`、`is_delete`。有效记录的邮箱由部分唯一索引约束。自助注册的审计操作者使用 `AUTH_SERVICE_ACCOUNT_ID`，默认保留值为 `0`。
 
@@ -69,7 +69,7 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 | 标识 | 当前含义 | 是否完成用户认证 |
 | --- | --- | --- |
 | `AUTH_SECRET` | 可信服务共享的管理凭据 | 是管理身份，可跨用户操作 |
-| App access token | 邮箱验证或 `/auth/token` 签发的短期 JWT，`sub` 为用户 ID | 是普通用户身份 |
+| App access token | 邮箱验证或 `/auth/token` 签发的 JWT，`sub` 为用户 ID，默认 15 天有效 | 是普通用户身份 |
 | `user_id` | 关联用户的线程、记忆和语音会话 | App Token 调用时由服务端绑定 |
 | `thread_id` | 标识单次会话及其历史 | 由 `app_thread_owners` 校验归属，不是访问凭证 |
 | `run_id` | 标识一次运行及其反馈 | 由 `app_runs` 校验归属 |
@@ -83,7 +83,7 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 - `POST /auth/email/code` 和 `POST /auth/email/verify` 是公开认证入口。前者只接收 `email` 并向规范化后的邮箱发送 6 位数字验证码；成功返回 200，未处理异常返回 500，限流、邮件投递和依赖不可用等已知异常使用各自的状态码。新用户的默认昵称由邮箱 `@` 前的部分生成，头像默认为空。验证码 3 分钟有效且只能成功使用一次，连续错误 5 次后作废。
 - 同一邮箱在滚动 24 小时内最多请求 6 封验证码邮件。Redis 使用邮箱 SHA-256 作为键的一部分，仅保存验证码 HMAC 摘要及待注册资料；明文验证码不会写入 Redis 或日志。
 - 验证成功时会再次查询用户表。存在的有效邮箱直接登录；不存在时依靠数据库唯一索引原子注册，避免并发创建重复账号。
-- 可信服务携带 `AUTH_SECRET` 调用 `POST /auth/token`，为已完成登录校验的 `user_id` 签发短期令牌。普通 App Token 不能再次签发令牌。
+- 可信服务携带 `AUTH_SECRET` 调用 `POST /auth/token`，为已完成登录校验的 `user_id` 签发令牌。普通 App Token 不能再次签发令牌。
 - App Token 用户可调用 `GET /users/me` 获取自己的 `id`、昵称、邮箱和头像完整 URL；也可调用 `PATCH /users/me`，以 multipart 的 `nickname` 和/或 `image` 更新自己的资料。邮箱是登录标识，不允许通过编辑接口修改；可信服务管理令牌也不能冒充当前用户。头像上传成功后数据库保存七牛公开域名下的完整 URL。
 - App Token 的 `user_id` 取自 JWT `sub`。服务端对 HTTP、SSE、AG-UI 和语音入口执行线程归属校验，对反馈执行运行归属校验；跨用户访问返回 403。
 - [Python 客户端](../src/client/client.py) 从自己的进程环境读取 `AUTH_SECRET` 并添加 `Authorization: Bearer ...`；它不会自动建立用户登录会话。
@@ -106,7 +106,7 @@ Content-Type: application/json
 {"email":"user@example.com","code":"012345"}
 ```
 
-HTTP 认证接口使用统一的 `code`、`message`、`data` 响应封装；验证成功后的令牌位于 `data.access_token`，用于后续 `Authorization: Bearer <access_token>`。认证邮件完全使用固定模板生成，不调用 LLM，也不会把邮箱、默认昵称或验证码送入智能体提示词。
+HTTP 认证接口使用统一的 `code`、`message`、`data` 响应封装；验证成功后的令牌位于 `data.access_token`，用于后续 `Authorization: Bearer <access_token>`。`data.expires_at` 是过期时间的 Unix 秒数。`APP_TOKEN_TTL_SECONDS` 默认且最多为 `1296000` 秒（15 天）；若 Nacos 的 `authentication.app_token.ttl_seconds` 仍设置旧值，会覆盖本地及 Compose 默认值，需同步改为 `1296000` 并重启服务。已有令牌的 `exp` 不会自动延长；更换 `APP_TOKEN_SECRET` 也会使已有令牌立即失效。认证邮件完全使用固定模板生成，不调用 LLM，也不会把邮箱、默认昵称或验证码送入智能体提示词。
 
 Compose 中的 Redis 配置面向本地开发，默认没有密码并映射宿主机端口。生产部署应将 Redis 放在受限私网，使用带认证信息的 `REDIS_URL`；跨不可信网络连接时还应使用 `rediss://`。
 
@@ -123,6 +123,6 @@ Compose 中的 Redis 配置面向本地开发，默认没有密码并映射宿�
 - `.env.example` 负责选择环境；非敏感 Nacos 引导配置位于 `config/environments/`，私密认证信息位于不提交的 `.env.local` 或 `.env.test`。应用配置统一在 Nacos 的 `agent-service-toolkit.yaml` 中维护。
 - Compose 的服务端健康检查访问公开的 `/health`，启用认证后仍可正常探活。
 - 根目录 `.gitignore` 和 `.dockerignore` 已明确排除环境密钥、私有凭据、运行缓存、日志和本地数据库；安全示例文件继续纳入版本控制。
-- 邮箱注册和登录已经实现；登出、刷新令牌及账号资料管理尚未实现。
+- 邮箱注册和登录、账号资料管理已经实现；登出和刷新令牌尚未实现。
 
 以上是代码与配置层面的盘点。本次没有读取真实密钥内容、验证外部账号，也没有调整运行中的服务配置。

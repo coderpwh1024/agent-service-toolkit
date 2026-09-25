@@ -115,7 +115,7 @@ authentication:
   service_account_id: 0
   app_token:
     secret: remote-app-token-secret-at-least-32-characters
-    ttl_seconds: 3600
+    ttl_seconds: 1296000
   email:
     enabled: true
     smtp:
@@ -186,6 +186,7 @@ voice:
     assert config.QINIU_ACCESS_KEY == SecretStr("qiniu-access-key")
     assert config.QINIU_SECRET_KEY == SecretStr("qiniu-secret-key")
     assert config.QINIU_BUCKET_NAME == "agent-service-toolkit-avatars"
+    assert config.APP_TOKEN_TTL_SECONDS == 1_296_000
 
 
 @pytest.mark.parametrize(
