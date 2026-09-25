@@ -145,6 +145,8 @@ class FailingSpeech(FakeSpeech):
 
 
 class WakeSpeech(FakeSpeech):
+    transcript = "小美，介绍一下你自己"
+
     async def append_audio(self, ws, pcm):
         await self.events.put(
             {"type": "input_audio_buffer.speech_started", "item_id": "wake-speech"}
@@ -153,7 +155,7 @@ class WakeSpeech(FakeSpeech):
             {
                 "type": "conversation.item.input_audio_transcription.completed",
                 "item_id": "wake-speech",
-                "transcript": "小美，介绍一下你自己",
+                "transcript": self.transcript,
             }
         )
 
@@ -168,6 +170,27 @@ class RejectedWakeSpeech(FakeSpeech):
                 "type": "conversation.item.input_audio_transcription.completed",
                 "item_id": "false-wake",
                 "transcript": "今天天气不错",
+            }
+        )
+
+
+class EchoFillerSpeech(FakeSpeech):
+    second_transcript = "嗯"
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.utterances = 0
+
+    async def append_audio(self, ws, pcm):
+        self.utterances += 1
+        item_id = f"speech-{self.utterances}"
+        transcript = "你好" if self.utterances == 1 else self.second_transcript
+        await self.events.put({"type": "input_audio_buffer.speech_started", "item_id": item_id})
+        await self.events.put(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "item_id": item_id,
+                "transcript": transcript,
             }
         )
 
@@ -447,6 +470,124 @@ def test_wake_session_validates_metadata_and_confirms_transcript(voice_env, monk
     turn = next(iter(repo.records.values()))
     assert turn.input_text == "介绍一下你自己"
     assert repo.sessions[session["session_id"]].wake_status == "accepted"
+
+
+def test_wake_word_followed_only_by_filler_does_not_start_a_turn(voice_env, monkeypatch):
+    from service import voice as voice_routes
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(WakeSpeech, "transcript", "小美，嗯")
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", WakeSpeech)
+    auth = headers()
+    session = create(
+        client,
+        auth,
+        activation="wake_word",
+        wake_word="小美",
+        wake_engine="sherpa-onnx-1.13.8",
+    )
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        ws.send_bytes(
+            encode_audio(
+                b"\0\0" * 320,
+                ready["connection_id"],
+                str(ZERO_UUID),
+                0,
+                0,
+                kind=1,
+            )
+        )
+        read_until(ws, "wake.accepted")
+        event(ws, "ping")
+        read_until(ws, "pong")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    assert repo.records == {}
+    assert repo.sessions[session["session_id"]].wake_status == "accepted"
+
+
+@pytest.mark.parametrize("filler", ["嗯", "呢", "那"])
+def test_playback_echo_filler_does_not_cancel_or_start_a_turn(voice_env, monkeypatch, filler):
+    from service import voice as voice_routes
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(EchoFillerSpeech, "second_transcript", filler)
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", EchoFillerSpeech)
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        for sequence in range(2):
+            ws.send_bytes(
+                encode_audio(
+                    b"\0\0" * 320,
+                    ready["connection_id"],
+                    str(ZERO_UUID),
+                    0,
+                    sequence,
+                    kind=1,
+                )
+            )
+            events = read_until(ws, "response.done" if sequence == 0 else "transcript.final")
+            if sequence == 0:
+                response_id = events[-1]["response_id"]
+            else:
+                assert events[-1]["text"] == ""
+                assert not any(item["type"] == "response.cancelled" for item in events)
+        event(ws, "ping")
+        events = read_until(ws, "pong")
+        assert not any(item["type"] == "response.cancelled" for item in events)
+        event(ws, "playback.finished", response_id=response_id)
+        event(ws, "ping")
+        read_until(ws, "pong")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    assert len(repo.records) == 1
+    assert next(iter(repo.records.values())).response_id == response_id
+    assert not next(iter(repo.records.values())).interrupted
+
+
+def test_meaningful_speech_still_interrupts_playback(voice_env, monkeypatch):
+    from service import voice as voice_routes
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(EchoFillerSpeech, "second_transcript", "请暂停播放")
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", EchoFillerSpeech)
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        for sequence in range(2):
+            ws.send_bytes(
+                encode_audio(
+                    b"\0\0" * 320,
+                    ready["connection_id"],
+                    str(ZERO_UUID),
+                    0,
+                    sequence,
+                    kind=1,
+                )
+            )
+            events = read_until(ws, "response.done")
+            if sequence == 0:
+                first_response_id = events[-1]["response_id"]
+            else:
+                assert any(
+                    item["type"] == "response.cancelled"
+                    and item["response_id"] == first_response_id
+                    for item in events
+                )
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    assert len(repo.records) == 2
+    assert any(turn.input_text == "请暂停播放" for turn in repo.records.values())
+    assert any(
+        turn.response_id == first_response_id and turn.interrupted for turn in repo.records.values()
+    )
 
 
 def test_rejected_wake_closes_session_and_releases_user_capacity(voice_env, monkeypatch):

@@ -45,6 +45,12 @@ from voice.providers.alibaba_realtime import AlibabaRealtime
 from voice.speech_output import SpeechText
 
 logger = logging.getLogger(__name__)
+NON_ACTIONABLE_VOICE_TEXT = frozenset({"嗯", "嗯嗯", "呃", "额", "啊", "呢", "那"})
+
+
+def is_non_actionable_voice_text(text: str) -> bool:
+    normalized = re.sub(r"[\s，,。！？!?、]+", "", text)
+    return normalized in NON_ACTIONABLE_VOICE_TEXT
 
 
 class VoiceConnection:
@@ -344,9 +350,6 @@ class VoiceConnection:
                 case "input_audio_buffer.speech_started":
                     self.activity = time.monotonic()
                     await self.emit("input.started", input_id=item_id)
-                    await self.cancel_response(
-                        self.current.response_id if self.current else None, "speech"
-                    )
                 case "input_audio_buffer.speech_stopped":
                     await self.emit("input.ended", input_id=item_id)
                 case "conversation.item.input_audio_transcription.text":
@@ -359,11 +362,15 @@ class VoiceConnection:
                     input_id = f"{self.connection_id}:{item_id}"
                     if self.remember(input_id):
                         text = event.get("transcript", "")
+                        if not self.wake_transcript_pending and is_non_actionable_voice_text(text):
+                            await self.emit("transcript.final", input_id=input_id, text="")
+                            continue
                         await self.emit("transcript.final", input_id=input_id, text=text)
                         confirmed = await self.confirm_wake(text)
                         if confirmed is None:
                             return
-                        await self.submit(confirmed, input_id)
+                        if not is_non_actionable_voice_text(confirmed):
+                            await self.submit(confirmed, input_id)
                 case "session.finished":
                     self.close_reason = "asr_finished"
                     return
