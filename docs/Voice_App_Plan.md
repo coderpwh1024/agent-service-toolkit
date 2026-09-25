@@ -1,6 +1,6 @@
 # 独立 Flutter App 与实时语音后端规划
 
-日期：2026-09-18。状态：后端 P1/P2 主链路已经实现并通过模拟 Provider 测试；真实百炼账号联调、Flutter 工程和真机 AEC/唤醒验证仍待完成。实际接口以 [Voice_API.md](Voice_API.md) 为准。
+日期：2026-09-18，更新于 2026-09-24。状态：后端 P1/P2 主链路、独立 Flutter 工程、前台离线唤醒、系统 AEC/降噪接入和自动插话已经实现；真实百炼账号、弱网及 Android/iOS 真机声学验收仍待完成。实际接口以 [Voice_API.md](Voice_API.md) 为准。
 
 目标：以当前 agent-service-toolkit 为唯一业务后端，在独立目录建立 Flutter 工程。手机与后端共同实现本地唤醒、连续语音对话、流式回答、说话打断和 Agent 业务。所有云端模型调用、Agent 编排、工具权限与业务数据由后端管理。
 
@@ -43,7 +43,7 @@ App 是轻业务客户端，但必须包含音频终端能力。AEC 与实际停
 | `docker/Dockerfile.service` | 未复制 `src/voice/` | 已加入 `voice` 和现有 Agent 所需的 `rag` 源码 |
 | `compose.yaml` | voice 同步规则在 Streamlit 服务 | 已给 agent_service 加入语音配置、同步规则和兼容认证的健康检查 |
 
-当前已经有语音 WebSocket、回答取消、播放进度、业务确认、短期用户令牌及线程归属校验。尚未实现的部分集中在独立 Flutter 工程、本地唤醒、AEC 和真机生命周期；复杂 Agent 的外部业务执行不会因用户停播而假装回滚。已有 `interrupt-agent` 是业务流程中的人在回路机制，与用户插话取消仍是两种事件。
+当前已经有语音 WebSocket、回答取消、播放进度、业务确认、短期用户令牌、线程归属校验、Flutter 客户端、前台本地唤醒、AEC/系统降噪、本地 VAD 插话和音频质量指标。尚未完成的部分集中在后台/锁屏生命周期、远场与弱网优化及真机矩阵验收；复杂 Agent 的外部业务执行不会因用户停播而假装回滚。已有 `interrupt-agent` 是业务流程中的人在回路机制，与用户插话取消仍是两种事件。
 
 补充：默认 Agent 是 `research-assistant`。其中 Safeguard 仅在配置 Groq Key 时实际调用相应模型，不能据节点存在就认为每轮一定有额外模型开销。首轮语音基准使用 `chatbot`，复杂 Agent 单独测量。
 

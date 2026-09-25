@@ -40,6 +40,34 @@ class VoiceSessionInput(BaseModel):
     voice: str | None = Field(default=None, min_length=1, max_length=100)
     language: Literal["zh", "en", "auto"] = "zh"
     turn_detection: Literal["server_vad", "manual"] = "server_vad"
+    activation: Literal["tap", "wake_word"] = "tap"
+    wake_word: str | None = Field(default=None, min_length=1, max_length=40)
+    wake_engine: str | None = Field(default=None, min_length=1, max_length=100)
+    pre_roll_samples: int = Field(default=0, ge=0, le=48000)
+
+    @model_validator(mode="after")
+    def validate_activation(self) -> "VoiceSessionInput":
+        if self.activation == "wake_word" and not self.wake_word:
+            raise ValueError("wake_word is required for wake-word activation")
+        if self.activation == "tap" and (
+            self.wake_word or self.wake_engine or self.pre_roll_samples
+        ):
+            raise ValueError("wake metadata requires wake-word activation")
+        return self
+
+
+class AudioQualitySummary(BaseModel):
+    reports: int = 0
+    frames: int = 0
+    clipped_samples: int = 0
+    rms_dbfs_sum: float = 0
+    peak_dbfs: float = -120
+    aec_enabled: bool = False
+    noise_suppression_enabled: bool = False
+
+    @property
+    def average_rms_dbfs(self) -> float | None:
+        return self.rms_dbfs_sum / self.reports if self.reports else None
 
 
 class VoiceSession(BaseModel):
@@ -48,6 +76,12 @@ class VoiceSession(BaseModel):
     voice: str
     language: Literal["zh", "en", "auto"] = "zh"
     turn_detection: Literal["server_vad", "manual"] = "server_vad"
+    activation: Literal["tap", "wake_word"] = "tap"
+    wake_word: str | None = None
+    wake_engine: str | None = None
+    pre_roll_samples: int = 0
+    wake_status: Literal["not_required", "pending", "accepted", "rejected"] = "not_required"
+    audio_quality: AudioQualitySummary = Field(default_factory=AudioQualitySummary)
     session_id: str = Field(default_factory=lambda: str(uuid4()))
     thread_id: str = Field(default_factory=lambda: str(uuid4()))
     user_id: str
@@ -134,6 +168,17 @@ class SpeechHint(Event):
     type: Literal["input.speech_hint"]
 
 
+class AudioMetrics(Event):
+    type: Literal["audio.metrics"]
+    frames: int = Field(ge=1, le=10000)
+    rms_dbfs: float = Field(ge=-120, le=0)
+    peak_dbfs: float = Field(ge=-120, le=0)
+    clipped_samples: int = Field(ge=0, le=10_000_000)
+    aec_enabled: bool
+    noise_suppression_enabled: bool
+    mode: Literal["standby", "conversation"]
+
+
 class PlaybackProgress(Event):
     type: Literal["playback.progress"]
     response_id: UUID
@@ -166,6 +211,7 @@ ClientEvent = Annotated[
     | CommitInput
     | CancelResponse
     | SpeechHint
+    | AudioMetrics
     | PlaybackProgress
     | PlaybackFinished
     | ApprovalInput

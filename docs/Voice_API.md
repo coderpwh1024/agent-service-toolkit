@@ -18,6 +18,17 @@ authentication:
 
 voice:
   enabled: true
+  wake:
+    enabled: true
+    word: 小美
+    confirm_with_asr: true
+    pre_roll_ms: 1200
+    kws_score: 1.0
+    kws_threshold: 0.5
+  vad:
+    client_rms_dbfs: -42
+    client_frames: 3
+  audio_metrics_seconds: 5
   realtime:
     stt_model: qwen3-asr-flash-realtime
     tts_model: qwen3-tts-flash-realtime
@@ -89,6 +100,8 @@ Content-Type: application/json
 
 `voice` 可省略；省略时后端采用 `default_voice`。传入的值必须来自 `capabilities.data.voices`，否则返回 422。
 
+本地唤醒创建会话时还需提交 `"activation":"wake_word"`、能力接口下发的 `wake_word`、客户端引擎标识 `wake_engine` 和已缓存的 `pre_roll_samples`。后端限制前滚长度并用首段百炼 ASR 最终文本二次确认；匹配后发出 `wake.accepted` 并从业务输入中移除唤醒词，不匹配则发出 `wake.rejected` 后正常关闭连接。按钮启动保持 `"activation":"tap"`，不得携带唤醒元数据。
+
 响应的 `data` 包含 `session_id`、最终采用的 `thread_id`、过期时间和协议版本。默认每个用户最多有两个未过期会话；整个进程的 WebSocket 容量由 `VOICE_MAX_SESSIONS` 限制。
 
 ## 建立 WebSocket
@@ -141,6 +154,7 @@ Dart 可用 `ByteData` 按 `Endian.big` 写帧头，PCM payload 保持设备重�
 | `input.text` | `text` | 跳过 ASR，直接提交一轮 Agent，适合调试或文字输入 |
 | `input.commit` | 无 | 仅 `manual` 模式提交当前 ASR 音频 |
 | `input.speech_hint` | 无 | App 本地检测到疑似插话；若未被服务端确认，约 800 ms 后收到 `playback.resume` |
+| `audio.metrics` | `frames`、`rms_dbfs`、`peak_dbfs`、`clipped_samples`、AEC/降噪状态与 `mode` | 汇总端侧音频质量和设备 DSP 实际启用状态 |
 | `response.cancel` | `response_id` | 明确废弃该回答，App 同时立即停播并清缓冲 |
 | `playback.progress` | `response_id`、`segment_index`、`played_samples` | 报告实际播放采样位置，只能单调增加 |
 | `playback.finished` | `response_id` | 确认完整回答已经播放完 |
@@ -155,6 +169,7 @@ Dart 可用 `ByteData` 按 `Endian.big` 写帧头，PCM payload 保持设备重�
 JSON 事件通常包含 `event_id`、`sequence`、`session_id` 和 `connection_id`。主要事件为：
 
 - 会话：`session.ready`、`session.closed`、`pong`、`error`
+- 唤醒：`wake.accepted`、`wake.rejected`
 - 输入：`input.started`、`input.ended`、`transcript.partial`、`transcript.final`、`input.accepted`
 - 回答：`response.started`、`text.delta`、`audio.segment.started`、`audio.segment.done`、`response.cancelled`、`response.done`
 - Agent：`tool.started`、`tool.finished`、`agent.custom`、`approval.required`

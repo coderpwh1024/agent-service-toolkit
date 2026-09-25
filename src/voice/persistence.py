@@ -153,7 +153,8 @@ class VoiceRepository:
                 await conn.execute(
                     """
                 SELECT count(*) AS count FROM voice_sessions
-                WHERE user_id=%s AND expires_at>now() AND data->>'status'<>'closed'
+                WHERE user_id=%s AND expires_at>now()
+                  AND data->>'status' IN ('created', 'connected')
             """,
                     (user_id,),
                 )

@@ -148,6 +148,15 @@ class Settings(BaseSettings):
     VOICE_QUEUE_SIZE: int = Field(default=64, ge=8, le=256)
     VOICE_VAD_SILENCE_MS: int = Field(default=500, ge=200, le=6000)
     VOICE_VAD_THRESHOLD: float = Field(default=0.2, ge=-1, le=1)
+    VOICE_WAKE_ENABLED: bool = True
+    VOICE_WAKE_WORD: str = Field(default="小美", min_length=2, max_length=40)
+    VOICE_WAKE_CONFIRM_WITH_ASR: bool = True
+    VOICE_WAKE_PRE_ROLL_MS: int = Field(default=1200, ge=400, le=2500)
+    VOICE_WAKE_KWS_SCORE: float = Field(default=1.0, ge=0.1, le=10)
+    VOICE_WAKE_KWS_THRESHOLD: float = Field(default=0.5, ge=0.01, le=1)
+    VOICE_CLIENT_VAD_RMS_DBFS: float = Field(default=-42, ge=-80, le=-10)
+    VOICE_CLIENT_VAD_FRAMES: int = Field(default=3, ge=1, le=20)
+    VOICE_AUDIO_METRICS_SECONDS: int = Field(default=5, ge=2, le=60)
 
     DASHSCOPE_API_KEY: SecretStr | None = None
     DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"

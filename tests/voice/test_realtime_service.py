@@ -2,6 +2,7 @@ import asyncio
 import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from time import monotonic, sleep
 from uuid import uuid4
 
 import pytest
@@ -61,7 +62,10 @@ class MemoryRepository:
         return session.model_copy(deep=True) if session else None
 
     async def active_sessions(self, user_id):
-        return sum(s.user_id == user_id and s.status != "closed" for s in self.sessions.values())
+        return sum(
+            s.user_id == user_id and s.status in {"created", "connected"}
+            for s in self.sessions.values()
+        )
 
     async def save_turn(self, turn):
         self.records[turn.turn_id] = turn.model_copy(deep=True)
@@ -138,6 +142,34 @@ class FailingSpeech(FakeSpeech):
         if False:
             yield b""
         raise RuntimeError("synthetic TTS failure")
+
+
+class WakeSpeech(FakeSpeech):
+    async def append_audio(self, ws, pcm):
+        await self.events.put(
+            {"type": "input_audio_buffer.speech_started", "item_id": "wake-speech"}
+        )
+        await self.events.put(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "item_id": "wake-speech",
+                "transcript": "小美，介绍一下你自己",
+            }
+        )
+
+
+class RejectedWakeSpeech(FakeSpeech):
+    async def append_audio(self, ws, pcm):
+        await self.events.put(
+            {"type": "input_audio_buffer.speech_started", "item_id": "false-wake"}
+        )
+        await self.events.put(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "item_id": "false-wake",
+                "transcript": "今天天气不错",
+            }
+        )
 
 
 def build_chatbot(responses=None, sleep=0):
@@ -368,6 +400,122 @@ def test_voice_capabilities_expose_compatible_ids_and_display_metadata(voice_env
         {"id": "Cherry", "name": "芊悦", "description": "阳光积极、亲切自然"},
         {"id": "Serena", "name": "苏瑶", "description": "温柔自然"},
     ]
+    assert data["wake_word"]["enabled"] is True
+    assert data["wake_word"]["keyword"] == "小美"
+    assert data["client_vad"]["enabled"] is True
+    assert data["audio_metrics_seconds"] > 0
+
+
+def test_wake_session_validates_metadata_and_confirms_transcript(voice_env, monkeypatch):
+    from service import voice as voice_routes
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", WakeSpeech)
+    auth = headers()
+    rejected = client.post(
+        "/voice/sessions",
+        headers=auth,
+        json={"activation": "wake_word", "wake_word": "错误唤醒词"},
+    )
+    assert rejected.status_code == 422
+
+    session = create(
+        client,
+        auth,
+        activation="wake_word",
+        wake_word="小美",
+        wake_engine="sherpa-onnx-1.13.8",
+        pre_roll_samples=16000,
+    )
+    assert session["wake_status"] == "pending"
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        frame = encode_audio(
+            b"\0\0" * 320,
+            ready["connection_id"],
+            str(ZERO_UUID),
+            0,
+            0,
+            kind=1,
+        )
+        ws.send_bytes(frame)
+        events = read_until(ws, "response.done")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    assert any(item["type"] == "wake.accepted" for item in events)
+    turn = next(iter(repo.records.values()))
+    assert turn.input_text == "介绍一下你自己"
+    assert repo.sessions[session["session_id"]].wake_status == "accepted"
+
+
+def test_rejected_wake_closes_session_and_releases_user_capacity(voice_env, monkeypatch):
+    from service import voice as voice_routes
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", RejectedWakeSpeech)
+    auth = headers()
+    session = create(
+        client,
+        auth,
+        activation="wake_word",
+        wake_word="小美",
+        wake_engine="sherpa-onnx-1.13.8",
+        pre_roll_samples=16000,
+    )
+
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        ws.send_bytes(
+            encode_audio(
+                b"\0\0" * 320,
+                ready["connection_id"],
+                str(ZERO_UUID),
+                0,
+                0,
+                kind=1,
+            )
+        )
+        events = read_until(ws, "wake.rejected")
+
+    assert any(item["type"] == "wake.rejected" for item in events)
+    deadline = monotonic() + 2
+    while repo.sessions[session["session_id"]].status != "closed" and monotonic() < deadline:
+        sleep(0.01)
+    rejected = repo.sessions[session["session_id"]]
+    assert rejected.wake_status == "rejected"
+    assert rejected.status == "closed"
+    assert asyncio.run(repo.active_sessions(rejected.user_id)) == 0
+
+
+def test_audio_metrics_are_aggregated_on_session(voice_env):
+    client, repo, _, headers = voice_env
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(
+            ws,
+            "audio.metrics",
+            frames=125,
+            rms_dbfs=-28.5,
+            peak_dbfs=-4.0,
+            clipped_samples=2,
+            aec_enabled=True,
+            noise_suppression_enabled=True,
+            mode="conversation",
+        )
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    quality = repo.sessions[session["session_id"]].audio_quality
+    assert quality.reports == 1
+    assert quality.frames == 125
+    assert quality.average_rms_dbfs == -28.5
+    assert quality.peak_dbfs == -4.0
+    assert quality.clipped_samples == 2
+    assert quality.aec_enabled is True
+    assert quality.noise_suppression_enabled is True
 
 
 def test_voice_session_accepts_configured_voice_and_rejects_unknown_voice(voice_env):

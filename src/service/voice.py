@@ -88,6 +88,20 @@ async def capabilities(request: Request) -> ApiResponse[dict[str, Any]]:
             "stt_model": settings.VOICE_REALTIME_STT_MODEL,
             "tts_model": settings.VOICE_REALTIME_TTS_MODEL,
             "session_seconds": settings.VOICE_SESSION_SECONDS,
+            "wake_word": {
+                "enabled": settings.VOICE_WAKE_ENABLED,
+                "keyword": settings.VOICE_WAKE_WORD,
+                "confirm_with_asr": settings.VOICE_WAKE_CONFIRM_WITH_ASR,
+                "pre_roll_ms": settings.VOICE_WAKE_PRE_ROLL_MS,
+                "kws_score": settings.VOICE_WAKE_KWS_SCORE,
+                "kws_threshold": settings.VOICE_WAKE_KWS_THRESHOLD,
+            },
+            "client_vad": {
+                "enabled": True,
+                "rms_dbfs": settings.VOICE_CLIENT_VAD_RMS_DBFS,
+                "speech_frames": settings.VOICE_CLIENT_VAD_FRAMES,
+            },
+            "audio_metrics_seconds": settings.VOICE_AUDIO_METRICS_SECONDS,
             "agents": [
                 {
                     "id": a.key,
@@ -124,6 +138,14 @@ async def create_session(body: VoiceSessionInput, request: Request) -> ApiRespon
         raise HTTPException(422, "Unsupported voice")
     if body.model is not None:
         ensure_model_available(body.model)
+    if body.activation == "wake_word":
+        if not settings.VOICE_WAKE_ENABLED:
+            raise HTTPException(422, "Wake-word activation is disabled")
+        if body.wake_word != settings.VOICE_WAKE_WORD:
+            raise HTTPException(422, "Unsupported wake word")
+        maximum_pre_roll = settings.VOICE_WAKE_PRE_ROLL_MS * 16
+        if body.pre_roll_samples > maximum_pre_roll:
+            raise HTTPException(422, "Wake pre-roll is too long")
     thread_id = body.thread_id or str(uuid4())
     async with repo.guard(f"voice-user:{user_id}"), thread_guard(repo, thread_id):
         if await repo.active_sessions(user_id) >= 2:
@@ -137,6 +159,13 @@ async def create_session(body: VoiceSessionInput, request: Request) -> ApiRespon
             thread_id=thread_id,
             user_id=user_id,
             expires_at=datetime.now(UTC) + timedelta(seconds=settings.VOICE_SESSION_SECONDS),
+            wake_status=(
+                "pending"
+                if body.activation == "wake_word" and settings.VOICE_WAKE_CONFIRM_WITH_ASR
+                else "accepted"
+                if body.activation == "wake_word"
+                else "not_required"
+            ),
         )
         await repo.save_session(session)
     return api_success(session)

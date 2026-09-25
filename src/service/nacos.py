@@ -120,7 +120,18 @@ _NESTED_SETTINGS: dict[str, Any] = {
         "vad": {
             "silence_ms": "VOICE_VAD_SILENCE_MS",
             "threshold": "VOICE_VAD_THRESHOLD",
+            "client_rms_dbfs": "VOICE_CLIENT_VAD_RMS_DBFS",
+            "client_frames": "VOICE_CLIENT_VAD_FRAMES",
         },
+        "wake": {
+            "enabled": "VOICE_WAKE_ENABLED",
+            "word": "VOICE_WAKE_WORD",
+            "confirm_with_asr": "VOICE_WAKE_CONFIRM_WITH_ASR",
+            "pre_roll_ms": "VOICE_WAKE_PRE_ROLL_MS",
+            "kws_score": "VOICE_WAKE_KWS_SCORE",
+            "kws_threshold": "VOICE_WAKE_KWS_THRESHOLD",
+        },
+        "audio_metrics_seconds": "VOICE_AUDIO_METRICS_SECONDS",
     },
 }
 _MISSING = object()

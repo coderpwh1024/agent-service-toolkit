@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+import re
 import time
 from collections import OrderedDict
 from datetime import UTC, datetime
@@ -20,6 +21,7 @@ from schema import StreamInput
 from schema.voice import (
     ZERO_UUID,
     ApprovalInput,
+    AudioMetrics,
     AudioSegment,
     CancelResponse,
     CloseSession,
@@ -84,6 +86,7 @@ class VoiceConnection:
         self.pending: dict[str, Any] = {}
         self.speech_hint_task: asyncio.Task | None = None
         self.close_reason = "disconnected"
+        self.wake_transcript_pending = session.activation == "wake_word"
 
     def remember(self, event_id: str) -> bool:
         if event_id in self.seen:
@@ -274,6 +277,17 @@ class VoiceConnection:
                     if self.speech_hint_task:
                         self.speech_hint_task.cancel()
                     self.speech_hint_task = asyncio.create_task(self.resume_after_hint())
+                case AudioMetrics():
+                    quality = self.session.audio_quality
+                    quality.reports += 1
+                    quality.frames += event.frames
+                    quality.clipped_samples += event.clipped_samples
+                    quality.rms_dbfs_sum += event.rms_dbfs
+                    quality.peak_dbfs = max(quality.peak_dbfs, event.peak_dbfs)
+                    quality.aec_enabled = quality.aec_enabled or event.aec_enabled
+                    quality.noise_suppression_enabled = (
+                        quality.noise_suppression_enabled or event.noise_suppression_enabled
+                    )
                 case PlaybackProgress():
                     turn = self.turns.get(str(event.response_id))
                     if turn and event.segment_index <= len(turn.segments):
@@ -346,10 +360,40 @@ class VoiceConnection:
                     if self.remember(input_id):
                         text = event.get("transcript", "")
                         await self.emit("transcript.final", input_id=input_id, text=text)
-                        await self.submit(text, input_id)
+                        confirmed = await self.confirm_wake(text)
+                        if confirmed is None:
+                            return
+                        await self.submit(confirmed, input_id)
                 case "session.finished":
                     self.close_reason = "asr_finished"
                     return
+
+    async def confirm_wake(self, text: str) -> str | None:
+        if not self.wake_transcript_pending:
+            return text
+        keyword = self.session.wake_word or ""
+        separator = r"[\s，,。！？!?、]*"
+        pattern = r"^\s*" + separator.join(re.escape(char) for char in keyword) + separator
+        match = re.match(pattern, text, flags=re.IGNORECASE)
+        if match:
+            self.wake_transcript_pending = False
+            self.session.wake_status = "accepted"
+            await self.repo.save_session(self.session)
+            await self.emit("wake.accepted", keyword=keyword)
+            return text[match.end() :].strip()
+        if not self.settings.VOICE_WAKE_CONFIRM_WITH_ASR:
+            self.wake_transcript_pending = False
+            self.session.wake_status = "accepted"
+            await self.repo.save_session(self.session)
+            await self.emit("wake.accepted", keyword=keyword, transcript_match=False)
+            return text
+        self.session.wake_status = "rejected"
+        self.session.status = "closed"
+        await self.repo.save_session(self.session)
+        await self.emit("wake.rejected", keyword=keyword, recoverable=True, urgent=True)
+        self.close_reason = "false_wake"
+        self.closed.set()
+        return None
 
     async def speak(self, turn: VoiceTurn, text_queue: asyncio.Queue[str | None]) -> None:
         try:
@@ -623,6 +667,8 @@ class VoiceConnection:
                     output_format="pcm16_24000_mono",
                     audio_header_bytes=45,
                 )
+                if self.session.activation == "wake_word" and not self.wake_transcript_pending:
+                    await self.emit("wake.accepted", keyword=self.session.wake_word)
                 await self.restore_approvals()
                 done, _ = await asyncio.wait([*tasks, worker], return_when=asyncio.FIRST_COMPLETED)
                 for task in done:
@@ -667,7 +713,13 @@ class VoiceConnection:
                 await self.ws.close(
                     code=1000
                     if self.close_reason
-                    in {"client_closed", "idle_timeout", "expired", "server_closed"}
+                    in {
+                        "client_closed",
+                        "idle_timeout",
+                        "expired",
+                        "server_closed",
+                        "false_wake",
+                    }
                     else 1011
                 )
             if self.agent_task:
@@ -681,7 +733,7 @@ class VoiceConnection:
                 await self.repo.save_turn(turn)
             self.session.status = (
                 "closed"
-                if self.close_reason in {"client_closed", "server_closed", "expired"}
+                if self.close_reason in {"client_closed", "server_closed", "expired", "false_wake"}
                 else "disconnected"
             )
             await self.repo.save_session(self.session)
