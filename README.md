@@ -118,6 +118,8 @@ docker compose watch
 
 本项目包含 Docker 配置，便于开发和部署。`compose.yaml` 文件定义了四个服务：`postgres`、`redis`、`agent_service` 和 `streamlit_app`。Redis 用于邮箱验证码有效期与发送频率限制；每个应用服务的 `Dockerfile` 位于对应目录中。
 
+远程 Linux 服务器的镜像构建、生产覆盖配置、HTTPS 接入和更新步骤见[单台 Linux 服务器部署说明](docs/Linux_Deployment.md)。
+
 对于本地开发，建议使用 [docker compose watch](https://docs.docker.com/compose/file-watch/)。该功能会在检测到源代码更改时自动更新容器，从而提供更顺畅的开发体验。
 
 1. 确保系统中已安装 Docker 和 Docker Compose（>= [v2.24.0](https://docs.docker.com/compose/release-notes/#2240)）。
