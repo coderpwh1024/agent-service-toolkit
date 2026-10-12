@@ -1,0 +1,20 @@
+[Unit]
+Description=Agent Service Toolkit Streamlit UI
+Wants=network-online.target agent-service.service
+After=network-online.target agent-service.service
+
+[Service]
+Type=simple
+User=agent-service
+Group=agent-service
+WorkingDirectory=/opt/agent-service-toolkit
+ExecStart=/opt/agent-service-toolkit/.venv/bin/python /opt/agent-service-toolkit/deploy/run.py app
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=60
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

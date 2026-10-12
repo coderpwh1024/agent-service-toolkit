@@ -2,6 +2,8 @@
 
 本文说明如何将当前仓库构建为 Docker 镜像，并在一台 Linux 服务器上运行 FastAPI、Streamlit、PostgreSQL 和 Redis。示例以 Ubuntu、Docker Compose、百炼模型和独立部署为准。命令中的域名、仓库地址、用户名及密钥都需要替换。
 
+如需在 CentOS 上直接上传源码包并用 Python/systemd 运行，请使用 [CentOS 非 Docker 部署说明](Linux_NoDocker_Deployment.md)。
+
 ## 部署结构
 
 ```text

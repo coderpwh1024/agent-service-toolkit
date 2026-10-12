@@ -118,7 +118,7 @@ docker compose watch
 
 本项目包含 Docker 配置，便于开发和部署。`compose.yaml` 文件定义了四个服务：`postgres`、`redis`、`agent_service` 和 `streamlit_app`。Redis 用于邮箱验证码有效期与发送频率限制；每个应用服务的 `Dockerfile` 位于对应目录中。
 
-远程 Linux 服务器的镜像构建、生产覆盖配置、HTTPS 接入和更新步骤见[单台 Linux 服务器部署说明](docs/Linux_Deployment.md)。
+远程 Linux 服务器的镜像构建、生产覆盖配置、HTTPS 接入和更新步骤见[单台 Linux 服务器部署说明](docs/Linux_Deployment.md)。不使用 Docker 时，可运行 `python3 scripts/package_linux.py` 生成源码部署包，CentOS Stream 9/10 的依赖安装、配置和 systemd 启动步骤见[CentOS 非 Docker 部署](docs/Linux_NoDocker_Deployment.md)。部署包要求 glibc 至少为 2.28，不支持 CentOS 7 默认环境。
 
 对于本地开发，建议使用 [docker compose watch](https://docs.docker.com/compose/file-watch/)。该功能会在检测到源代码更改时自动更新容器，从而提供更顺畅的开发体验。
 
