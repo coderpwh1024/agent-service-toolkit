@@ -62,7 +62,7 @@ docker compose watch
 1. **异步设计**：使用 async/await 高效处理并发请求。
 1. **内容审核**：使用 Safeguard 实现内容审核（需要 Groq API 密钥）。
 1. **RAG 智能体**：使用 PostgreSQL 和阿里云百炼 Embedding 实现的 RAG 智能体——请参阅[文档](docs/RAG_Assistant.md)。
-1. **聊天记录与长期记忆**：使用 PostgreSQL 保存会话检查点和跨会话记忆，并通过 `/threads` 按智能体列出用户之前的对话。
+1. **聊天记录与长期记忆**：使用 PostgreSQL 保存会话检查点和跨会话记忆；`/threads` 按智能体列出会话，`/chat-records` 按 UTC 日期列出最近 30 天的聊天记录，并可查询当天详情。
 1. **反馈机制**：包含一个与 LangSmith 集成的星级反馈系统。
 1. **Docker 支持**：包含 Dockerfile 和 Docker Compose 文件，便于开发和部署。
 1. **Nacos 3.x 集成**：支持启动配置加载、服务注册与发现，并在服务关停时自动注销实例。
@@ -171,6 +171,8 @@ docker compose watch
 ```
 
 HTTP 状态码与响应体中的 `code` 保持一致。成功默认使用 200；未处理异常默认使用 500；参数校验、认证、限流等已知异常保留各自的 HTTP 状态码。`/stream`、`/{agent_id}/stream` 使用 SSE，`/agui/*` 使用 AG-UI 协议，`/voice/sessions/{session_id}/ws` 使用 WebSocket 事件协议，因此不套用该 JSON 封装。FastAPI 自带的 `/docs`、`/redoc` 和 `/openapi.json` 也保持框架原有格式。
+
+聊天记录接口按智能体和用户隔离：`GET /{agent_id}/chat-records?user_id=...` 返回最近 30 个 UTC 自然日中有聊天活动的日期并按最新活动倒序排列；`GET /{agent_id}/chat-records/{YYYY-MM-DD}?user_id=...` 返回指定日期各会话当天新增的具体消息。省略 `agent_id` 时使用默认智能体，详情日期必须处于同一 30 天窗口内。
 
 有关如何使用 `AgentClient` 的完整示例，请参阅 `src/run_client.py` 文件。下面是一个简短示例：
 

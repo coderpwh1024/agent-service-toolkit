@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal, NotRequired
 
 from pydantic import BaseModel, Field, SerializeAsAny
@@ -216,3 +216,57 @@ class ThreadSummary(BaseModel):
 
 class UserThreads(BaseModel):
     threads: list[ThreadSummary]
+
+
+class ChatRecordsInput(BaseModel):
+    """Input for listing or retrieving a user's daily chat records."""
+
+    user_id: str = Field(
+        description="User ID whose chat records should be returned.",
+        examples=["847c6285-8fc9-4560-a83f-4e6285809254"],
+    )
+
+
+class ChatRecordDay(BaseModel):
+    """Summary of chat activity on one UTC calendar day."""
+
+    record_date: date = Field(
+        description="UTC calendar date containing chat activity.",
+        examples=["2026-10-13"],
+    )
+    latest_at: datetime = Field(
+        description="Timestamp of the latest chat activity on this date.",
+        examples=["2026-10-13T08:30:00+00:00"],
+    )
+    conversation_count: int = Field(
+        description="Number of conversations with activity on this date.",
+        ge=1,
+    )
+
+
+class ChatRecordList(BaseModel):
+    """Daily chat activity from the latest 30 UTC calendar days."""
+
+    records: list[ChatRecordDay]
+
+
+class DailyChatConversation(BaseModel):
+    """Messages added to a conversation on one UTC calendar day."""
+
+    thread_id: str = Field(description="Thread ID of the conversation.")
+    agent_id: str = Field(description="Agent used by the conversation.")
+    updated_at: datetime = Field(description="Latest activity timestamp on this date.")
+    title: str | None = Field(
+        description="Conversation title derived from its first human message.",
+        default=None,
+    )
+    messages: list[ChatMessage] = Field(
+        description="Messages added to the conversation on this date."
+    )
+
+
+class ChatRecordDetail(BaseModel):
+    """Conversation content for one UTC calendar day."""
+
+    record_date: date
+    conversations: list[DailyChatConversation]

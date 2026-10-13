@@ -5,6 +5,7 @@ metadata filter that the database rejects or a head-checkpoint assumption that L
 doesn't actually hold. These run real graphs through a real checkpointer instead.
 """
 
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import httpx
@@ -223,3 +224,36 @@ async def test_history_returns_full_conversation(seeded) -> None:
         messages = response.json()["data"]["messages"]
         assert [m["type"] for m in messages] == ["human", "ai"] * turns
         assert messages[0]["content"] == first
+
+
+@pytest.mark.asyncio
+async def test_chat_records_list_and_detail_use_real_checkpoints(seeded) -> None:
+    today = datetime.now(UTC).date()
+
+    list_response = await seeded.get("/graph-agent/chat-records", params={"user_id": "alice"})
+    assert list_response.status_code == 200
+    records = list_response.json()["data"]["records"]
+    assert records == [
+        {
+            "record_date": today.isoformat(),
+            "latest_at": records[0]["latest_at"],
+            "conversation_count": 2,
+        }
+    ]
+
+    detail_response = await seeded.get(
+        f"/graph-agent/chat-records/{today.isoformat()}",
+        params={"user_id": "alice"},
+    )
+    assert detail_response.status_code == 200
+    conversations = detail_response.json()["data"]["conversations"]
+    by_thread = {conversation["thread_id"]: conversation for conversation in conversations}
+    assert set(by_thread) == {"g-alice-single", "g-alice-multi"}
+    assert [message["content"] for message in by_thread["g-alice-multi"]["messages"]] == [
+        "first turn",
+        "echo: first turn",
+        "second",
+        "echo: second",
+        "third",
+        "echo: third",
+    ]

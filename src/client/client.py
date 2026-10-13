@@ -1,6 +1,7 @@
 import json
 import os
 from collections.abc import AsyncGenerator, Generator
+from datetime import date
 from typing import Any
 
 import httpx
@@ -10,6 +11,8 @@ from schema import (
     ChatHistory,
     ChatHistoryInput,
     ChatMessage,
+    ChatRecordDetail,
+    ChatRecordList,
     Feedback,
     ServiceMetadata,
     StreamInput,
@@ -439,3 +442,87 @@ class AgentClient:
                 raise AgentClientError(f"Error: {e}")
 
         return UserThreads.model_validate(_response_data(response))
+
+    def get_chat_records(self, user_id: str, agent: str | None = None) -> ChatRecordList:
+        """List the latest 30 UTC calendar days containing chat activity."""
+        agent_id = agent or self.agent
+        url = (
+            f"{self.base_url}/{agent_id}/chat-records"
+            if agent_id
+            else f"{self.base_url}/chat-records"
+        )
+        try:
+            response = httpx.get(
+                url,
+                params={"user_id": user_id},
+                headers=self._headers,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise AgentClientError(f"Error: {e}")
+        return ChatRecordList.model_validate(_response_data(response))
+
+    async def aget_chat_records(self, user_id: str, agent: str | None = None) -> ChatRecordList:
+        """List daily chat activity asynchronously."""
+        agent_id = agent or self.agent
+        url = (
+            f"{self.base_url}/{agent_id}/chat-records"
+            if agent_id
+            else f"{self.base_url}/chat-records"
+        )
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    url,
+                    params={"user_id": user_id},
+                    headers=self._headers,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as e:
+                raise AgentClientError(f"Error: {e}")
+        return ChatRecordList.model_validate(_response_data(response))
+
+    def get_chat_record_detail(
+        self,
+        user_id: str,
+        record_date: date,
+        agent: str | None = None,
+    ) -> ChatRecordDetail:
+        """Get messages added on one UTC calendar day."""
+        agent_id = agent or self.agent
+        path = f"{agent_id}/chat-records" if agent_id else "chat-records"
+        try:
+            response = httpx.get(
+                f"{self.base_url}/{path}/{record_date.isoformat()}",
+                params={"user_id": user_id},
+                headers=self._headers,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as e:
+            raise AgentClientError(f"Error: {e}")
+        return ChatRecordDetail.model_validate(_response_data(response))
+
+    async def aget_chat_record_detail(
+        self,
+        user_id: str,
+        record_date: date,
+        agent: str | None = None,
+    ) -> ChatRecordDetail:
+        """Get one day's chat messages asynchronously."""
+        agent_id = agent or self.agent
+        path = f"{agent_id}/chat-records" if agent_id else "chat-records"
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}/{path}/{record_date.isoformat()}",
+                    params={"user_id": user_id},
+                    headers=self._headers,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as e:
+                raise AgentClientError(f"Error: {e}")
+        return ChatRecordDetail.model_validate(_response_data(response))

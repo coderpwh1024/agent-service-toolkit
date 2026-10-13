@@ -4,6 +4,7 @@ import logging
 import warnings
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, date, datetime
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
@@ -41,6 +42,9 @@ from schema import (
     ChatHistory,
     ChatHistoryInput,
     ChatMessage,
+    ChatRecordDetail,
+    ChatRecordList,
+    ChatRecordsInput,
     Feedback,
     FeedbackResponse,
     ServiceMetadata,
@@ -54,6 +58,11 @@ from service.access import authenticate, authorize_thread, bind_user, repository
 from service.access import router as auth_router
 from service.agent_runner import delivery_context, graph_events, thread_guard
 from service.agui import router as agui_router
+from service.chat_records import (
+    get_chat_record_detail,
+    list_chat_record_days,
+    recent_record_dates,
+)
 from service.email_auth import email_auth_lifespan
 from service.email_auth import router as email_auth_router
 from service.nacos import NacosIntegration
@@ -524,6 +533,58 @@ async def threads(
         raise HTTPException(status_code=500, detail="Unexpected error")
 
     return api_success(UserThreads(threads=summaries))
+
+
+@router.get("/{agent_id}/chat-records", operation_id="chat_records_with_agent_id")
+@router.get("/chat-records")
+async def chat_records(
+    request: Request, input: ChatRecordsInput = Depends(), agent_id: str = DEFAULT_AGENT
+) -> ApiResponse[ChatRecordList]:
+    """List the latest 30 UTC calendar days containing chat activity."""
+    input.user_id = bind_user(request.state.principal, input.user_id)
+    agent: AgentGraph = get_agent(agent_id)
+    checkpointer = getattr(agent, "checkpointer", None)
+    if not checkpointer:
+        return api_success(ChatRecordList(records=[]))
+
+    try:
+        records = await list_chat_record_days(checkpointer, input.user_id, agent_id)
+    except Exception as e:
+        logger.exception("An exception occurred while listing chat records")
+        raise HTTPException(status_code=500, detail="Unexpected error") from e
+    return api_success(ChatRecordList(records=records))
+
+
+@router.get(
+    "/{agent_id}/chat-records/{record_date}",
+    operation_id="chat_record_detail_with_agent_id",
+)
+@router.get("/chat-records/{record_date}")
+async def chat_record_detail(
+    record_date: date,
+    request: Request,
+    input: ChatRecordsInput = Depends(),
+    agent_id: str = DEFAULT_AGENT,
+) -> ApiResponse[ChatRecordDetail]:
+    """Return messages added to conversations on one UTC calendar day."""
+    first_date, current_date = recent_record_dates(datetime.now(UTC))
+    if not first_date <= record_date <= current_date:
+        raise HTTPException(status_code=422, detail="record_date must be within the latest 30 days")
+
+    input.user_id = bind_user(request.state.principal, input.user_id)
+    agent: AgentGraph = get_agent(agent_id)
+    checkpointer = getattr(agent, "checkpointer", None)
+    if not checkpointer:
+        return api_success(ChatRecordDetail(record_date=record_date, conversations=[]))
+
+    try:
+        conversations = await get_chat_record_detail(
+            checkpointer, input.user_id, agent_id, record_date
+        )
+    except Exception as e:
+        logger.exception("An exception occurred while retrieving a chat record")
+        raise HTTPException(status_code=500, detail="Unexpected error") from e
+    return api_success(ChatRecordDetail(record_date=record_date, conversations=conversations))
 
 
 @app.get("/health", response_model=ApiResponse[dict[str, str]])

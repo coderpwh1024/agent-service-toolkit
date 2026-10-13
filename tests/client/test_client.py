@@ -7,7 +7,15 @@ import pytest
 from httpx import Request, Response
 
 from client import AgentClient, AgentClientError
-from schema import AgentInfo, ChatHistory, ChatMessage, ServiceMetadata, UserThreads
+from schema import (
+    AgentInfo,
+    ChatHistory,
+    ChatMessage,
+    ChatRecordDetail,
+    ChatRecordList,
+    ServiceMetadata,
+    UserThreads,
+)
 from schema.models import OpenAIModelName
 
 
@@ -452,3 +460,58 @@ async def test_aget_user_threads(agent_client):
         with pytest.raises(AgentClientError) as exc:
             await agent_client.aget_user_threads(USER_ID)
         assert "500 Internal Server Error" in str(exc.value)
+
+
+def test_get_chat_records(agent_client) -> None:
+    today = datetime.now(UTC).date()
+    response = Response(
+        200,
+        json={
+            "records": [
+                {
+                    "record_date": today.isoformat(),
+                    "latest_at": datetime.now(UTC).isoformat(),
+                    "conversation_count": 2,
+                }
+            ]
+        },
+        request=Request("GET", "http://test/test-agent/chat-records"),
+    )
+
+    with patch("httpx.get", return_value=response) as mock_get:
+        result = agent_client.get_chat_records("user-123")
+
+    assert isinstance(result, ChatRecordList)
+    assert result.records[0].record_date == today
+    assert mock_get.call_args.args[0] == "http://test/test-agent/chat-records"
+    assert mock_get.call_args.kwargs["params"] == {"user_id": "user-123"}
+
+
+@pytest.mark.asyncio
+async def test_aget_chat_record_detail(agent_client) -> None:
+    today = datetime.now(UTC).date()
+    response = Response(
+        200,
+        json={
+            "record_date": today.isoformat(),
+            "conversations": [
+                {
+                    "thread_id": "thread-1",
+                    "agent_id": "custom-agent",
+                    "updated_at": datetime.now(UTC).isoformat(),
+                    "title": "Hello",
+                    "messages": [{"type": "human", "content": "Hello"}],
+                }
+            ],
+        },
+        request=Request("GET", f"http://test/custom-agent/chat-records/{today.isoformat()}"),
+    )
+
+    with patch("httpx.AsyncClient.get", return_value=response) as mock_get:
+        result = await agent_client.aget_chat_record_detail("user-123", today, agent="custom-agent")
+
+    assert isinstance(result, ChatRecordDetail)
+    assert result.conversations[0].messages[0].content == "Hello"
+    assert mock_get.call_args.args[0] == (
+        f"http://test/custom-agent/chat-records/{today.isoformat()}"
+    )
