@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16
+    image: pgvector/pgvector:0.8.2-pg16
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
@@ -82,6 +82,18 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-agent_service}
       RAG_COLLECTION_NAME: ${RAG_COLLECTION_NAME:-acmetech-employee-handbook}
       RAG_TOP_K: ${RAG_TOP_K:-5}
+      MEM0_ENABLED: ${MEM0_ENABLED:-false}
+      MEM0_COLLECTION_NAME: ${MEM0_COLLECTION_NAME:-mem0_chat}
+      MEM0_API_KEY: ${MEM0_API_KEY:-}
+      MEM0_BASE_URL: ${MEM0_BASE_URL:-}
+      MEM0_LLM_MODEL: ${MEM0_LLM_MODEL:-qwen-plus}
+      MEM0_EMBEDDING_MODEL: ${MEM0_EMBEDDING_MODEL:-}
+      MEM0_EMBEDDING_DIMS: ${MEM0_EMBEDDING_DIMS:-1024}
+      MEM0_TOP_K: ${MEM0_TOP_K:-5}
+      MEM0_THRESHOLD: ${MEM0_THRESHOLD:-0.3}
+      MEM0_TIMEOUT_SECONDS: ${MEM0_TIMEOUT_SECONDS:-20}
+      MEM0_MAX_CONTEXT_CHARS: ${MEM0_MAX_CONTEXT_CHARS:-6000}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
     depends_on:
       postgres:
         condition: service_healthy

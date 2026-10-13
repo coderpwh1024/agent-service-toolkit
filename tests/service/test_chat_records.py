@@ -5,6 +5,7 @@ from datetime import UTC, datetime, time, timedelta
 from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import SecretStr
 
+from agents import DEFAULT_AGENT
 from service.access import create_access_token
 
 
@@ -44,7 +45,7 @@ class FakeCheckpointer:
         checkpoint_at: datetime,
         messages: list,
         user_id: str = "user-123",
-        agent_id: str = "research-assistant",
+        agent_id: str = DEFAULT_AGENT,
     ) -> None:
         self._next_id += 1
         self.rows.append(

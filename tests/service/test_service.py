@@ -444,7 +444,7 @@ def test_info(test_client, mock_settings) -> None:
         assert payload["message"] == "success"
         output = ServiceMetadata.model_validate(payload["data"])
 
-    assert output.default_agent == "research-assistant"
+    assert output.default_agent == "mem0-chatbot"
     assert len(output.agents) == 1
     assert output.agents[0].key == "base-agent"
     assert output.agents[0].description == "A base agent."

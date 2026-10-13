@@ -66,6 +66,7 @@ dependencies = [
     "pyyaml~=6.0.3",
     "qiniu~=7.18.0",
     "python-multipart~=0.0.32",
+    "mem0ai==2.2.1",
 ]
 
 # Supply-chain cooldown: resolution only considers releases >=14 days old. Needs the

@@ -202,3 +202,7 @@ Flutter 对同一句最终转写不要再调用 `/stream`，否则 Agent 会执�
 鉴权和会话错误在 WebSocket 握手阶段映射为 `4401/4403/4404/4409/4410/4429`。协议错误会以 `session.closed(reason="invalid_protocol")` 结束。可恢复错误会发 `error`，常见 code 包括 `invalid_event`、`input_queue_full`、`approval_required`、`stale_approval`、`tts_failed` 和 `agent_failed`。
 
 断线后可用原 `session_id` 重连，只要会话没有关闭或过期。重连会新建百炼实时连接和传输状态，不续播旧音频；业务 `thread_id` 和持久化历史继续保留。客户端重试 `input.text` 时复用原 `event_id`，后端会避免重复执行已保存的输入。
+
+## Mem0 聊天记忆
+
+`mem0-chatbot` 支持流式播报和插话取消，文字与语音可共享同一用户的长期事实。创建语音会话时显式传入当前选择的 `agent_id` 和对应线程 ID；`GET /voice/capabilities` 的 `default_agent` 返回新默认 agent，省略语音请求的 `agent_id` 仍保留原有 `chatbot` 行为。详见 [Mem0 配置与记忆生命周期](Mem0_Memory.md)。

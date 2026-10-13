@@ -224,6 +224,10 @@ response.pretty_print()
 
 服务会自动创建检查点和长期记忆所需的表；PG 不可用时启动失败，不会回退到本地文件或内存。已有 `checkpoints.db` 不会自动迁移或删除。长期记忆仍由智能体通过 Store 显式写入。
 
+### Mem0 对话记忆
+
+新增的 `mem0-chatbot` 位于 agent 列表首位，作为文字聊天默认 agent，支持 PostgreSQL/pgvector 长期记忆以及语音流式播报与插话取消。配置位于 Nacos 的 `memory.mem0`；默认关闭长期记忆，完成数据库准备后设置 `enabled: true` 并重启。配置、存储说明和验证方法见 [Mem0 对话记忆](docs/Mem0_Memory.md)。
+
 ### Nacos 3.x
 
 项目使用官方 `nacos-sdk-python` 连接 Nacos 3.x。Nacos 3 默认将控制台和客户端服务分开：控制台可位于 `http://127.0.0.1:8080/`，应用 SDK 应连接服务器端口 `127.0.0.1:8848`，并确保对应的 gRPC 端口 `9848` 可访问。

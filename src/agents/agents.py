@@ -12,11 +12,13 @@ from agents.knowledge_base_agent import kb_agent
 from agents.langgraph_supervisor_agent import langgraph_supervisor_agent
 from agents.langgraph_supervisor_hierarchy_agent import langgraph_supervisor_hierarchy_agent
 from agents.lazy_agent import LazyLoadingAgent
+from agents.mem0_chatbot import mem0_chatbot
 from agents.rag_assistant import rag_assistant
 from agents.research_assistant import research_assistant
 from schema import AgentInfo
 
-DEFAULT_AGENT = "research-assistant"
+DEFAULT_AGENT = "mem0-chatbot"
+STREAMING_CHAT_AGENTS = frozenset({"chatbot", "mem0-chatbot"})
 
 # Type alias to handle LangGraph's different agent patterns
 # - @entrypoint functions return Pregel
@@ -32,6 +34,10 @@ class Agent:
 
 
 agents: dict[str, Agent] = {
+    "mem0-chatbot": Agent(
+        description="A conversational assistant with user-scoped Mem0 memory in PostgreSQL.",
+        graph_like=mem0_chatbot,
+    ),
     "chatbot": Agent(description="A simple chatbot.", graph_like=chatbot),
     "research-assistant": Agent(
         description="A research assistant with web search and calculator.",

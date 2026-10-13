@@ -37,6 +37,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info, load_agent
 from core import settings
 from memory import initialize_database, initialize_store
+from memory.mem0_service import mem0_lifespan
 from schema import (
     ApiResponse,
     ChatHistory,
@@ -141,7 +142,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 agent.checkpointer = saver
                 # Set store for long-term memory (cross-conversation knowledge)
                 agent.store = store
-            async with email_auth_lifespan(app), voice_lifespan(app):
+            async with mem0_lifespan(), email_auth_lifespan(app), voice_lifespan(app):
                 await nacos.register_service()
                 app.state.nacos = nacos
                 try:

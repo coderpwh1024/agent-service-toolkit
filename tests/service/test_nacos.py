@@ -489,3 +489,39 @@ POSTGRES_DB: remote-db
     assert config.POSTGRES_HOST == "remote-postgres"
     assert config.POSTGRES_PORT == 6432
     assert config.POSTGRES_DB == "remote-db"
+
+
+def test_mem0_nested_configuration_and_secret():
+    config = make_settings()
+    nacos.apply_remote_settings(
+        config,
+        """memory:
+  mem0:
+    enabled: true
+    collection_name: mem0_chat_test
+    api_key: memory-test-key
+    base_url: https://models.example/v1
+    llm_model: extraction-model
+    embedding_model: embedding-model
+    embedding_dims: 768
+    top_k: 3
+    threshold: 0.4
+    timeout_seconds: 10
+    max_context_chars: 3000
+""",
+    )
+    assert config.MEM0_ENABLED
+    assert config.MEM0_API_KEY == SecretStr("memory-test-key")
+    assert config.MEM0_COLLECTION_NAME == "mem0_chat_test"
+    assert config.MEM0_EMBEDDING_DIMS == 768
+    assert config.MEM0_LLM_MODEL == "extraction-model"
+    assert config.MEM0_TOP_K == 3
+    assert "memory-test-key" not in repr(config)
+
+
+@pytest.mark.parametrize("value", ["rag_documents", "mem0_bad-name", "mem0_../../bad"])
+def test_mem0_collection_name_rejects_other_tables(value):
+    config = make_settings()
+    with pytest.raises(ValueError):
+        nacos.apply_remote_settings(config, f"MEM0_COLLECTION_NAME: {value}\n")
+    assert config.MEM0_COLLECTION_NAME == "mem0_chat"

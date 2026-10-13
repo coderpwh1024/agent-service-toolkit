@@ -16,6 +16,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 from pydantic import ValidationError
 
+from agents import STREAMING_CHAT_AGENTS
 from core.settings import Settings
 from schema import StreamInput
 from schema.voice import (
@@ -175,7 +176,7 @@ class VoiceConnection:
             if self.tts_task and not self.tts_task.done():
                 self.tts_task.cancel()
             if (
-                self.session.agent_id == "chatbot"
+                self.session.agent_id in STREAMING_CHAT_AGENTS
                 and self.agent_task
                 and not self.agent_task.done()
             ):
@@ -469,7 +470,7 @@ class VoiceConnection:
         speech = SpeechText()
         streamed: set[str | None] = set()
         final_ai = None
-        token_mode = self.session.agent_id == "chatbot"
+        token_mode = self.session.agent_id in STREAMING_CHAT_AGENTS
 
         async def output(text: str, *, final: bool = False):
             if turn.response_id in self.invalid:
@@ -701,7 +702,7 @@ class VoiceConnection:
                         turn.execution_status = "cancelled"
             if self.tts_task:
                 self.tts_task.cancel()
-            if self.agent_task and self.session.agent_id == "chatbot":
+            if self.agent_task and self.session.agent_id in STREAMING_CHAT_AGENTS:
                 self.agent_task.cancel()
             if self.speech_hint_task:
                 self.speech_hint_task.cancel()

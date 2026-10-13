@@ -852,3 +852,65 @@ async def test_voice_lifespan_requires_both_backend_secrets(monkeypatch):
     with pytest.raises(ValueError, match="AUTH_SECRET"):
         async with voice_lifespan(FastAPI()):
             pass
+
+
+def test_mem0_agent_shares_text_and_voice_memory(voice_env, monkeypatch):
+    import importlib
+    from unittest.mock import AsyncMock, Mock
+
+    module = importlib.import_module("agents.mem0_chatbot")
+    client, repo, agents, headers = voice_env
+    memory = Mock(search=AsyncMock(return_value=["喜欢茶"]), remember=AsyncMock())
+    monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
+    monkeypatch.setattr(
+        module,
+        "get_model",
+        lambda _: FakeListChatModel(responses=["记得你喜欢茶。", "记得你喜欢茶。"], sleep=0.001),
+    )
+    graph = module.mem0_chatbot.copy()
+    graph.checkpointer = MemorySaver()
+    agents["mem0-chatbot"] = graph
+    auth = headers()
+    response = client.post("/mem0-chatbot/invoke", headers=auth, json={"message": "我喜欢茶"})
+    assert response.status_code == 200
+    session = create(client, auth, agent_id="mem0-chatbot")
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="我喜欢什么？")
+        seen = read_until(ws, "response.done")
+        assert "".join(e["text"] for e in seen if e["type"] == "text.delta") == "记得你喜欢茶。"
+        assert any(e["type"] == "audio" for e in seen)
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert [call.args[1] for call in memory.search.await_args_list] == ["alice", "alice"]
+    assert [call.args[0] for call in memory.remember.await_args_list] == [
+        [{"role": "user", "content": "我喜欢茶"}],
+        [{"role": "user", "content": "我喜欢什么？"}],
+    ]
+    capabilities = client.get("/voice/capabilities", headers=auth).json()["data"]
+    agent = next(a for a in capabilities["agents"] if a["id"] == "mem0-chatbot")
+    assert agent["speech_mode"] == "streaming" and agent["cancel_execution"]
+
+
+@pytest.mark.parametrize("agent_id", ["mem0-chatbot"])
+def test_mem0_cancel_invalidates_audio(voice_env, agent_id):
+    client, repo, agents, headers = voice_env
+    agents[agent_id] = build_chatbot(["第一句话。" + "后续内容" * 100, "新的回答。"], sleep=0.003)
+    auth = headers()
+    session = create(client, auth, agent_id=agent_id)
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="第一个问题")
+        first = read_until(ws, "audio.segment.done")
+        old_id = first[-1]["response_id"]
+        event(ws, "response.cancel", response_id=old_id)
+        read_until(ws, "response.cancelled")
+        event(ws, "input.text", text="第二个问题")
+        seen = read_until(ws, "response.done")
+        if seen[-1]["response_id"] == old_id:
+            seen += read_until(ws, "response.done")
+        assert all(e["frame"][2] != old_id for e in seen if e["type"] == "audio")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    turns = list(repo.records.values())
+    assert turns[0].interrupted and turns[0].execution_status == "cancelled"

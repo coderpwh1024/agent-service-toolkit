@@ -142,7 +142,7 @@ smoke_postgres() {
   start_service
   local cid
   cid="$(docker compose -f compose.yaml ps -q postgres)"
-  uv run pytest tests/smoke/test_persistence.py tests/smoke/test_postgres_memory.py -v --run-docker
+  uv run pytest tests/smoke/test_persistence.py tests/smoke/test_postgres_memory.py tests/smoke/test_mem0_memory.py -v --run-docker
   local n
   n="$(docker exec -e PGPASSWORD=postgres "$cid" psql -U postgres -d agent_service -tAc \
     "select count(*) from checkpoints where thread_id='$SMOKE_THREAD_ID'" 2>/dev/null | tr -d '[:space:]')" || true

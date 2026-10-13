@@ -8,7 +8,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request, WebSocket
 
-from agents import get_agent, get_all_agent_info
+from agents import DEFAULT_AGENT, STREAMING_CHAT_AGENTS, get_agent, get_all_agent_info
 from core import settings
 from memory.postgres import get_postgres_connection_string
 from schema import ApiResponse, api_success
@@ -77,6 +77,7 @@ async def capabilities(request: Request) -> ApiResponse[dict[str, Any]]:
     return api_success(
         {
             "enabled": settings.VOICE_ENABLED,
+            "default_agent": DEFAULT_AGENT,
             "protocol_version": 1,
             "input_format": "pcm16_16000_mono",
             "output_format": "pcm16_24000_mono",
@@ -106,8 +107,10 @@ async def capabilities(request: Request) -> ApiResponse[dict[str, Any]]:
                 {
                     "id": a.key,
                     "description": a.description,
-                    "speech_mode": "streaming" if a.key == "chatbot" else "final_message",
-                    "cancel_execution": a.key == "chatbot",
+                    "speech_mode": "streaming"
+                    if a.key in STREAMING_CHAT_AGENTS
+                    else "final_message",
+                    "cancel_execution": a.key in STREAMING_CHAT_AGENTS,
                 }
                 for a in get_all_agent_info()
             ],

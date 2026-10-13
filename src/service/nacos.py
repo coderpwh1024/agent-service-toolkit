@@ -26,6 +26,7 @@ _NACOS_BOOTSTRAP_FIELDS = {
     "GRACEFUL_SHUTDOWN_TIMEOUT",
     "HOST",
     "LOG_LEVEL",
+    "LOG_FORMAT",
     "MODE",
     "PORT",
 }
@@ -44,6 +45,21 @@ _MAIL_FIELDS = {
     "username": "SMTP_USERNAME",
 }
 _NESTED_SETTINGS: dict[str, Any] = {
+    "memory": {
+        "mem0": {
+            "enabled": "MEM0_ENABLED",
+            "collection_name": "MEM0_COLLECTION_NAME",
+            "llm_model": "MEM0_LLM_MODEL",
+            "api_key": "MEM0_API_KEY",
+            "base_url": "MEM0_BASE_URL",
+            "embedding_model": "MEM0_EMBEDDING_MODEL",
+            "embedding_dims": "MEM0_EMBEDDING_DIMS",
+            "top_k": "MEM0_TOP_K",
+            "threshold": "MEM0_THRESHOLD",
+            "timeout_seconds": "MEM0_TIMEOUT_SECONDS",
+            "max_context_chars": "MEM0_MAX_CONTEXT_CHARS",
+        },
+    },
     "models": {
         "dashscope": {
             "api_key": "DASHSCOPE_API_KEY",
@@ -344,6 +360,7 @@ def apply_remote_settings(
     validated = type(config)(_env_file=None, **values)
     validated.require_model_provider()
     validated.require_voice_configuration()
+    validated.require_mem0_configuration()
     for name in type(config).model_fields:
         setattr(config, name, getattr(validated, name))
     return sorted(payload)

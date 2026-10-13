@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
+from agents import DEFAULT_AGENT
+
 
 class FakeCheckpointTuple:
     def __init__(self, thread_id: str, checkpoint_id: str, checkpoint: dict, metadata: dict):
@@ -41,7 +43,7 @@ class FakeCheckpointer:
         self,
         thread_id: str,
         user_id: str = "user-123",
-        agent_id: str = "research-assistant",
+        agent_id: str = DEFAULT_AGENT,
         turns: int = 1,
         title: str = "Hello",
         subgraph_heads: int = 0,
