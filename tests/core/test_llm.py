@@ -112,6 +112,22 @@ def test_get_model_alibaba_bailian_requires_key():
             _get_model_uncached(AlibabaModelName.QWEN_38_MAX)
 
 
+@pytest.mark.parametrize("thinking", [False, True])
+def test_voice_thinking_override_is_explicit_and_does_not_mutate_text_model(thinking):
+    with patch("core.settings.settings.DASHSCOPE_API_KEY", SecretStr("test_key")):
+        text_model = _get_model_uncached(AlibabaModelName.QWEN_38_MAX)
+        voice_model = _get_model_uncached(AlibabaModelName.QWEN_38_MAX, enable_thinking=thinking)
+
+    assert text_model.extra_body is None
+    assert voice_model.extra_body == {"enable_thinking": thinking}
+
+
+def test_voice_thinking_flag_is_not_sent_to_other_providers():
+    with patch.dict(os.environ, {"OPENAI_API_KEY": "test_key"}):
+        model = _get_model_uncached(OpenAIModelName.GPT_5_NANO, enable_thinking=False)
+    assert model.extra_body is None
+
+
 def test_get_model_openrouter():
     with patch("core.settings.settings.OPENROUTER_API_KEY", SecretStr("test_key")):
         model = _get_model_uncached(OpenRouterModelName.GEMINI_36_FLASH)

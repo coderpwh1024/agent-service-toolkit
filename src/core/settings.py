@@ -135,6 +135,7 @@ class Settings(BaseSettings):
     SMTP_USE_SSL: bool = False
 
     VOICE_ENABLED: bool = False
+    VOICE_LLM_ENABLE_THINKING: bool = False
     VOICE_REALTIME_URL: str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
     VOICE_REALTIME_PROXY: str | None = None
     VOICE_REALTIME_STT_MODEL: str = "qwen3-asr-flash-realtime"

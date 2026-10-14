@@ -66,7 +66,7 @@ type ModelT = (
 
 
 @cache
-def get_model(model_name: AllModelEnum, /) -> ModelT:
+def get_model(model_name: AllModelEnum, /, *, enable_thinking: bool | None = None) -> ModelT:
     # NOTE: models with streaming=True will send tokens as they are generated
     # if the /stream endpoint is called with stream_tokens=True (the default)
     api_model_name = _MODEL_TABLE.get(model_name)
@@ -82,6 +82,9 @@ def get_model(model_name: AllModelEnum, /) -> ModelT:
             streaming=True,
             base_url=settings.DASHSCOPE_BASE_URL,
             api_key=settings.DASHSCOPE_API_KEY,
+            extra_body={"enable_thinking": enable_thinking}
+            if enable_thinking is not None
+            else None,
         )
     if model_name in OpenAIModelName:
         return ChatOpenAI(model=api_model_name, streaming=True)

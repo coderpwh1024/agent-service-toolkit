@@ -19,6 +19,8 @@ authentication:
 
 voice:
   enabled: true
+  llm:
+    enable_thinking: false
   wake:
     enabled: true
     word: 小美
@@ -59,6 +61,8 @@ voice:
 PostgreSQL 是必需依赖。服务启动时会幂等创建 `app_thread_owners`、`app_runs`、`voice_sessions` 和 `voice_turns`。生产环境使用 HTTPS/WSS，并让反向代理允许 WebSocket Upgrade，空闲超时需大于 `VOICE_IDLE_SECONDS`。
 
 百炼上游默认直连，不继承操作系统代理。确实需要 HTTP 代理时设置 `voice.realtime.proxy`；SOCKS 代理还需在部署镜像中安装 `websockets` 所需的 SOCKS 可选依赖。完整语音配置维护在 Nacos 的 `agent-service-toolkit.yaml` 中。
+
+普通语音聊天 `chatbot`、`mem0-chatbot` 在千问模型上默认显式关闭思考，以减少日常对话的首字等待。Nacos 的 `voice.llm.enable_thinking` 对应 `VOICE_LLM_ENABLE_THINKING`，默认 `false`，需要深度推理时可设为 `true` 并重启服务。该选项只改变这两个语音聊天 Agent 的千问请求参数，不修改全局模型默认值，不改变普通文字入口或复杂工具 Agent 的现有行为，其他供应商不会收到百炼扩展字段。思考模式的质量与延时取舍参见[百炼官方说明](https://help.aliyun.com/zh/model-studio/deep-thinking/)。
 
 移动 App 通过 `POST /auth/email/code` 和 `POST /auth/email/verify` 完成邮箱验证码登录，详见[账号与认证说明](Accounts_and_Credentials.md)。验证成功后，用户令牌位于统一响应的 `data.access_token`，默认有效期为 15 天。兼容的可信后台也可以配置 `AUTH_SECRET`，在自行验证用户后调用：
 
@@ -178,6 +182,12 @@ JSON 事件通常包含 `event_id`、`sequence`、`session_id` 和 `connection_i
 `response.done` 表示生成/TTS 流程结束，不表示用户已经听完。事件中的 `execution_status` 表示 Agent 执行结果，`audio_status` 表示 TTS 交付结果，两者独立；例如 Agent 已生成完整文字但 TTS 失败时，`execution_status` 为 `completed`、`audio_status` 和总 `status` 为 `failed`。App 应让已经进入播放缓冲的音频自然播完，并在原生播放器确认结束后再进入监听状态。只有 App 上报 `playback.finished` 或完整的 `playback.progress` 后，后端才记录已播放。`response.cancelled.execution_status` 单独说明 Agent 是否也已取消；含外部工具的复杂 Agent 可能继续完成业务执行，因此 App 不应把停播解释为事务回滚。
 
 后端对 Agent → TTS 和 TTS → WebSocket 使用有界队列进行自然背压。队列暂时满载不代表失败，也不会丢弃剩余文字；只有上游 TTS 明确失败、回答被取消或连接关闭时才停止语音交付。
+
+Agent token 与 TTS 合成并行进行。文字增量立即下发，独立语音任务负责断句：短逗号不阻塞后续句号，首段最多先积累 24 字；没有可用断句时，首段缓冲约 180 ms 后提交，后续段约 400 ms 后提交，不等待 Agent 或 Mem0 写入结束。这些时间只约束文本缓冲，不包含 TTS 连接、排队、合成、网络和播放器耗时，不能解释为端到端首声保证。代码围栏内容仍不播报，取消和有界背压语义保持不变。
+
+`response.done.latency_ms` 是可选诊断字段，旧客户端可忽略。`first_text_ms`、`tts_ready_ms`、`first_speech_ms`、`first_audio_ms`、`first_audio_sent_ms` 分别表示自服务端接受本轮输入后，到首个文字增量、TTS 握手完成、提交首段、生成首包 PCM、首包成功交给 WebSocket 的耗时；`text_to_audio_ms` 是首字到首包 PCM 的差值。没有发生的阶段不返回字段。它们使用服务端单调时钟，不代表手机已经出声，也不能与手机时钟直接相减。
+
+客户端应在收到并交给播放器首包音频后再进入播报状态，不能仅凭 `text.delta` 标记开始播放。Android 12 及以上可独立降低 AudioTrack 启动阈值，本客户端请求 40 ms 的起播采样量，同时保留原有缓冲容量；最终阈值和实际声学延时取决于系统与音频路由。调试版客户端记录同一设备时钟下的首字、首包接收和原生入队耗时。最终声学首声、弱网连续性与蓝牙延时仍需目标真机测量。
 
 控制事件使用优先队列。取消后仍可能有旧数据已经进入网络，App 必须立刻把对应 `response_id` 加入无效集合，并丢弃随后到达的文字、段事件和音频帧。
 

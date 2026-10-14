@@ -379,6 +379,65 @@ def test_slow_tts_applies_backpressure_without_truncating_audio(voice_env, monke
     assert all(segment.complete and segment.samples > 0 for segment in turn.segments)
 
 
+@pytest.mark.parametrize("enable_thinking", [False, True])
+def test_audio_starts_while_model_is_still_generating_and_reports_latency(
+    voice_env, monkeypatch, enable_thinking
+):
+    import voice.session as voice_session
+    from service import voice as voice_routes
+    from service.agent_runner import AgentEvent
+
+    client, _, _, headers = voice_env
+    signals = []
+    overlapped = []
+
+    class SignalingSpeech(FakeSpeech):
+        def __init__(self, config):
+            super().__init__(config)
+            self.emitted = asyncio.Event()
+            signals.append(self.emitted)
+
+        async def synthesize(self, ws, text):
+            yield b"\0\0" * 480
+            self.emitted.set()
+
+    async def stalled_graph(*args, **kwargs):
+        assert args[1]["config"]["configurable"]["voice_enable_thinking"] is enable_thinking
+        yield AgentEvent("token", "我在认真听", "message-1")
+        try:
+            await asyncio.wait_for(signals[0].wait(), timeout=1)
+        except TimeoutError:
+            overlapped.append(False)
+        else:
+            overlapped.append(True)
+        yield AgentEvent("token", "，你慢慢说。", "message-1")
+
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", SignalingSpeech)
+    monkeypatch.setattr(settings, "VOICE_LLM_ENABLE_THINKING", enable_thinking)
+    monkeypatch.setattr(voice_session, "graph_events", stalled_graph)
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="测试边生成边播报")
+        events = read_until(ws, "response.done")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    assert overlapped == [True]
+    first_audio = next(index for index, item in enumerate(events) if item["type"] == "audio")
+    last_text = max(index for index, item in enumerate(events) if item["type"] == "text.delta")
+    assert first_audio < last_text
+    assert (
+        "".join(item["text"] for item in events if item["type"] == "text.delta")
+        == "我在认真听，你慢慢说。"
+    )
+    latency = events[-1]["latency_ms"]
+    assert 0 <= latency["first_text_ms"] <= latency["first_speech_ms"]
+    assert latency["first_speech_ms"] <= latency["first_audio_ms"] <= latency["first_audio_sent_ms"]
+    assert latency["text_to_audio_ms"] >= 0
+
+
 def test_tts_failure_finishes_without_deadlock_or_false_success(voice_env, monkeypatch):
     from service import voice as voice_routes
 
@@ -865,7 +924,9 @@ def test_mem0_agent_shares_text_and_voice_memory(voice_env, monkeypatch):
     monkeypatch.setattr(
         module,
         "get_model",
-        lambda _: FakeListChatModel(responses=["记得你喜欢茶。", "记得你喜欢茶。"], sleep=0.001),
+        lambda _, **kwargs: FakeListChatModel(
+            responses=["记得你喜欢茶。", "记得你喜欢茶。"], sleep=0.001
+        ),
     )
     graph = module.mem0_chatbot.copy()
     graph.checkpointer = MemorySaver()

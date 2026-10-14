@@ -242,6 +242,7 @@ def test_settings_with_dashscope_key():
         assert settings.DASHSCOPE_API_KEY == SecretStr("test_key")
         assert settings.DASHSCOPE_BASE_URL == ("https://dashscope.aliyuncs.com/compatible-mode/v1")
         assert settings.DASHSCOPE_EMBEDDING_MODEL == "qwen3.7-text-embedding"
+        assert settings.VOICE_LLM_ENABLE_THINKING is False
         assert settings.DEFAULT_MODEL == AlibabaModelName.QWEN_38_MAX
         assert settings.AVAILABLE_MODELS == set(AlibabaModelName)
 

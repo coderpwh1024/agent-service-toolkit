@@ -34,6 +34,28 @@ def test_mem0_agent_is_first_and_default():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
+@pytest.mark.parametrize("thinking", [False, True])
+async def test_voice_chat_applies_the_configured_thinking_profile(
+    monkeypatch, agent_name, thinking
+):
+    module = importlib.import_module(f"agents.{agent_name}")
+    model = Mock(ainvoke=AsyncMock(return_value=AIMessage(content="你好")))
+    factory = Mock(return_value=model)
+    monkeypatch.setattr(module, "get_model", factory)
+    if agent_name == "mem0_chatbot":
+        monkeypatch.setattr(module, "get_mem0_service", lambda: None)
+    graph = getattr(module, agent_name).copy()
+    graph.checkpointer = MemorySaver()
+    invocation = config()
+    invocation["configurable"].update(model="qwen3.8-max", voice_enable_thinking=thinking)
+
+    await graph.ainvoke({"messages": [HumanMessage(content="hello")]}, invocation)
+
+    factory.assert_called_once_with("qwen3.8-max", enable_thinking=thinking)
+
+
+@pytest.mark.asyncio
 async def test_scoped_facts_and_checkpoint_history(agent_setup):
     graph, memory, model = agent_setup
     await graph.ainvoke({"messages": [HumanMessage(content="我喜欢茶")]}, config())

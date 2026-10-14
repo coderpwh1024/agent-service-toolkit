@@ -119,6 +119,9 @@ _NESTED_SETTINGS: dict[str, Any] = {
     },
     "voice": {
         "enabled": "VOICE_ENABLED",
+        "llm": {
+            "enable_thinking": "VOICE_LLM_ENABLE_THINKING",
+        },
         "realtime": {
             "url": "VOICE_REALTIME_URL",
             "proxy": "VOICE_REALTIME_PROXY",

@@ -86,6 +86,7 @@ class VoiceConnection:
         self.activity = self.started
         self.seen: OrderedDict[str, None] = OrderedDict()
         self.turns: dict[str, VoiceTurn] = {}
+        self.timings: dict[str, dict[str, float]] = {}
         self.invalid: set[str] = set()
         self.current: VoiceTurn | None = None
         self.agent_task: asyncio.Task | None = None
@@ -121,6 +122,7 @@ class VoiceConnection:
         for offset in range(0, len(pcm), 4096):
             if turn.response_id in self.invalid or self.closed.is_set():
                 return
+            self.mark_timing(turn.response_id, "first_audio")
             part = pcm[offset : offset + 4096]
             self.audio_sequence += 1
             self.sequence += 1
@@ -143,6 +145,7 @@ class VoiceConnection:
                     response_id, frame = item
                     if response_id not in self.invalid:
                         await self.ws.send_bytes(frame)
+                        self.mark_timing(response_id, "first_audio_sent")
                 else:
                     if item.get("response_id") in self.invalid and item["type"] in {
                         "text.delta",
@@ -151,7 +154,33 @@ class VoiceConnection:
                         "response.started",
                     }:
                         continue
+                    if item["type"] == "response.done":
+                        item["latency_ms"] = self.latency_ms(item["response_id"])
+                        logger.info(
+                            "Voice response timing response_id=%s latency_ms=%s",
+                            item["response_id"],
+                            item["latency_ms"],
+                        )
                     await self.ws.send_json(item)
+
+    def mark_timing(self, response_id: str, stage: str) -> None:
+        self.timings.setdefault(response_id, {}).setdefault(stage, time.monotonic())
+
+    def latency_ms(self, response_id: str) -> dict[str, int]:
+        timings = self.timings.get(response_id, {})
+        accepted = timings.get("accepted")
+        if accepted is None:
+            return {}
+        result = {
+            f"{stage}_ms": round((value - accepted) * 1000)
+            for stage, value in timings.items()
+            if stage != "accepted"
+        }
+        if "first_audio" in timings and "first_text" in timings:
+            result["text_to_audio_ms"] = round(
+                (timings["first_audio"] - timings["first_text"]) * 1000
+            )
+        return result
 
     async def cancel_response(self, response_id: str | None, reason: str) -> None:
         if not response_id or response_id in self.invalid:
@@ -212,6 +241,7 @@ class VoiceConnection:
             input_id=input_id,
             input_text=text.strip(),
         )
+        self.mark_timing(turn.response_id, "accepted")
         await self.repo.save_turn(turn)
         self.turns[turn.response_id] = turn
         self.inputs.put_nowait((turn, resume))
@@ -406,14 +436,12 @@ class VoiceConnection:
     async def speak(self, turn: VoiceTurn, text_queue: asyncio.Queue[str | None]) -> None:
         try:
             async with self.provider.synthesizer(self.session) as tts:
-                while True:
-                    text = await text_queue.get()
+                self.mark_timing(turn.response_id, "tts_ready")
+                async for text in SpeechText().stream(text_queue):
                     if turn.response_id in self.invalid:
                         turn.audio_status = "cancelled"
                         return
-                    if text is None:
-                        turn.audio_status = "completed"
-                        return
+                    self.mark_timing(turn.response_id, "first_speech")
                     segment = AudioSegment(index=len(turn.segments) + 1, text=text)
                     turn.segments.append(segment)
                     await self.emit(
@@ -431,6 +459,7 @@ class VoiceConnection:
                         segment_index=segment.index,
                         samples=segment.samples,
                     )
+                turn.audio_status = "completed"
         except asyncio.CancelledError:
             turn.audio_status = "cancelled"
             raise
@@ -467,20 +496,18 @@ class VoiceConnection:
     ) -> None:
         from service.service import _handle_input
 
-        speech = SpeechText()
         streamed: set[str | None] = set()
         final_ai = None
         token_mode = self.session.agent_id in STREAMING_CHAT_AGENTS
 
-        async def output(text: str, *, final: bool = False):
+        async def output(text: str):
             if turn.response_id in self.invalid:
                 return
             if text:
+                self.mark_timing(turn.response_id, "first_text")
                 turn.generated_text += text
                 await self.emit("text.delta", response_id=turn.response_id, text=text)
-            for phrase in speech.feed(text, final=final):
-                if not await self.enqueue_speech(text_queue, phrase):
-                    break
+                await self.enqueue_speech(text_queue, text)
 
         try:
             async with asyncio.timeout(180), thread_guard(self.repo, self.session.thread_id):
@@ -493,6 +520,10 @@ class VoiceConnection:
                 kwargs, run_id = await _handle_input(
                     data, self.agent, self.session.agent_id, self.repo, auto_resume=False
                 )
+                if token_mode:
+                    kwargs["config"]["configurable"]["voice_enable_thinking"] = (
+                        self.settings.VOICE_LLM_ENABLE_THINKING
+                    )
                 turn.run_id = str(run_id)
                 if resume is not None:
                     state = await self.agent.aget_state(kwargs["config"])
@@ -568,7 +599,6 @@ class VoiceConnection:
                                     break
                     if final_ai:
                         await output(final_ai.content)
-                await output("", final=True)
                 turn.execution_status = "waiting_approval" if self.pending else "completed"
         except asyncio.CancelledError:
             turn.execution_status = "cancelled"
@@ -586,10 +616,11 @@ class VoiceConnection:
 
     async def execute(self, turn: VoiceTurn, resume: dict | None) -> None:
         self.current = turn
+        self.mark_timing(turn.response_id, "accepted")
         turn.status = "running"
         turn.execution_status = "running"
         turn.audio_status = "running"
-        queue: asyncio.Queue[str | None] = asyncio.Queue(16)
+        queue: asyncio.Queue[str | None] = asyncio.Queue(self.settings.VOICE_QUEUE_SIZE)
         self.tts_task = asyncio.create_task(self.speak(turn, queue))
         self.agent_task = asyncio.create_task(self.generate(turn, resume, queue))
         try:

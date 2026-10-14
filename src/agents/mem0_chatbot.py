@@ -64,7 +64,13 @@ async def mem0_chatbot(
             )
         )
     prompt.append(SystemMessage(content=f"Memory service status for this turn: {status}."))
-    model = get_model(configurable.get("model", settings.DEFAULT_MODEL))
+    model_name = configurable.get("model", settings.DEFAULT_MODEL)
+    thinking = configurable.get("voice_enable_thinking")
+    model = (
+        get_model(model_name, enable_thinking=thinking)
+        if isinstance(thinking, bool)
+        else get_model(model_name)
+    )
     response = await model.ainvoke(prompt + messages, config)
     if memory and user_messages:
         try:

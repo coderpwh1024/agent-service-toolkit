@@ -16,7 +16,14 @@ async def chatbot(
     if previous:
         messages = previous["messages"] + messages
 
-    model = get_model(config["configurable"].get("model", settings.DEFAULT_MODEL))
+    configurable = config["configurable"]
+    model_name = configurable.get("model", settings.DEFAULT_MODEL)
+    thinking = configurable.get("voice_enable_thinking")
+    model = (
+        get_model(model_name, enable_thinking=thinking)
+        if isinstance(thinking, bool)
+        else get_model(model_name)
+    )
     response = await model.ainvoke(messages)
     return entrypoint.final(
         value={"messages": [response]}, save={"messages": messages + [response]}

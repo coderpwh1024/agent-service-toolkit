@@ -67,6 +67,8 @@ storage:
     url: redis://remote:6379/0
 voice:
   enabled: true
+  llm:
+    enable_thinking: true
   realtime:
     voices:
       - Cherry
@@ -85,6 +87,7 @@ rag:
         "RAG_TOP_K",
         "REDIS_URL",
         "VOICE_ENABLED",
+        "VOICE_LLM_ENABLE_THINKING",
         "VOICE_MAX_SESSIONS",
         "VOICE_REALTIME_VOICES",
         "VOICE_VAD_SILENCE_MS",
@@ -93,6 +96,7 @@ rag:
     assert config.EMAIL_AUTH_ENABLED is True
     assert config.REDIS_URL == SecretStr("redis://remote:6379/0")
     assert config.VOICE_ENABLED is True
+    assert config.VOICE_LLM_ENABLE_THINKING is True
     assert [voice.id for voice in config.VOICE_REALTIME_VOICES] == ["Cherry"]
     assert config.VOICE_REALTIME_VOICES[0].name == "Cherry"
     assert config.VOICE_MAX_SESSIONS == 12
