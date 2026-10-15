@@ -94,6 +94,72 @@ async def test_scoped_facts_and_checkpoint_history(agent_setup):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("memory_state", ["available", "empty", "failed", "disabled"])
+async def test_dialogue_guidance_is_system_only_across_turns(
+    agent_setup, monkeypatch, memory_state
+):
+    graph, memory, model = agent_setup
+    if memory_state == "empty":
+        memory.search.return_value = []
+    elif memory_state == "failed":
+        memory.search.side_effect = ConnectionError("unavailable")
+    elif memory_state == "disabled":
+        monkeypatch.setattr(agent_module, "get_mem0_service", lambda: None)
+    inputs = ["你是傻逼吗？", "你是傻逼吗？", "什么是检查点？", "没听清，再说一遍"]
+    responses = ["哪句话有问题？", "有具体问题时我们再聊。", "就像游戏存档。", "就像游戏存档。"]
+    model.ainvoke.side_effect = [AIMessage(content=text) for text in responses]
+    expected_history = []
+
+    for text, response in zip(inputs, responses, strict=True):
+        result = await graph.ainvoke({"messages": [HumanMessage(content=text)]}, config())
+        prompt = model.ainvoke.await_args.args[0]
+        system_text = "\n".join(m.content for m in prompt if isinstance(m, SystemMessage))
+        assert "When a question repeats" in system_text
+        assert "Follow topic changes" in system_text
+        assert "requests repetition or confirmation" in system_text
+        assert "Fictional examples, not history" in system_text
+        actual_messages = [
+            m for m in prompt if not isinstance(m, SystemMessage) and m.name != "retrieved_memories"
+        ]
+        assert [(m.type, m.content) for m in actual_messages] == expected_history + [
+            ("human", text)
+        ]
+        assert result["messages"][0].content == response
+        if memory_state != "disabled":
+            memory.remember.assert_awaited_with(
+                [{"role": "user", "content": text}],
+                "alice",
+                "thread-a",
+                context=[
+                    {"role": "user" if role == "human" else "assistant", "content": content}
+                    for role, content in expected_history
+                ],
+            )
+        expected_history.extend([("human", text), ("ai", response)])
+
+    checkpoint = await graph.checkpointer.aget_tuple(config())
+    assert [(m.type, m.content) for m in messages_from_checkpoint(checkpoint.checkpoint)] == (
+        expected_history
+    )
+    if memory_state == "disabled":
+        memory.search.assert_not_awaited()
+        memory.remember.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_minimum_chat_budget_still_accepts_a_short_request(agent_setup, monkeypatch):
+    graph, memory, model = agent_setup
+    monkeypatch.setattr(agent_module.settings, "MEM0_CHAT_CONTEXT_TOKENS", 2048)
+    memory.search.return_value = []
+
+    result = await graph.ainvoke({"messages": [HumanMessage(content="你好")]}, config())
+
+    model.ainvoke.assert_awaited_once()
+    assert result["messages"][0].response_metadata["memory_status"] == "saved"
+    assert agent_module._estimate_tokens(model.ainvoke.await_args.args[0]) <= 2048
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["search", "remember"])
 async def test_memory_failure_preserves_response_and_reports_status(agent_setup, caplog, failure):
     graph, memory, model = agent_setup
