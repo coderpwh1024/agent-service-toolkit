@@ -78,6 +78,17 @@ def build_memory(config: Settings, pool: ConnectionPool) -> Any:
         memory.vector_store = VectorStoreFactory.create(
             sdk_config.vector_store.provider, sdk_config.vector_store.config
         )
+
+        def resolve_owner(memory_id: str) -> dict[str, Any] | None:
+            record = memory.vector_store.get(vector_id=memory_id)
+            if record is None:
+                return None
+            payload = record.payload or {}
+            if not payload.get("user_id") or not payload.get("agent_id"):
+                return None
+            return {"user_id": payload["user_id"], "agent_id": payload["agent_id"]}
+
+        memory.db.resolve_owner = resolve_owner
         memory.db.setup()
         memory.vector_store.create_col()
         with pool.connection() as conn:

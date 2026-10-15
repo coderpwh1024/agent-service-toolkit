@@ -36,6 +36,69 @@ PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`
 
 检索结果带有明确的不可信数据标签，不能覆盖系统规则或用户当前的纠正。提示词要求只提取持久事实，不保存密钥、助手猜测和临时请求；这属于模型约束，不等同于确定性的敏感数据检测。不要主动发送凭据。检索不足时助手应明确说明，不编造记忆。SDK 当前采用增量事实提取，不保证自动删除所有旧偏好；有冲突时当前用户纠正优先，跨会话冲突可能需要再次确认。
 
+## 记忆管理 API
+
+服务提供以下接口，统一返回 `{"code": 200, "message": "success", "data": ...}`。接口只管理当前配置集合内的 `mem0-chatbot` 长期事实，不受客户端当前选中的其他聊天 agent 影响。需要开启 Mem0；关闭或不可用时返回 HTTP 503。
+
+| 方法 | 路径 | 功能 |
+| --- | --- | --- |
+| `GET` | `/memories` | 分页列出用户记忆及其 UUID |
+| `GET` | `/memories/{memory_id}` | 查询指定记忆 |
+| `PUT` | `/memories/{memory_id}` | 修改指定记忆文本，重新向量化 |
+| `DELETE` | `/memories/{memory_id}` | 删除指定记忆，返回 `deleted_count: 1` |
+| `DELETE` | `/memories` | 分批删除该用户所有 Mem0 聊天记忆，返回实际删除数量 |
+| `GET` | `/memories/{memory_id}/history` | 分页查询 `ADD`、`UPDATE`、`DELETE` 历史，包含变更前后文本 |
+
+所有接口继承已有 bearer 认证。App token 默认绑定 token 中的用户，可省略 `user_id`；传入其他用户 ID 返回 403。使用可信 `AUTH_SECRET`（或现有无认证开发模式）时，必须通过查询参数明确指定 `user_id`，省略返回 422，避免误操作随机或全局范围。用户 ID 不可为空，最长 128 字符。单条查询、修改、删除和历史查询都检查用户及智能体归属；不存在或不属于此用户的 UUID 统一返回 404，不暴露其他用户数据。
+
+列表的 `data` 包含 `memories` 和 `next_cursor`，每条记忆包含 `id`、`memory`、`user_id`、`agent_id`、时间和来源 `metadata`。按 UUID 升序分页；`limit` 默认 50，范围 1–100，下一页传入 `cursor=<next_cursor>`。历史的 `data` 包含 `history` 和 `next_cursor`，按历史记录 ID 升序分页，`cursor` 为正整数。最后一页的 `next_cursor` 为 `null`。分页不是数据库快照，并发新增时可重新遍历列表。
+
+修改请求只接受 `{"text": "新的长期事实"}`，去除首尾空白后须为 1–6000 字符；不允许修改所有者或任意元数据。与原文本相同的更新直接返回，不重复写入变更历史。
+
+例如，使用 app token 管理自己的记忆：
+
+```sh
+curl "$AGENT_URL/memories?limit=50" \
+  -H "Authorization: Bearer <app-access-token>"
+
+curl -X PUT "$AGENT_URL/memories/<memory-uuid>" \
+  -H "Authorization: Bearer <app-access-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"我现在喜欢咖啡，不再喜欢茶"}'
+
+curl -X DELETE "$AGENT_URL/memories/<memory-uuid>" \
+  -H "Authorization: Bearer <app-access-token>"
+
+curl "$AGENT_URL/memories/<memory-uuid>/history" \
+  -H "Authorization: Bearer <app-access-token>"
+
+curl -X DELETE "$AGENT_URL/memories" \
+  -H "Authorization: Bearer <app-access-token>"
+```
+
+`AgentClient` 提供 `get_memories`、`get_memory`、`update_memory`、`delete_memory`、`delete_all_memories` 和 `get_memory_history`，以及对应的 `a` 前缀异步方法。可信服务调用示例：
+
+```python
+client = AgentClient(base_url="http://127.0.0.1:8080", get_info=False)
+page = client.get_memories(user_id="alice", limit=50)
+memory_id = str(page.memories[0].id)
+client.update_memory(memory_id, "我喜欢咖啡", user_id="alice")
+client.delete_memory(memory_id, user_id="alice")
+history = client.get_memory_history(memory_id, user_id="alice")
+result = client.delete_all_memories(user_id="alice")
+```
+
+### 删除、历史与兼容语义
+
+- 修改或删除成功后，清空该用户/智能体的全部有效近期提取上下文；批量删除在开始时清空，即使没有长期事实也会执行。缓存使用逻辑删除，防止旧消息继续作为 Mem0 提取参考。这不会删除完整聊天检查点；后续用户再次明确提供同一事实仍可生成新记忆。
+- 同一集合、用户和智能体的查询、提取和管理操作使用 PostgreSQL session advisory lock，在多个服务进程之间串行执行。锁期间不保持跨模型调用的数据库事务，异常时释放锁。
+- 长期事实属于第三方 SDK 管理的表，本功能沿用 SDK 的物理删除，同时保留第一方 `mem0_records` 审计历史和聊天记录；因此它是“删除可检索事实”，不是清除所有原始文本或隐私擦除功能。实体关联清理由 SDK 尽力执行。
+- 新历史在 JSONB 中记录 `user_id`、`agent_id`。旧部署中仍存在的记忆可通过实时所有者检查读取历史，并在修改/删除前补齐其旧历史的所有者。升级前已经被删除、且历史没有所有者信息的记忆无法可靠授权，返回 404，不猜测归属。不新增表或破坏性迁移。
+- 批量删除只影响当前用户的 `mem0-chatbot` 事实，不影响其他用户或其他智能体，超过 100 条也会继续分批删除；重复清空返回 `deleted_count: 0`。单条重复删除返回 404。
+- SDK 的向量更新/删除、历史写入和缓存清理不是一个原子事务，批量失败可能已删除部分记录。超时返回 504，已接受的 SDK 线程可能继续完成；连接或供应商错误返回 503。此时应先查询状态和历史，再决定是否重试，不能把错误当作已回滚。自动聊天提取仍是增量新增，聊天中的“忘记”指令不会自动调用这些管理接口。
+
+操作语义参考 [Mem0 官方 OSS REST 文档](https://github.com/mem0ai/mem0/blob/main/docs/open-source/features/rest-api.mdx)，具体参数以项目固定的 Mem0 2.2.1 为准。
+
 ## 语音和流式接口
 
 创建语音会话时传入当前聊天选择的 agent：
@@ -60,7 +123,7 @@ PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`
 
 ```sh
 uv sync --frozen
-uv run pytest tests/agents/test_mem0_chatbot.py tests/memory/test_mem0_service.py tests/memory/test_mem0_sdk.py tests/voice/test_realtime_service.py -q
+uv run pytest tests/agents/test_mem0_chatbot.py tests/memory/test_mem0_service.py tests/memory/test_mem0_sdk.py tests/memory/test_mem0_management.py tests/memory/test_mem0_history.py tests/service/test_memories.py tests/client/test_memory_client.py tests/voice/test_realtime_service.py -q
 ./scripts/smoke_test.sh postgres
 ```
 

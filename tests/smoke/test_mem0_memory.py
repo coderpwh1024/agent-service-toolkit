@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from unittest.mock import Mock
 from uuid import uuid4
@@ -14,6 +15,7 @@ from pydantic import SecretStr
 
 from core.settings import Settings
 from memory.mem0_sdk import build_memory, close_memory
+from memory.mem0_service import Mem0Service, MemoryNotFoundError
 from memory.postgres import get_postgres_connection_string
 
 
@@ -115,6 +117,7 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
                     ]
                     == []
                 )
+                asyncio.run(manage(memory, memory_id))
             finally:
                 close_memory(memory)
                 with pool.connection() as conn:
@@ -125,5 +128,56 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
                     conn.execute(
                         "DELETE FROM mem0_records WHERE collection_name = %s", (collection,)
                     )
+
+    async def manage(memory, memory_id):
+        for user_id, agent_id in [("bob", "mem0-chatbot"), ("alice", "other")]:
+            memory.add(
+                [{"role": "user", "content": "I prefer tea"}],
+                user_id=user_id,
+                agent_id=agent_id,
+            )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            service = Mem0Service(memory, executor)
+            listing = await service.list_memories("alice", 1)
+            assert [str(record.id) for record in listing.memories] == [memory_id]
+            assert listing.next_cursor is None
+            with pytest.raises(MemoryNotFoundError):
+                await service.update_memory(memory_id, "bob", "tampered")
+            updated = await service.update_memory(memory_id, "alice", "User prefers coffee")
+            assert updated.memory == "User prefers coffee"
+            assert memory.db.get_last_messages("agent_id=mem0-chatbot&user_id=alice") == []
+            history = await service.memory_history(memory_id, "alice", 1)
+            assert history.history[0].event == "ADD"
+            assert history.next_cursor is not None
+            next_page = await service.memory_history(memory_id, "alice", 1, history.next_cursor)
+            assert next_page.history[0].event == "UPDATE"
+            assert next_page.history[0].old_memory == "User prefers tea"
+            assert next_page.history[0].new_memory == "User prefers coffee"
+            assert (await service.delete_memory(memory_id, "alice")).deleted_count == 1
+            with pytest.raises(MemoryNotFoundError):
+                await service.get_memory(memory_id, "alice")
+            deleted_history = await service.memory_history(memory_id, "alice")
+            assert [entry.event for entry in deleted_history.history] == ["ADD", "UPDATE", "DELETE"]
+            with pytest.raises(MemoryNotFoundError):
+                await service.memory_history(memory_id, "bob")
+            memory.add(
+                [{"role": "user", "content": f"fact {index}"} for index in range(101)],
+                user_id="alice",
+                agent_id="mem0-chatbot",
+                infer=False,
+            )
+            first_page = await service.list_memories("alice", 100)
+            assert len(first_page.memories) == 100
+            assert first_page.next_cursor is not None
+            last_page = await service.list_memories("alice", 100, first_page.next_cursor)
+            assert len(last_page.memories) == 1
+            assert (await service.delete_all_memories("alice")).deleted_count == 101
+            assert (await service.delete_all_memories("alice")).deleted_count == 0
+            assert (await service.list_memories("alice")).memories == []
+            assert (await service.list_memories("bob")).memories
+            assert memory.search("drink", filters={"user_id": "alice", "agent_id": "other"})[
+                "results"
+            ]
+            assert (await service.memory_history(memory_id, "alice")).history[-1].event == "DELETE"
 
     await asyncio.to_thread(exercise)

@@ -3,8 +3,10 @@ import os
 from collections.abc import AsyncGenerator, Generator
 from datetime import date
 from typing import Any
+from uuid import UUID
 
 import httpx
+from pydantic import BaseModel
 
 from schema import (
     ApiResponse,
@@ -14,6 +16,11 @@ from schema import (
     ChatRecordDetail,
     ChatRecordList,
     Feedback,
+    MemoryDeleteResult,
+    MemoryHistory,
+    MemoryList,
+    MemoryRecord,
+    MemoryUpdate,
     ServiceMetadata,
     StreamInput,
     UserInput,
@@ -103,6 +110,143 @@ class AgentClient:
                     f"Agent {agent} not found in available agents: {', '.join(agent_keys)}"
                 )
         self.agent = agent
+
+    def _memory_request[ResponseModel: BaseModel](
+        self,
+        method: str,
+        path: str,
+        response_model: type[ResponseModel],
+        user_id: str | None,
+        *,
+        params: dict[str, Any] | None = None,
+        body: dict[str, Any] | None = None,
+    ) -> ResponseModel:
+        query = dict(params or {})
+        if user_id is not None:
+            query["user_id"] = user_id
+        try:
+            response = httpx.request(
+                method,
+                f"{self.base_url}/memories{path}",
+                params=query,
+                json=body,
+                headers=self._headers,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise AgentClientError(f"Memory request failed: {exc}") from exc
+        return response_model.model_validate(_response_data(response))
+
+    async def _amemory_request[ResponseModel: BaseModel](
+        self,
+        method: str,
+        path: str,
+        response_model: type[ResponseModel],
+        user_id: str | None,
+        *,
+        params: dict[str, Any] | None = None,
+        body: dict[str, Any] | None = None,
+    ) -> ResponseModel:
+        query = dict(params or {})
+        if user_id is not None:
+            query["user_id"] = user_id
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.request(
+                    method,
+                    f"{self.base_url}/memories{path}",
+                    params=query,
+                    json=body,
+                    headers=self._headers,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise AgentClientError(f"Memory request failed: {exc}") from exc
+        return response_model.model_validate(_response_data(response))
+
+    def get_memories(
+        self, user_id: str | None = None, *, limit: int = 50, cursor: UUID | None = None
+    ) -> MemoryList:
+        """List Mem0 chatbot memories, independently of the selected chat agent."""
+        params: dict[str, Any] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = str(cursor)
+        return self._memory_request("GET", "", MemoryList, user_id, params=params)
+
+    async def aget_memories(
+        self, user_id: str | None = None, *, limit: int = 50, cursor: UUID | None = None
+    ) -> MemoryList:
+        params: dict[str, Any] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = str(cursor)
+        return await self._amemory_request("GET", "", MemoryList, user_id, params=params)
+
+    def get_memory(self, memory_id: str, user_id: str | None = None) -> MemoryRecord:
+        return self._memory_request("GET", f"/{UUID(memory_id)}", MemoryRecord, user_id)
+
+    async def aget_memory(self, memory_id: str, user_id: str | None = None) -> MemoryRecord:
+        return await self._amemory_request("GET", f"/{UUID(memory_id)}", MemoryRecord, user_id)
+
+    def update_memory(self, memory_id: str, text: str, user_id: str | None = None) -> MemoryRecord:
+        body = MemoryUpdate(text=text).model_dump()
+        return self._memory_request("PUT", f"/{UUID(memory_id)}", MemoryRecord, user_id, body=body)
+
+    async def aupdate_memory(
+        self, memory_id: str, text: str, user_id: str | None = None
+    ) -> MemoryRecord:
+        body = MemoryUpdate(text=text).model_dump()
+        return await self._amemory_request(
+            "PUT", f"/{UUID(memory_id)}", MemoryRecord, user_id, body=body
+        )
+
+    def delete_memory(self, memory_id: str, user_id: str | None = None) -> MemoryDeleteResult:
+        return self._memory_request("DELETE", f"/{UUID(memory_id)}", MemoryDeleteResult, user_id)
+
+    async def adelete_memory(
+        self, memory_id: str, user_id: str | None = None
+    ) -> MemoryDeleteResult:
+        return await self._amemory_request(
+            "DELETE", f"/{UUID(memory_id)}", MemoryDeleteResult, user_id
+        )
+
+    def delete_all_memories(self, user_id: str | None = None) -> MemoryDeleteResult:
+        """Delete the bound user's Mem0 chatbot facts; retain history and chat records."""
+        return self._memory_request("DELETE", "", MemoryDeleteResult, user_id)
+
+    async def adelete_all_memories(self, user_id: str | None = None) -> MemoryDeleteResult:
+        return await self._amemory_request("DELETE", "", MemoryDeleteResult, user_id)
+
+    def get_memory_history(
+        self,
+        memory_id: str,
+        user_id: str | None = None,
+        *,
+        limit: int = 50,
+        cursor: int | None = None,
+    ) -> MemoryHistory:
+        params: dict[str, Any] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return self._memory_request(
+            "GET", f"/{UUID(memory_id)}/history", MemoryHistory, user_id, params=params
+        )
+
+    async def aget_memory_history(
+        self,
+        memory_id: str,
+        user_id: str | None = None,
+        *,
+        limit: int = 50,
+        cursor: int | None = None,
+    ) -> MemoryHistory:
+        params: dict[str, Any] = {"limit": limit}
+        if cursor is not None:
+            params["cursor"] = cursor
+        return await self._amemory_request(
+            "GET", f"/{UUID(memory_id)}/history", MemoryHistory, user_id, params=params
+        )
 
     async def ainvoke(
         self,

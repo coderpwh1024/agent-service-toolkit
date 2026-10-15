@@ -1,7 +1,13 @@
 """PostgreSQL adapter for Mem0's history and bounded extraction context."""
 
+import json
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
+from uuid import UUID
 
+from psycopg import sql
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
@@ -11,6 +17,10 @@ class PostgresHistory:
         self.pool = pool
         self.collection = collection
         self.actor_id = actor_id
+        self.resolve_owner: Callable[[str], dict[str, Any] | None] | None = None
+        self._history_owner: ContextVar[tuple[str, str, str] | None] = ContextVar(
+            "mem0_history_owner", default=None
+        )
 
     def setup(self) -> None:
         with self.pool.connection() as conn:
@@ -77,9 +87,102 @@ class PostgresHistory:
         )
 
     def batch_add_history(self, records: list[dict[str, Any]]) -> None:
+        enriched = []
+        for record in records:
+            owner = self.resolve_owner(record["memory_id"]) if self.resolve_owner else None
+            scoped_owner = self._history_owner.get()
+            if owner is None and scoped_owner and scoped_owner[0] == record["memory_id"]:
+                owner = {"user_id": scoped_owner[1], "agent_id": scoped_owner[2]}
+            owner = owner or self.history_owner(record["memory_id"])
+            enriched.append(dict(record, **(owner or {})))
         with self.pool.connection() as conn:
-            for record in records:
+            for record in enriched:
                 self._insert(conn, "history", record["memory_id"], record)
+
+    @contextmanager
+    def history_scope(self, memory_id: str, user_id: str, agent_id: str) -> Iterator[None]:
+        token = self._history_owner.set((memory_id, user_id, agent_id))
+        try:
+            yield
+        finally:
+            self._history_owner.reset(token)
+
+    def history_owner(self, memory_id: str) -> dict[str, str] | None:
+        with self.pool.connection() as conn:
+            row = conn.execute(
+                """SELECT payload->>'user_id', payload->>'agent_id' FROM mem0_records
+                   WHERE collection_name = %s AND kind = 'history' AND scope = %s
+                   AND is_delete = 0 AND payload ? 'user_id' AND payload ? 'agent_id'
+                   ORDER BY id DESC LIMIT 1""",
+                (self.collection, memory_id),
+            ).fetchone()
+        return {"user_id": row[0], "agent_id": row[1]} if row else None
+
+    def bind_history_owner(self, memory_id: str, user_id: str, agent_id: str) -> None:
+        """Backfill legacy history only after the caller verifies live memory ownership."""
+        with self.pool.connection() as conn:
+            conn.execute(
+                """UPDATE mem0_records SET payload = payload || %s,
+                   update_by = %s, update_time = CURRENT_TIMESTAMP
+                   WHERE collection_name = %s AND kind = 'history' AND scope = %s
+                   AND is_delete = 0 AND NOT (payload ? 'user_id' AND payload ? 'agent_id')""",
+                (
+                    Jsonb({"user_id": user_id, "agent_id": agent_id}),
+                    self.actor_id,
+                    self.collection,
+                    memory_id,
+                ),
+            )
+
+    def history_page(self, memory_id: str, limit: int, cursor: int | None) -> list[dict[str, Any]]:
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                """SELECT id, payload FROM mem0_records
+                   WHERE collection_name = %s AND kind = 'history' AND scope = %s
+                   AND is_delete = 0 AND (%s::bigint IS NULL OR id > %s)
+                   ORDER BY id LIMIT %s""",
+                (self.collection, memory_id, cursor, cursor, limit),
+            ).fetchall()
+        return [dict(payload, id=record_id) for record_id, payload in rows]
+
+    def list_memories(
+        self, user_id: str, agent_id: str, limit: int, cursor: UUID | None = None
+    ) -> list[dict[str, Any]]:
+        with self.pool.connection() as conn:
+            rows = conn.execute(
+                sql.SQL("""SELECT id, payload FROM {}
+                    WHERE payload->>'user_id' = %s AND payload->>'agent_id' = %s
+                    AND (%s::uuid IS NULL OR id > %s)
+                    ORDER BY id LIMIT %s""").format(sql.Identifier(self.collection)),
+                (user_id, agent_id, cursor, cursor, limit),
+            ).fetchall()
+        return [dict(payload, id=str(memory_id)) for memory_id, payload in rows]
+
+    def clear_context(self, user_id: str, agent_id: str) -> None:
+        from mem0.memory.main import _build_session_scope
+
+        scope = _build_session_scope({"user_id": user_id, "agent_id": agent_id})
+        with self.pool.connection() as conn:
+            conn.execute(
+                """UPDATE mem0_records SET is_delete = 1, update_by = %s,
+                   update_time = CURRENT_TIMESTAMP
+                   WHERE collection_name = %s AND kind = 'context' AND scope = %s
+                   AND is_delete = 0""",
+                (self.actor_id, self.collection, scope),
+            )
+
+    @contextmanager
+    def user_lock(self, user_id: str, agent_id: str) -> Iterator[None]:
+        """Serialize SDK operations across processes without holding a transaction over model I/O."""
+        scope = json.dumps([self.collection, user_id, agent_id], ensure_ascii=False)
+        with self.pool.connection() as conn:
+            conn.execute("SELECT pg_advisory_lock(hashtextextended(%s, 0))", (scope,))
+            conn.commit()
+            try:
+                yield
+            finally:
+                conn.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (scope,))
+                conn.commit()
 
     def get_history(self, memory_id: str) -> list[dict[str, Any]]:
         with self.pool.connection() as conn:

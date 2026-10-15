@@ -6,6 +6,14 @@ from schema.auth import (
     EmailCodeVerify,
     UserProfile,
 )
+from schema.memory import (
+    MemoryDeleteResult,
+    MemoryHistory,
+    MemoryHistoryEntry,
+    MemoryList,
+    MemoryRecord,
+    MemoryUpdate,
+)
 from schema.models import AllModelEnum
 from schema.schema import (
     AgentInfo,
@@ -31,6 +39,12 @@ __all__ = [
     "AgentInfo",
     "AllModelEnum",
     "ApiResponse",
+    "MemoryDeleteResult",
+    "MemoryHistory",
+    "MemoryHistoryEntry",
+    "MemoryList",
+    "MemoryRecord",
+    "MemoryUpdate",
     "EmailAuthResponse",
     "EmailCodeAccepted",
     "EmailCodeRequest",

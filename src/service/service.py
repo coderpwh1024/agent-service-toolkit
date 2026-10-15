@@ -66,6 +66,7 @@ from service.chat_records import (
 )
 from service.email_auth import email_auth_lifespan
 from service.email_auth import router as email_auth_router
+from service.memories import router as memories_router
 from service.nacos import NacosIntegration
 from service.threads import list_user_threads
 from service.user_profiles import router as user_profile_router
@@ -160,6 +161,7 @@ app = FastAPI(lifespan=lifespan, generate_unique_id_function=custom_generate_uni
 router = APIRouter(dependencies=[Depends(verify_bearer)])
 # AG-UI protocol endpoints inherit the same bearer auth - see service/agui.py
 router.include_router(agui_router)
+router.include_router(memories_router)
 
 
 def _uses_protocol_response(path: str) -> bool:

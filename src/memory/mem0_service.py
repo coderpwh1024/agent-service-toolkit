@@ -8,15 +8,32 @@ from contextlib import asynccontextmanager
 from functools import partial
 from time import monotonic
 from typing import Any
+from uuid import UUID
 
 from psycopg_pool import ConnectionPool
 
 from core.settings import settings
+from memory.mem0_history import PostgresHistory
 from memory.mem0_sdk import build_memory, close_memory
 from memory.postgres import get_postgres_connection_string, validate_postgres_config
+from schema.memory import (
+    MemoryDeleteResult,
+    MemoryHistory,
+    MemoryHistoryEntry,
+    MemoryList,
+    MemoryRecord,
+)
 
 logger = logging.getLogger(__name__)
 AGENT_ID = "mem0-chatbot"
+
+
+class MemoryNotFoundError(LookupError):
+    pass
+
+
+class MemoryBusyError(RuntimeError):
+    pass
 
 
 class Mem0Service:
@@ -26,12 +43,27 @@ class Mem0Service:
         self.pending: set[asyncio.Future[Any]] = set()
         self.max_pending = max_pending
 
-    async def _call(self, operation: str, function: Callable[..., Any], **kwargs: Any) -> Any:
+    def _run_scoped(
+        self, function: Callable[..., Any], user_id: str, kwargs: dict[str, Any]
+    ) -> Any:
+        if isinstance(self.memory.db, PostgresHistory):
+            with self.memory.db.user_lock(user_id, AGENT_ID):
+                return function(**kwargs)
+        return function(**kwargs)
+
+    async def _call(
+        self,
+        operation: str,
+        function: Callable[..., Any],
+        *,
+        scope_user: str,
+        **kwargs: Any,
+    ) -> Any:
         if len(self.pending) >= self.max_pending:
-            raise RuntimeError("Mem0 is busy; retry on the next turn")
+            raise MemoryBusyError("Mem0 is busy; retry on the next turn")
         started = monotonic()
         future = asyncio.get_running_loop().run_in_executor(
-            self.executor, partial(function, **kwargs)
+            self.executor, partial(self._run_scoped, function, scope_user, kwargs)
         )
         self.pending.add(future)
         future.add_done_callback(self.pending.discard)
@@ -57,6 +89,7 @@ class Mem0Service:
         result = await self._call(
             "search",
             self.memory.search,
+            scope_user=user_id,
             query=query,
             filters={"user_id": user_id, "agent_id": AGENT_ID},
             top_k=settings.MEM0_TOP_K,
@@ -76,12 +109,145 @@ class Mem0Service:
         result = await self._call(
             "add",
             self.memory.add,
+            scope_user=user_id,
             messages=messages,
             user_id=user_id,
             agent_id=AGENT_ID,
             metadata={"source_thread_id": thread_id},
         )
         logger.info("Mem0 write returned count=%d", len(result.get("results", [])))
+
+    def _owned_memory(self, memory_id: str, user_id: str) -> dict[str, Any]:
+        record = self.memory.get(memory_id=memory_id)
+        if not record or record.get("user_id") != user_id or record.get("agent_id") != AGENT_ID:
+            raise MemoryNotFoundError("Memory not found")
+        return record
+
+    @staticmethod
+    def _record(data: dict[str, Any]) -> MemoryRecord:
+        return MemoryRecord.model_validate(data)
+
+    def _list(self, user_id: str, limit: int, cursor: UUID | None) -> MemoryList:
+        rows = self.memory.db.list_memories(user_id, AGENT_ID, limit + 1, cursor)
+        records = [
+            MemoryRecord(
+                id=row["id"],
+                memory=row["data"],
+                user_id=row["user_id"],
+                agent_id=row["agent_id"],
+                created_at=row.get("created_at"),
+                updated_at=row.get("updated_at"),
+                metadata={
+                    key: value
+                    for key, value in row.items()
+                    if key
+                    not in {
+                        "id",
+                        "data",
+                        "user_id",
+                        "agent_id",
+                        "created_at",
+                        "updated_at",
+                        "hash",
+                        "text_lemmatized",
+                    }
+                },
+            )
+            for row in rows[:limit]
+        ]
+        return MemoryList(
+            memories=records,
+            next_cursor=records[-1].id if len(rows) > limit else None,
+        )
+
+    async def list_memories(
+        self, user_id: str, limit: int = 50, cursor: UUID | None = None
+    ) -> MemoryList:
+        return await self._call(
+            "list", self._list, scope_user=user_id, user_id=user_id, limit=limit, cursor=cursor
+        )
+
+    def _get(self, memory_id: str, user_id: str) -> MemoryRecord:
+        return self._record(self._owned_memory(memory_id, user_id))
+
+    async def get_memory(self, memory_id: str, user_id: str) -> MemoryRecord:
+        return await self._call(
+            "get", self._get, scope_user=user_id, memory_id=memory_id, user_id=user_id
+        )
+
+    def _update(self, memory_id: str, user_id: str, text: str) -> MemoryRecord:
+        record = self._owned_memory(memory_id, user_id)
+        if record["memory"] == text:
+            return self._record(record)
+        self.memory.db.bind_history_owner(memory_id, user_id, AGENT_ID)
+        self.memory.update(memory_id=memory_id, text=text)
+        self.memory.db.clear_context(user_id, AGENT_ID)
+        return self._get(memory_id, user_id)
+
+    async def update_memory(self, memory_id: str, user_id: str, text: str) -> MemoryRecord:
+        return await self._call(
+            "update",
+            self._update,
+            scope_user=user_id,
+            memory_id=memory_id,
+            user_id=user_id,
+            text=text,
+        )
+
+    def _delete(self, memory_id: str, user_id: str) -> MemoryDeleteResult:
+        self._owned_memory(memory_id, user_id)
+        self.memory.db.bind_history_owner(memory_id, user_id, AGENT_ID)
+        with self.memory.db.history_scope(memory_id, user_id, AGENT_ID):
+            self.memory.delete(memory_id=memory_id)
+        self.memory.db.clear_context(user_id, AGENT_ID)
+        return MemoryDeleteResult(deleted_count=1)
+
+    async def delete_memory(self, memory_id: str, user_id: str) -> MemoryDeleteResult:
+        return await self._call(
+            "delete", self._delete, scope_user=user_id, memory_id=memory_id, user_id=user_id
+        )
+
+    def _delete_all(self, user_id: str) -> MemoryDeleteResult:
+        self.memory.db.clear_context(user_id, AGENT_ID)
+        deleted = 0
+        while rows := self.memory.db.list_memories(user_id, AGENT_ID, 100):
+            for row in rows:
+                self._owned_memory(row["id"], user_id)
+                self.memory.db.bind_history_owner(row["id"], user_id, AGENT_ID)
+                with self.memory.db.history_scope(row["id"], user_id, AGENT_ID):
+                    self.memory.delete(memory_id=row["id"])
+                deleted += 1
+        return MemoryDeleteResult(deleted_count=deleted)
+
+    async def delete_all_memories(self, user_id: str) -> MemoryDeleteResult:
+        return await self._call("delete_all", self._delete_all, scope_user=user_id, user_id=user_id)
+
+    def _history(
+        self, memory_id: str, user_id: str, limit: int, cursor: int | None
+    ) -> MemoryHistory:
+        record = self.memory.get(memory_id=memory_id)
+        owner = record if record else self.memory.db.history_owner(memory_id)
+        if not owner or owner.get("user_id") != user_id or owner.get("agent_id") != AGENT_ID:
+            raise MemoryNotFoundError("Memory not found")
+        rows = self.memory.db.history_page(memory_id, limit + 1, cursor)
+        entries = [MemoryHistoryEntry.model_validate(row) for row in rows[:limit]]
+        return MemoryHistory(
+            history=entries,
+            next_cursor=entries[-1].id if len(rows) > limit else None,
+        )
+
+    async def memory_history(
+        self, memory_id: str, user_id: str, limit: int = 50, cursor: int | None = None
+    ) -> MemoryHistory:
+        return await self._call(
+            "history",
+            self._history,
+            scope_user=user_id,
+            memory_id=memory_id,
+            user_id=user_id,
+            limit=limit,
+            cursor=cursor,
+        )
 
 
 _active_service: Mem0Service | None = None
