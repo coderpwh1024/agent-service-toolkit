@@ -12,7 +12,7 @@ from agents import DEFAULT_AGENT, STREAMING_CHAT_AGENTS, get_agent, get_all_agen
 from core import settings
 from memory.postgres import get_postgres_connection_string
 from schema import ApiResponse, api_success
-from schema.voice import VoiceSession, VoiceSessionInput, client_event_adapter
+from schema.voice import VoiceSession, VoiceSessionInput, client_event_adapter, normalize_wake_word
 from service.access import authenticate, authorize_thread, bind_user, principal, repository
 from service.agent_runner import thread_guard
 from service.utils import ensure_model_available
@@ -144,8 +144,9 @@ async def create_session(body: VoiceSessionInput, request: Request) -> ApiRespon
     if body.activation == "wake_word":
         if not settings.VOICE_WAKE_ENABLED:
             raise HTTPException(422, "Wake-word activation is disabled")
-        if body.wake_word != settings.VOICE_WAKE_WORD:
+        if normalize_wake_word(body.wake_word or "") != settings.VOICE_WAKE_WORD:
             raise HTTPException(422, "Unsupported wake word")
+        body.wake_word = settings.VOICE_WAKE_WORD
         maximum_pre_roll = settings.VOICE_WAKE_PRE_ROLL_MS * 16
         if body.pre_roll_samples > maximum_pre_roll:
             raise HTTPException(422, "Wake pre-roll is too long")

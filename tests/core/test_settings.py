@@ -55,6 +55,14 @@ def test_settings_default_values():
     assert settings.NACOS_CONSOLE_URL == "http://127.0.0.1:8080/"
     assert settings.NACOS_SERVICE_NAME == "agent-service-toolkit"
     assert [voice.id for voice in settings.VOICE_REALTIME_VOICES] == ["Cherry"]
+    assert settings.VOICE_WAKE_WORD == "小美小美"
+    assert settings.VOICE_WAKE_PRE_ROLL_MS == 2200
+
+
+@pytest.mark.parametrize("keyword", ["小美", "小美小美", "小美，小美", "小美， 小美。"])
+def test_wake_word_configuration_accepts_legacy_and_punctuated_phrases(keyword):
+    config = Settings(_env_file=None, VOICE_WAKE_WORD=keyword)
+    assert config.VOICE_WAKE_WORD == "小美小美"
 
 
 def test_app_token_ttl_is_limited_to_fifteen_days():

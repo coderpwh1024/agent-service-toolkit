@@ -23,9 +23,11 @@ voice:
     enable_thinking: false
   wake:
     enabled: true
-    word: 小美
+    word: 小美小美
     confirm_with_asr: true
-    pre_roll_ms: 1200
+    pre_roll_ms: 2200
+    confirm_seconds: 10
+    greeting: 我在，小美随时为你服务。
     kws_score: 1.0
     kws_threshold: 0.5
   vad:
@@ -105,7 +107,13 @@ Content-Type: application/json
 
 `voice` 可省略；省略时后端采用 `default_voice`。传入的值必须来自 `capabilities.data.voices`，否则返回 422。
 
-本地唤醒创建会话时还需提交 `"activation":"wake_word"`、能力接口下发的 `wake_word`、客户端引擎标识 `wake_engine` 和已缓存的 `pre_roll_samples`。后端限制前滚长度并用首段百炼 ASR 最终文本二次确认；匹配后发出 `wake.accepted` 并从业务输入中移除唤醒词，不匹配则发出 `wake.rejected` 后正常关闭连接。按钮启动保持 `"activation":"tap"`，不得携带唤醒元数据。
+本地唤醒创建会话时还需提交 `"activation":"wake_word"`、能力接口下发的 `wake_word`、客户端引擎标识 `wake_engine` 和已缓存的 `pre_roll_samples`。默认完整唤醒词为“小美小美”，允许空格、标点、短暂停顿及三个或更多连续呼喊；单声不完成确认。旧配置及旧客户端元数据“小美”会归一为“小美小美”，ASR 仍需双声确认。默认缓存 2200 ms 前滚音频；已有显式 `pre_roll_ms: 1200` 的部署应同步调整，避免截断第一声。
+
+后端限制前滚长度，用百炼 ASR 最终文本二次确认，并兼容两声被拆为相邻两段文本。匹配后发出 `wake.accepted`，其中新增可选 `command` 字段是剥离全部开头呼喊后的业务文本（无问题时为空字符串）；客户端应优先采用该字段展示用户问题。确认后继续呼喊的残留片段也会剥离，避免再次触发回答。明确不匹配或自 ASR 连接就绪后默认 10 秒仍未确认时，发出 `wake.rejected` 后关闭连接并释放会话容量，客户端恢复待机。按钮启动保持 `"activation":"tap"`，不得携带唤醒元数据。
+
+确认唤醒后，后端通过原有 `response.started` → `text.delta` / 音频分段 → `response.done` 播报“我在，小美随时为你服务。”，使用会话所选音色，支持现有取消和播放确认。仅呼喊或呼喊后只有语气词时，生成无业务输入、无 Agent run 的语音轮次，不调用聊天模型，也不写入 LangGraph 对话；同时提出问题时，先播报应答再流式回答，传给 Agent 的输入只含问题。普通按钮会话不主动播报此应答。
+
+应答与超时分别由 Nacos `voice.wake.greeting`、`voice.wake.confirm_seconds` 控制；不使用 Nacos 时对应 `VOICE_WAKE_GREETING`、`VOICE_WAKE_CONFIRM_SECONDS`。默认超时为 10 秒，可配置 2–30 秒；应答长度为 1–100 字符。App 与后端应同时更新以完整启用新体验。
 
 响应的 `data` 包含 `session_id`、最终采用的 `thread_id`、过期时间和协议版本。默认每个用户最多有两个未过期会话；整个进程的 WebSocket 容量由 `VOICE_MAX_SESSIONS` 限制。
 

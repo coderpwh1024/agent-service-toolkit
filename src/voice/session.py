@@ -44,6 +44,7 @@ from service.utils import messages_from_checkpoint
 from voice.persistence import VoiceRepository
 from voice.providers.alibaba_realtime import AlibabaRealtime
 from voice.speech_output import SpeechText
+from voice.wake_word import match_wake_prefix
 
 logger = logging.getLogger(__name__)
 NON_ACTIONABLE_VOICE_TEXT = frozenset({"嗯", "嗯嗯", "呃", "额", "啊", "呢", "那"})
@@ -95,6 +96,9 @@ class VoiceConnection:
         self.speech_hint_task: asyncio.Task | None = None
         self.close_reason = "disconnected"
         self.wake_transcript_pending = session.activation == "wake_word"
+        self.wake_prefix_pending = ""
+        self.wake_greeting_response_id: str | None = None
+        self.wake_confirmation_started = self.started
 
     def remember(self, event_id: str) -> bool:
         if event_id in self.seen:
@@ -219,11 +223,18 @@ class VoiceConnection:
         )
         await self.repo.save_turn(turn)
 
-    async def submit(self, text: str, input_id: str, resume: dict | None = None) -> None:
+    async def submit(
+        self,
+        text: str,
+        input_id: str,
+        resume: dict | None = None,
+        *,
+        wake_greeting: bool = False,
+    ) -> None:
         if self.pending and resume is None:
             await self.emit("error", code="approval_required", recoverable=True)
             return
-        if not text.strip():
+        if not text.strip() and not wake_greeting:
             return
         if len(text) > 6000:
             await self.emit("error", code="input_too_long", recoverable=True)
@@ -244,6 +255,8 @@ class VoiceConnection:
         self.mark_timing(turn.response_id, "accepted")
         await self.repo.save_turn(turn)
         self.turns[turn.response_id] = turn
+        if wake_greeting:
+            self.wake_greeting_response_id = turn.response_id
         self.inputs.put_nowait((turn, resume))
         self.activity = time.monotonic()
         await self.emit(
@@ -393,14 +406,30 @@ class VoiceConnection:
                     input_id = f"{self.connection_id}:{item_id}"
                     if self.remember(input_id):
                         text = event.get("transcript", "")
+                        if self.wake_transcript_pending and not text.strip():
+                            continue
+                        if (
+                            not self.wake_transcript_pending
+                            and self.session.activation == "wake_word"
+                        ):
+                            match = match_wake_prefix(text, self.session.wake_word or "")
+                            if match:
+                                text = match.command
                         if not self.wake_transcript_pending and is_non_actionable_voice_text(text):
                             await self.emit("transcript.final", input_id=input_id, text="")
                             continue
                         await self.emit("transcript.final", input_id=input_id, text=text)
+                        was_pending = self.wake_transcript_pending
                         confirmed = await self.confirm_wake(text)
                         if confirmed is None:
                             return
-                        if not is_non_actionable_voice_text(confirmed):
+                        if was_pending and not self.wake_transcript_pending:
+                            await self.submit(
+                                "" if is_non_actionable_voice_text(confirmed) else confirmed,
+                                input_id,
+                                wake_greeting=True,
+                            )
+                        elif confirmed and not is_non_actionable_voice_text(confirmed):
                             await self.submit(confirmed, input_id)
                 case "session.finished":
                     self.close_reason = "asr_finished"
@@ -410,28 +439,37 @@ class VoiceConnection:
         if not self.wake_transcript_pending:
             return text
         keyword = self.session.wake_word or ""
-        separator = r"[\s，,。！？!?、]*"
-        pattern = r"^\s*" + separator.join(re.escape(char) for char in keyword) + separator
-        match = re.match(pattern, text, flags=re.IGNORECASE)
-        if match:
+        candidate = self.wake_prefix_pending + text
+        match = match_wake_prefix(candidate, keyword)
+        if match and match.complete:
             self.wake_transcript_pending = False
+            self.wake_prefix_pending = ""
             self.session.wake_status = "accepted"
             await self.repo.save_session(self.session)
-            await self.emit("wake.accepted", keyword=keyword)
-            return text[match.end() :].strip()
+            command = "" if is_non_actionable_voice_text(match.command) else match.command
+            await self.emit("wake.accepted", keyword=keyword, command=command)
+            return command
+        if match and not match.command:
+            self.wake_prefix_pending = candidate
+            return ""
         if not self.settings.VOICE_WAKE_CONFIRM_WITH_ASR:
             self.wake_transcript_pending = False
             self.session.wake_status = "accepted"
             await self.repo.save_session(self.session)
-            await self.emit("wake.accepted", keyword=keyword, transcript_match=False)
+            await self.emit("wake.accepted", keyword=keyword, command=text, transcript_match=False)
             return text
+        await self.reject_wake()
+        return None
+
+    async def reject_wake(self) -> None:
         self.session.wake_status = "rejected"
         self.session.status = "closed"
         await self.repo.save_session(self.session)
-        await self.emit("wake.rejected", keyword=keyword, recoverable=True, urgent=True)
+        await self.emit(
+            "wake.rejected", keyword=self.session.wake_word, recoverable=True, urgent=True
+        )
         self.close_reason = "false_wake"
         self.closed.set()
-        return None
 
     async def speak(self, turn: VoiceTurn, text_queue: asyncio.Queue[str | None]) -> None:
         try:
@@ -510,6 +548,13 @@ class VoiceConnection:
                 await self.enqueue_speech(text_queue, text)
 
         try:
+            if turn.response_id == self.wake_greeting_response_id and not turn.input_text:
+                await self.emit(
+                    "response.started", response_id=turn.response_id, turn_id=turn.turn_id
+                )
+                await output(self.settings.VOICE_WAKE_GREETING)
+                turn.execution_status = "completed"
+                return
             async with asyncio.timeout(180), thread_guard(self.repo, self.session.thread_id):
                 data = StreamInput(
                     message=turn.input_text,
@@ -546,6 +591,8 @@ class VoiceConnection:
                     turn_id=turn.turn_id,
                     run_id=turn.run_id,
                 )
+                if turn.response_id == self.wake_greeting_response_id:
+                    await output(self.settings.VOICE_WAKE_GREETING)
                 async for event in graph_events(
                     self.agent, kwargs, str(run_id), user_message=turn.input_text
                 ):
@@ -656,6 +703,13 @@ class VoiceConnection:
     async def timer(self) -> None:
         while True:
             await asyncio.sleep(1)
+            if (
+                self.wake_transcript_pending
+                and time.monotonic() - self.wake_confirmation_started
+                > self.settings.VOICE_WAKE_CONFIRM_SECONDS
+            ):
+                await self.reject_wake()
+                return
             now = datetime.now(UTC)
             if now >= self.session.expires_at or (
                 self.expires_at and now.timestamp() >= self.expires_at
@@ -687,6 +741,7 @@ class VoiceConnection:
             self.session.connection_id = self.connection_id
             await self.repo.save_session(self.session)
             async with self.provider.recognize(self.session) as asr:
+                self.wake_confirmation_started = time.monotonic()
                 tasks = [
                     asyncio.create_task(f())
                     for f in (

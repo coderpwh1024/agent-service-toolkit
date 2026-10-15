@@ -1,5 +1,6 @@
 """Versioned mobile voice contract and framed PCM transport."""
 
+import re
 import struct
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
@@ -13,6 +14,11 @@ PROTOCOL_VERSION = 1
 AUDIO_HEADER = struct.Struct("!4sB16s16sII")
 MAX_AUDIO_BYTES = 6400
 ZERO_UUID = UUID(int=0)
+
+
+def normalize_wake_word(keyword: str) -> str:
+    normalized = re.sub(r"[\s，,。！？!?、；;：:．.…]+", "", keyword)
+    return "小美小美" if normalized == "小美" else normalized
 
 
 class VoiceOption(BaseModel):

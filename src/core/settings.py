@@ -14,6 +14,7 @@ from pydantic import (
     SecretStr,
     TypeAdapter,
     computed_field,
+    field_validator,
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,7 +35,7 @@ from schema.models import (
     Provider,
     VertexAIModelName,
 )
-from schema.voice import VoiceOption
+from schema.voice import VoiceOption, normalize_wake_word
 
 
 class DatabaseType(StrEnum):
@@ -151,14 +152,26 @@ class Settings(BaseSettings):
     VOICE_VAD_SILENCE_MS: int = Field(default=500, ge=200, le=6000)
     VOICE_VAD_THRESHOLD: float = Field(default=0.2, ge=-1, le=1)
     VOICE_WAKE_ENABLED: bool = True
-    VOICE_WAKE_WORD: str = Field(default="小美", min_length=2, max_length=40)
+    VOICE_WAKE_WORD: str = Field(default="小美小美", min_length=2, max_length=40)
     VOICE_WAKE_CONFIRM_WITH_ASR: bool = True
-    VOICE_WAKE_PRE_ROLL_MS: int = Field(default=1200, ge=400, le=2500)
+    VOICE_WAKE_PRE_ROLL_MS: int = Field(default=2200, ge=400, le=2500)
+    VOICE_WAKE_CONFIRM_SECONDS: float = Field(default=10, ge=2, le=30)
+    VOICE_WAKE_GREETING: str = Field(
+        default="我在，小美随时为你服务。", min_length=1, max_length=100
+    )
     VOICE_WAKE_KWS_SCORE: float = Field(default=1.0, ge=0.1, le=10)
     VOICE_WAKE_KWS_THRESHOLD: float = Field(default=0.5, ge=0.01, le=1)
     VOICE_CLIENT_VAD_RMS_DBFS: float = Field(default=-42, ge=-80, le=-10)
     VOICE_CLIENT_VAD_FRAMES: int = Field(default=3, ge=1, le=20)
     VOICE_AUDIO_METRICS_SECONDS: int = Field(default=5, ge=2, le=60)
+
+    @field_validator("VOICE_WAKE_WORD")
+    @classmethod
+    def validate_wake_word(cls, value: str) -> str:
+        keyword = normalize_wake_word(value)
+        if len(keyword) < 2:
+            raise ValueError("Wake word must contain at least two non-punctuation characters")
+        return keyword
 
     DASHSCOPE_API_KEY: SecretStr | None = None
     DASHSCOPE_BASE_URL: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"

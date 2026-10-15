@@ -147,7 +147,7 @@ class FailingSpeech(FakeSpeech):
 
 
 class WakeSpeech(FakeSpeech):
-    transcript = "小美，介绍一下你自己"
+    transcript = "小美，小美，介绍一下你自己"
 
     async def append_audio(self, ws, pcm):
         await self.events.put(
@@ -172,6 +172,25 @@ class RejectedWakeSpeech(FakeSpeech):
                 "type": "conversation.item.input_audio_transcription.completed",
                 "item_id": "false-wake",
                 "transcript": "今天天气不错",
+            }
+        )
+
+
+class SegmentedWakeSpeech(FakeSpeech):
+    transcripts = ("小美", "小美", "小美小美小美", "小美，小美，介绍一下你自己")
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.index = 0
+
+    async def append_audio(self, ws, pcm):
+        transcript = self.transcripts[self.index]
+        self.index += 1
+        await self.events.put(
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "item_id": f"wake-{self.index}",
+                "transcript": transcript,
             }
         )
 
@@ -485,15 +504,26 @@ def test_voice_capabilities_expose_compatible_ids_and_display_metadata(voice_env
         {"id": "Serena", "name": "苏瑶", "description": "温柔自然"},
     ]
     assert data["wake_word"]["enabled"] is True
-    assert data["wake_word"]["keyword"] == "小美"
+    assert data["wake_word"]["keyword"] == "小美小美"
     assert data["client_vad"]["enabled"] is True
     assert data["audio_metrics_seconds"] > 0
 
 
-def test_wake_session_validates_metadata_and_confirms_transcript(voice_env, monkeypatch):
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        "小美小美介绍一下你自己",
+        "小美，小美，介绍一下你自己",
+        "小 美！小 美！小美小美，介绍一下你自己",
+    ],
+)
+def test_wake_session_validates_metadata_and_confirms_transcript(
+    voice_env, monkeypatch, transcript
+):
     from service import voice as voice_routes
 
     client, repo, _, headers = voice_env
+    monkeypatch.setattr(WakeSpeech, "transcript", transcript)
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", WakeSpeech)
     auth = headers()
     rejected = client.post(
@@ -512,6 +542,7 @@ def test_wake_session_validates_metadata_and_confirms_transcript(voice_env, monk
         pre_roll_samples=16000,
     )
     assert session["wake_status"] == "pending"
+    assert session["wake_word"] == "小美小美"
     with connect(client, session, auth) as ws:
         ready = configure(ws)
         frame = encode_audio(
@@ -528,16 +559,23 @@ def test_wake_session_validates_metadata_and_confirms_transcript(voice_env, monk
         read_until(ws, "session.closed")
 
     assert any(item["type"] == "wake.accepted" for item in events)
+    assert (
+        next(item for item in events if item["type"] == "wake.accepted")["command"]
+        == "介绍一下你自己"
+    )
+    output = "".join(item["text"] for item in events if item["type"] == "text.delta")
+    assert output.startswith(settings.VOICE_WAKE_GREETING)
     turn = next(iter(repo.records.values()))
     assert turn.input_text == "介绍一下你自己"
     assert repo.sessions[session["session_id"]].wake_status == "accepted"
 
 
-def test_wake_word_followed_only_by_filler_does_not_start_a_turn(voice_env, monkeypatch):
+@pytest.mark.parametrize("transcript", ["小美小美", "小美，小美，小美！", "小美，小美，嗯"])
+def test_wake_without_command_only_speaks_greeting(voice_env, monkeypatch, transcript):
     from service import voice as voice_routes
 
     client, repo, _, headers = voice_env
-    monkeypatch.setattr(WakeSpeech, "transcript", "小美，嗯")
+    monkeypatch.setattr(WakeSpeech, "transcript", transcript)
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", WakeSpeech)
     auth = headers()
     session = create(
@@ -559,14 +597,114 @@ def test_wake_word_followed_only_by_filler_does_not_start_a_turn(voice_env, monk
                 kind=1,
             )
         )
-        read_until(ws, "wake.accepted")
+        events = read_until(ws, "response.done")
+        assert sum(item["type"] == "wake.accepted" for item in events) == 1
+        assert any(item["type"] == "audio" for item in events)
+        assert (
+            "".join(item["text"] for item in events if item["type"] == "text.delta")
+            == settings.VOICE_WAKE_GREETING
+        )
+        event(ws, "playback.finished", response_id=events[-1]["response_id"])
         event(ws, "ping")
         read_until(ws, "pong")
         event(ws, "session.close")
         read_until(ws, "session.closed")
 
-    assert repo.records == {}
+    assert len(repo.records) == 1
+    turn = next(iter(repo.records.values()))
+    assert turn.input_text == ""
+    assert turn.run_id is None
+    assert turn.audio_status == "completed"
     assert repo.sessions[session["session_id"]].wake_status == "accepted"
+
+
+def test_split_wake_and_extra_calls_greet_once_and_preserve_following_command(
+    voice_env, monkeypatch
+):
+    from service import voice as voice_routes
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", SegmentedWakeSpeech)
+    auth = headers()
+    session = create(client, auth, activation="wake_word", wake_word="小美，小美")
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        all_events = []
+        for sequence in range(4):
+            ws.send_bytes(
+                encode_audio(
+                    b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, sequence, kind=1
+                )
+            )
+            events = read_until(ws, "response.done" if sequence in {1, 3} else "transcript.final")
+            event(ws, "ping")
+            events.extend(read_until(ws, "pong"))
+            all_events.extend(events)
+            if sequence == 0:
+                assert not any(e["type"] == "wake.accepted" for e in events)
+                assert repo.records == {}
+            if sequence == 2:
+                assert next(e for e in events if e["type"] == "transcript.final")["text"] == ""
+                assert not any(
+                    e["type"] in {"response.cancelled", "input.accepted"} for e in events
+                )
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    assert sum(e["type"] == "wake.accepted" for e in all_events) == 1
+    assert (
+        sum(
+            e["type"] == "text.delta" and e.get("text") == settings.VOICE_WAKE_GREETING
+            for e in all_events
+        )
+        == 1
+    )
+    assert [turn.input_text for turn in repo.records.values()] == ["", "介绍一下你自己"]
+
+
+@pytest.mark.parametrize("transcript", [None, "小美"])
+def test_wake_confirmation_timeout_closes_without_greeting(voice_env, monkeypatch, transcript):
+    from service import voice as voice_routes
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(settings, "VOICE_WAKE_CONFIRM_SECONDS", 2)
+    monkeypatch.setattr(WakeSpeech, "transcript", transcript)
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", WakeSpeech)
+    auth = headers()
+    session = create(client, auth, activation="wake_word", wake_word="小美小美")
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        if transcript is not None:
+            ws.send_bytes(
+                encode_audio(b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, 0, kind=1)
+            )
+        events = read_until(ws, "wake.rejected")
+    assert not any(e["type"] in {"wake.accepted", "response.started", "audio"} for e in events)
+    assert repo.records == {}
+
+
+def test_wake_greeting_tts_failure_keeps_session_usable(voice_env, monkeypatch):
+    from service import voice as voice_routes
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(WakeSpeech, "transcript", "小美小美")
+    monkeypatch.setattr(WakeSpeech, "synthesize", FailingSpeech.synthesize)
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", WakeSpeech)
+    auth = headers()
+    session = create(client, auth, activation="wake_word", wake_word="小美小美")
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        ws.send_bytes(
+            encode_audio(b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, 0, kind=1)
+        )
+        events = read_until(ws, "response.done")
+        assert events[-1]["audio_status"] == "failed"
+        assert any(e.get("code") == "tts_failed" for e in events)
+        event(ws, "ping")
+        read_until(ws, "pong")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert next(iter(repo.records.values())).execution_status == "completed"
 
 
 @pytest.mark.parametrize("filler", ["嗯", "呢", "那"])

@@ -39,6 +39,24 @@ def test_nacos_bootstrap_loads_model_provider_from_remote_config() -> None:
     assert config.AVAILABLE_MODELS
 
 
+def test_wake_configuration_supports_greeting_and_confirmation_timeout() -> None:
+    config = make_settings()
+    nacos.apply_remote_settings(
+        config,
+        """voice:
+  wake:
+    word: 小美，小美
+    greeting: 我在，请讲。
+    pre_roll_ms: 2200
+    confirm_seconds: 8
+""",
+    )
+    assert config.VOICE_WAKE_WORD == "小美小美"
+    assert config.VOICE_WAKE_GREETING == "我在，请讲。"
+    assert config.VOICE_WAKE_PRE_ROLL_MS == 2200
+    assert config.VOICE_WAKE_CONFIRM_SECONDS == 8
+
+
 def test_nacos_remote_config_must_resolve_model_provider() -> None:
     with patch.dict(os.environ, {}, clear=True):
         config = Settings(

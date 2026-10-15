@@ -148,6 +148,8 @@ _NESTED_SETTINGS: dict[str, Any] = {
             "word": "VOICE_WAKE_WORD",
             "confirm_with_asr": "VOICE_WAKE_CONFIRM_WITH_ASR",
             "pre_roll_ms": "VOICE_WAKE_PRE_ROLL_MS",
+            "confirm_seconds": "VOICE_WAKE_CONFIRM_SECONDS",
+            "greeting": "VOICE_WAKE_GREETING",
             "kws_score": "VOICE_WAKE_KWS_SCORE",
             "kws_threshold": "VOICE_WAKE_KWS_THRESHOLD",
         },
