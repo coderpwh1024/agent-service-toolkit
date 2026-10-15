@@ -3,10 +3,11 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock
 from uuid import uuid4
 
+import pytest
 from pydantic import SecretStr
 
 from core.settings import Settings
-from memory.mem0_sdk import build_memory, close_memory
+from memory.mem0_sdk import ValidatedExtractionLlm, build_memory, close_memory
 
 
 def test_real_sdk_bridge_never_opens_sqlite(monkeypatch, tmp_path):
@@ -30,7 +31,7 @@ def test_real_sdk_bridge_never_opens_sqlite(monkeypatch, tmp_path):
         assert isinstance(memory, Memory)
         assert memory.db.pool is pool
         assert memory.embedding_model.client.timeout == config.MEM0_TIMEOUT_SECONDS
-        memory.llm.generate_response = Mock(return_value='{"memory": []}')
+        memory.llm.provider.generate_response = Mock(return_value='{"memory": []}')
         memory.embedding_model.embed = Mock(return_value=[1.0] * 1024)
         vector_store.search.return_value = []
         connection.execute.return_value.fetchall.return_value = []
@@ -41,8 +42,63 @@ def test_real_sdk_bridge_never_opens_sqlite(monkeypatch, tmp_path):
         assert any(
             "INSERT INTO mem0_records" in call.args[0] for call in connection.execute.call_args_list
         )
+        from mem0.exceptions import LLMError
+
+        memory.llm.provider.generate_response.return_value = "invalid extraction"
+        save_messages = Mock()
+        monkeypatch.setattr(memory.db, "save_messages", save_messages)
+        with pytest.raises(LLMError, match="Invalid Mem0 extraction response"):
+            memory.add(
+                [{"role": "user", "content": "I prefer coffee"}],
+                user_id="alice",
+                agent_id="mem0-chatbot",
+            )
+        save_messages.assert_not_called()
     finally:
         close_memory(memory)
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        "",
+        "invalid JSON",
+        "{}",
+        '{"memory":null}',
+        '{"memory":[{"text":42}]}',
+        '{"memory":[{"text":" "}]}',
+        '{"memory":[{}]}',
+        None,
+    ],
+)
+def test_invalid_extraction_output_raises_without_exposing_response(response):
+    provider = Mock(generate_response=Mock(return_value=response))
+    model = ValidatedExtractionLlm(provider)
+    with pytest.raises(ValueError, match="^Invalid Mem0 extraction response$"):
+        model.generate_response(messages=[])
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        '{"memory":[]}',
+        '```json\n{"memory":[]}\n```',
+    ],
+)
+def test_valid_empty_extraction_is_success(response):
+    model = ValidatedExtractionLlm(Mock(generate_response=Mock(return_value=response)))
+    assert model.generate_response(messages=[]) == '{"memory":[]}'
+
+
+def test_valid_extraction_preserves_sdk_linking_fields():
+    model = ValidatedExtractionLlm(
+        Mock(
+            generate_response=Mock(
+                return_value='{"memory":[{"text":"喜欢茶","linked_memory_ids":["0"]}]}'
+            )
+        )
+    )
+    assert '"linked_memory_ids":["0"]' in model.generate_response(messages=[])
 
 
 def test_real_sdk_update_delete_and_history_preserve_owner(monkeypatch, tmp_path):

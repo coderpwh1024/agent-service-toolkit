@@ -112,15 +112,39 @@ class Mem0Service:
         logger.info("Mem0 search returned count=%d", len(memories))
         return memories
 
-    async def remember(self, messages: list[dict[str, str]], user_id: str, thread_id: str) -> None:
+    def _remember(
+        self,
+        messages: list[dict[str, str]],
+        user_id: str,
+        thread_id: str,
+        context: list[dict[str, str]] | None,
+    ) -> dict[str, Any]:
+        if not isinstance(self.memory.db, PostgresHistory):
+            raise TypeError("Mem0 extraction requires PostgreSQL history")
+        with self.memory.db.extraction_scope(thread_id, context):
+            return self.memory.add(
+                messages=messages,
+                user_id=user_id,
+                agent_id=AGENT_ID,
+                metadata={"source_thread_id": thread_id},
+            )
+
+    async def remember(
+        self,
+        messages: list[dict[str, str]],
+        user_id: str,
+        thread_id: str,
+        *,
+        context: list[dict[str, str]] | None = None,
+    ) -> None:
         result = await self._call(
             "add",
-            self.memory.add,
+            self._remember,
             scope_user=user_id,
             messages=messages,
             user_id=user_id,
-            agent_id=AGENT_ID,
-            metadata={"source_thread_id": thread_id},
+            thread_id=thread_id,
+            context=context,
         )
         logger.info("Mem0 write returned count=%d", len(result.get("results", [])))
 

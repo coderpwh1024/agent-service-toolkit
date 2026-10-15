@@ -42,7 +42,7 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
     def configure_models(memory):
         memory.llm.client.close()
         memory.embedding_model.client.close()
-        memory.llm = SimpleNamespace(
+        memory.llm.provider = SimpleNamespace(
             client=Mock(),
             generate_response=lambda **kwargs: json.dumps(
                 {"memory": [{"text": "User prefers tea"}]}
@@ -81,6 +81,13 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
                 assert [m["content"] for m in memory.db.get_last_messages("context-test")] == [
                     str(i) for i in range(2, 12)
                 ]
+                scope = "agent_id=mem0-chatbot&user_id=alice"
+                for thread_id in ("thread-a&=", "thread-b"):
+                    with memory.db.extraction_scope(thread_id, None):
+                        memory.db.save_messages([{"role": "user", "content": thread_id}], scope)
+                        assert memory.db.get_last_messages(scope) == [
+                            {"role": "user", "content": thread_id}
+                        ]
                 with pool.connection() as conn:
                     count = conn.execute(
                         sql.SQL("SELECT COUNT(*) FROM {}").format(sql.Identifier(collection))
@@ -102,6 +109,12 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
             memory = build_memory(config, pool)
             configure_models(memory)
             try:
+                scope = "agent_id=mem0-chatbot&user_id=alice"
+                for thread_id in ("thread-a&=", "thread-b"):
+                    with memory.db.extraction_scope(thread_id, None):
+                        assert memory.db.get_last_messages(scope) == [
+                            {"role": "user", "content": thread_id}
+                        ]
                 results = memory.search(
                     "drink", filters={"user_id": "alice", "agent_id": "mem0-chatbot"}
                 )
@@ -139,6 +152,20 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
             )
         with ThreadPoolExecutor(max_workers=1) as executor:
             service = Mem0Service(memory, executor)
+            generator = memory.llm.provider.generate_response
+            memory.llm.provider.generate_response = Mock(return_value='{"memory":[]}')
+            await service.remember(
+                [{"role": "user", "content": "Shanghai"}],
+                "alice",
+                "thread-question",
+                context=[{"role": "assistant", "content": "Which city do you live in?"}],
+            )
+            prompt = memory.llm.provider.generate_response.call_args.kwargs["messages"][1][
+                "content"
+            ]
+            assert "Which city do you live in?" in prompt
+            assert "thread-a&=" not in prompt
+            memory.llm.provider.generate_response = generator
             listing = await service.list_memories("alice", 1)
             assert [str(record.id) for record in listing.memories] == [memory_id]
             assert listing.next_cursor is None
@@ -152,6 +179,9 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
                     "alice", MemoryMutation(action="delete", target=old_target)
                 )
             assert memory.db.get_last_messages("agent_id=mem0-chatbot&user_id=alice") == []
+            for thread_id in ("thread-a&=", "thread-b", "thread-question"):
+                with memory.db.extraction_scope(thread_id, None):
+                    assert memory.db.get_last_messages("agent_id=mem0-chatbot&user_id=alice") == []
             history = await service.memory_history(memory_id, "alice", 1)
             assert history.history[0].event == "ADD"
             assert history.next_cursor is not None

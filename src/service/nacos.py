@@ -58,6 +58,7 @@ _NESTED_SETTINGS: dict[str, Any] = {
             "threshold": "MEM0_THRESHOLD",
             "timeout_seconds": "MEM0_TIMEOUT_SECONDS",
             "max_context_chars": "MEM0_MAX_CONTEXT_CHARS",
+            "chat_context_tokens": "MEM0_CHAT_CONTEXT_TOKENS",
         },
     },
     "models": {

@@ -166,6 +166,25 @@ async def test_negated_or_hypothetical_commands_do_not_mutate(conversation):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "text", ["帮我修改这段 Python 代码", "删除代码中的注释", "update this function"]
+)
+async def test_disabled_memory_does_not_intercept_ordinary_editing(conversation, text):
+    say, _, _, parser, _, _ = conversation
+    parser.return_value = MemoryIntent(action="none")
+    assert await say(text, service=None) is None
+    parser.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_disabled_memory_reports_unavailable_for_actual_memory_request(conversation):
+    say, _, _, parser, _, _ = conversation
+    parser.return_value = MemoryIntent(action="delete", query="喜欢茶")
+    response = await say("删除我喜欢茶的记忆", service=None)
+    assert response.response_metadata["memory_status"] == "disabled"
+
+
+@pytest.mark.asyncio
 async def test_list_then_select_by_number_refreshes_target(conversation):
     say, memory, _, parser, _, record = conversation
     parser.return_value = MemoryIntent(action="list")
@@ -349,7 +368,10 @@ async def test_cancelled_delivery_context_is_not_reextracted_as_a_memory(monkeyp
         {"configurable": {"user_id": "alice", "thread_id": "thread"}},
     )
     memory.remember.assert_awaited_once_with(
-        [{"role": "user", "content": "你好"}], "alice", "thread"
+        [{"role": "user", "content": "你好"}],
+        "alice",
+        "thread",
+        context=[{"role": "user", "content": "删除我喜欢茶的记忆"}],
     )
     memory.apply_memory_mutation.assert_not_awaited()
 

@@ -230,6 +230,7 @@ class Settings(BaseSettings):
     MEM0_THRESHOLD: float = Field(default=0.3, ge=0, le=1)
     MEM0_TIMEOUT_SECONDS: float = Field(default=20, ge=1, le=120)
     MEM0_MAX_CONTEXT_CHARS: int = Field(default=6000, ge=100, le=50000)
+    MEM0_CHAT_CONTEXT_TOKENS: int = Field(default=12000, ge=2048, le=131072)
 
     QINIU_ACCESS_KEY: SecretStr | None = None
     QINIU_SECRET_KEY: SecretStr | None = None

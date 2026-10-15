@@ -18,11 +18,14 @@ memory:
     threshold: 0.3
     timeout_seconds: 20
     max_context_chars: 6000
+    chat_context_tokens: 12000
 ```
 
 默认复用 `models.dashscope.api_key` 和 `base_url`；未单独配置 `embedding_model` 时也复用全局模型。上述示例为 Mem0 单独指定了 1024 维的 flash 模型，避免改变其他功能使用的全局 embedding 模型。也可在 `memory.mem0` 中单独设置 `api_key` 和 `base_url`，接入支持聊天 JSON 输出与 embeddings 的 OpenAI 兼容服务。`llm_model` 是记忆提取模型，与用户在聊天界面选择的回答模型独立。`embedding_dims` 必须与供应商实际支持的 dimensions 参数一致；启用前确认模型可用性与配额。
 
-关闭 Nacos 时使用对应的 `MEM0_ENABLED`、`MEM0_COLLECTION_NAME`、`MEM0_LLM_MODEL`、`MEM0_API_KEY`、`MEM0_BASE_URL`、`MEM0_EMBEDDING_MODEL`、`MEM0_EMBEDDING_DIMS`、`MEM0_TOP_K`、`MEM0_THRESHOLD`、`MEM0_TIMEOUT_SECONDS` 和 `MEM0_MAX_CONTEXT_CHARS` 环境变量。密钥字段使用 `SecretStr`。默认 `MEM0_ENABLED=false`，让现有部署可以先完成数据库准备；此时新 agent 只有会话历史，响应中会返回 `memory_status=disabled`。远程配置只在启动时加载，修改后重启服务。
+关闭 Nacos 时使用对应的 `MEM0_ENABLED`、`MEM0_COLLECTION_NAME`、`MEM0_LLM_MODEL`、`MEM0_API_KEY`、`MEM0_BASE_URL`、`MEM0_EMBEDDING_MODEL`、`MEM0_EMBEDDING_DIMS`、`MEM0_TOP_K`、`MEM0_THRESHOLD`、`MEM0_TIMEOUT_SECONDS`、`MEM0_MAX_CONTEXT_CHARS` 和 `MEM0_CHAT_CONTEXT_TOKENS` 环境变量。密钥字段使用 `SecretStr`。默认 `MEM0_ENABLED=false`，让现有部署可以先完成数据库准备；此时新 agent 只有会话历史，响应中会返回 `memory_status=disabled`。远程配置只在启动时加载，修改后重启服务。
+
+`chat_context_tokens` 限制回答模型的输入预算，默认 12000，范围 2048–131072。实现按消息正文的 UTF-8 字节数及消息开销保守估算，不依赖供应商分词器；部署时须按所选模型的实际窗口下调，并预留输出空间。系统规则和当前输入优先保留，然后放入能容纳的检索记忆和最近的完整历史消息。裁剪只影响模型输入，完整聊天检查点仍然保留；单条当前输入超过预算时提示拆分，返回 `memory_status=input_too_long`，不调用回答模型或提取记忆。`max_context_chars` 仍限制检索记忆正文总长度，也限制传给提取模型的近期对话正文总长度。
 
 PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`，维持 PostgreSQL 16 与原数据卷路径。已有数据库先备份，再按部署方式安装扩展；不要删除数据卷。启动账户需要创建 Mem0 表和 `vector` 扩展的权限；生产环境可由 DBA 提前执行 `CREATE EXTENSION IF NOT EXISTS vector`。新 agent 启用 Mem0 后，数据库、扩展或必要配置不可用会阻止服务启动，避免隐式使用 SQLite 或内存存储。
 
@@ -30,11 +33,11 @@ PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`
 
 - 会话历史：原 PostgreSQL checkpointer 按 `thread_id` 保存完整消息，供聊天历史、取消恢复与语音播放上下文使用。
 - 长期事实：Mem0 只处理本轮用户文本，并按认证后绑定的 `user_id` 和固定 `agent_id=mem0-chatbot` 写入与检索。线程 ID 作为来源元数据，不作为过滤范围，因此同一用户可在新会话中回忆旧偏好。
-- 提取上下文与历史：`mem0_records` 保存 Mem0 的变更事件和最近十条有效用户消息，使用六个审计字段、BIGINT identity、部分索引及逻辑删除。旧上下文仍保留为逻辑删除记录，应纳入数据库备份与保留期维护。
+- 提取上下文与历史：`mem0_records` 保存 Mem0 的变更事件和每个用户/智能体/线程最近十条有效用户消息，使用六个审计字段、BIGINT identity、部分索引及逻辑删除。聊天提取时使用当前线程检查点中最近十条、且不超过 `max_context_chars` 的用户/助手消息作指代参考；助手提问只用于解释本轮用户的明确回答，不作为新事实来源。新线程不会读取旧的跨线程提取缓存，长期事实检索仍按用户和智能体跨线程共享。已有缓存不需要迁移，也不会在启动时删除；记忆管理清理会覆盖旧缓存和所有线程缓存。旧上下文仍保留为逻辑删除记录，应纳入数据库备份与保留期维护。
 
 向量与实体表由 Mem0 SDK 管理，沿用其 UUID 与 JSONB schema，属于第三方表豁免；第一方 `mem0_records` 执行仓库的六字段规范。Mem0 2.2.1 的构造器强制创建 SQLite，项目通过集中在 `memory/mem0_sdk.py` 的版本适配层注入 PostgreSQL history，继续使用 SDK 的提取和搜索算法。依赖精确固定，升级时必须重新验证该适配层与 PostgreSQL 冒烟测试。
 
-检索结果带有明确的不可信数据标签，不能覆盖系统规则或用户当前的纠正。提示词要求只提取持久事实，不保存密钥、助手猜测和临时请求；这属于模型约束，不等同于确定性的敏感数据检测。不要主动发送凭据。检索不足时助手应明确说明，不编造记忆。SDK 当前采用增量事实提取，不保证自动删除所有旧偏好；有冲突时当前用户纠正优先，跨会话冲突可能需要再次确认。
+检索结果作为带有明确不可信数据标签的 JSON 参考消息传入，不使用系统消息角色，不能覆盖系统规则或用户当前的纠正。提示词要求只从本轮用户输入提取持久事实，不保存密钥、助手猜测和临时请求；无法明确解析指代时不提取。这属于模型约束，不等同于确定性的敏感数据检测。不要主动发送凭据。检索不足时助手应明确说明，不编造记忆。SDK 当前采用增量事实提取，不保证自动删除所有旧偏好；有冲突时当前用户纠正优先，跨会话冲突可能需要再次确认。
 
 ## 记忆管理 API
 
@@ -125,6 +128,8 @@ result = client.delete_all_memories(user_id="alice")
 
 语义分类和候选匹配使用当前选择的回答模型及 Pydantic 结构化输出，要求模型支持工具调用或原生结构化输出；百炼使用 Function Calling；普通且不含相关关键词的聊天不增加分类调用。模型、搜索或存储不可用时失败可控，不伪造成功。内部分类 JSON 标记为 `skip_stream`，不会当作聊天 token 下发或播报；只将应用验证过的候选编号映射到真实 ID，用户身份始终来自认证绑定，不由模型填写。参考 [LangChain 结构化输出](https://reference.langchain.com/python/langchain-openai/chat_models/base/BaseChatOpenAI/with_structured_output) 和 [百炼 Function Calling](https://help.aliyun.com/zh/model-studio/qwen-function-calling)。
 
+关闭长期记忆时，“修改代码”“删除代码中的注释”等不涉及记忆的请求直接进入普通聊天。涉及记忆的关键词仍经语义分类区分管理操作和说明性问题；分类模型不可用时返回记忆未启用，不执行操作。
+
 管理请求、选择及确认轮次不进入 Mem0 自动提取；插话恢复附带的旧输入也不会被当作本轮新事实再次提取。成功、待确认、待选择及失败结果通过最终 AI 消息的 `response_metadata.memory_status` 区分，例如 `confirmation_required`、`selection_required`、`updated`、`deleted`、`cleared`、`cancelled`、`conflict`、`operation_failed`。普通聊天仍沿用原来的记忆状态。
 
 插话仍会立即停止失效播报。取消待确认操作不撤销已经提交到同步 SDK 的调用；已接受的修改或删除可能继续完成，超时或断线也不能视为回滚，应先查询记忆及历史。重复确认已成功的相同文本更新不会重复写历史；已删除的指定 UUID 不会被替换为其他目标；旧的清空确认不能删除之后新增的记忆。完整聊天记录及审计历史继续保留。语音列表和历史播报最多五项，完整结果仍可通过原有接口分页查询。
@@ -145,7 +150,7 @@ result = client.delete_all_memories(user_id="alice")
 
 记忆检索发生在生成前；完成生成后等待本轮用户事实提取，再提交最终消息与检查点。模型 token 保持流式输出，不缓冲完整回答。插话仍立即取消 agent/TTS 并丢弃失效音频。同步 SDK 在线程中运行，取消不能强制终止已接受的 SDK 调用：它可能继续完成用户事实写入，但不会保存被取消的助手回答或推断用户已听到该回答。服务关闭时等待正在运行的记忆操作，再关闭模型客户端和连接池。
 
-最终 AI 消息的 `response_metadata.memory_status` 为 `disabled`、`saved`、`saved_search_failed` 或 `write_failed`。`saved` 表示提取操作完成，可能没有产生新的事实。运行期间的检索/写入异常不打断聊天，但会通过状态和日志报告，失败写入不会宣称成功；目前不提供后台重试队列，完整聊天检查点仍可用于人工补录。每个进程串行执行记忆操作，最多接受八个进行中或等待中的操作，队列满时降级并返回失败状态，避免无界任务堆积。需要高吞吐时应先设计持久任务队列、重试与跨进程幂等，再扩大并发。
+普通聊天最终 AI 消息的 `response_metadata.memory_status` 为 `disabled`、`saved`、`saved_search_failed`、`write_failed` 或 `input_too_long`。`saved` 表示提取操作完成，可能没有产生新的事实。提取响应必须包含结构正确的 `memory` 数组，合法空数组表示没有新事实；空响应、非法 JSON、缺少数组或事实结构无效均返回 `write_failed`，不会被 SDK 转为空结果后误报成功。回答生成时只知道服务是否可用，自动提取尚未执行，因此助手不能声称本轮事实已经保存。运行期间的检索/写入异常不打断聊天，但会通过状态和日志报告，失败写入不会宣称成功；目前不提供后台重试队列，完整聊天检查点仍可用于人工补录。每个进程串行执行记忆操作，最多接受八个进行中或等待中的操作，队列满时降级并返回失败状态，避免无界任务堆积。需要高吞吐时应先设计持久任务队列、重试与跨进程幂等，再扩大并发。
 
 ## 日志和验证
 

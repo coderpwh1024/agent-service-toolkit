@@ -25,9 +25,13 @@ from schema.memory_commands import (
 )
 
 logger = logging.getLogger(__name__)
+MEMORY_HINT = re.compile(
+    r"记忆|记住|记着|记得|记录|偏好|喜好|个人信息|忘记|忘掉|忘了|"
+    r"保存的|存储的|remember|memor|forget",
+    re.IGNORECASE,
+)
 COMMAND_HINT = re.compile(
-    r"记忆|记住|记着|记得|记录|偏好|喜好|个人信息|忘记|忘掉|忘了|删|清空|移除|抹掉|"
-    r"修改|改成|改为|更正|更新|保存的|存储的|remember|memor|forget|delete|update|erase",
+    MEMORY_HINT.pattern + r"|删|清空|移除|抹掉|修改|改成|改为|更正|更新|delete|update|erase",
     re.IGNORECASE,
 )
 CONFIRMATIONS = {
@@ -426,10 +430,16 @@ async def handle_memory_command(
     }
     if not dialogue.pending and not COMMAND_HINT.search(text) and not explicit_confirmation:
         return None
-    if memory is None:
-        dialogue.pending = None
-        return _reply("长期记忆服务没有启用，当前无法查询、修改或删除长期记忆。", "disabled")
     try:
+        if memory is None:
+            dialogue.pending = None
+            if not explicit_confirmation:
+                if not MEMORY_HINT.search(text):
+                    return None
+                intent = await parse_memory_intent(model, text, dialogue, config)
+                if intent.action == "none":
+                    return None
+            return _reply("长期记忆服务没有启用，当前无法查询、修改或删除长期记忆。", "disabled")
         return await _handle(text, memory, user_id, dialogue, model, config)
     except MemoryConflictError:
         dialogue.pending = None
@@ -442,6 +452,8 @@ async def handle_memory_command(
     except Exception as exc:
         dialogue.pending = None
         logger.warning("Conversational memory operation failed error_type=%s", type(exc).__name__)
+        if memory is None:
+            return _reply("长期记忆服务没有启用，当前无法查询、修改或删除长期记忆。", "disabled")
         return _reply(
             "记忆操作未能确认完成，可能仍在处理中。请先查询记忆或变更历史，再决定是否重试。",
             "operation_failed",

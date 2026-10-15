@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
+from urllib.parse import quote
 from uuid import UUID
 
 from psycopg import sql
@@ -20,6 +21,9 @@ class PostgresHistory:
         self.resolve_owner: Callable[[str], dict[str, Any] | None] | None = None
         self._history_owner: ContextVar[tuple[str, str, str] | None] = ContextVar(
             "mem0_history_owner", default=None
+        )
+        self._extraction: ContextVar[tuple[str, list[dict[str, str]] | None] | None] = ContextVar(
+            "mem0_extraction_context", default=None
         )
 
     def setup(self) -> None:
@@ -51,7 +55,7 @@ class PostgresHistory:
             """)
             conn.execute("""
                 COMMENT ON COLUMN mem0_records.scope IS
-                'Memory UUID for history, escaped user/agent scope for extraction context'
+                'Memory UUID for history, escaped user/agent/thread scope for extraction context'
             """)
             conn.execute("""
                 COMMENT ON COLUMN mem0_records.payload IS
@@ -166,10 +170,28 @@ class PostgresHistory:
             conn.execute(
                 """UPDATE mem0_records SET is_delete = 1, update_by = %s,
                    update_time = CURRENT_TIMESTAMP
-                   WHERE collection_name = %s AND kind = 'context' AND scope = %s
+                   WHERE collection_name = %s AND kind = 'context'
+                   AND (scope = %s OR starts_with(scope, %s))
                    AND is_delete = 0""",
-                (self.actor_id, self.collection, scope),
+                (self.actor_id, self.collection, scope, scope + "&source_thread_id="),
             )
+
+    @contextmanager
+    def extraction_scope(
+        self, thread_id: str, context: list[dict[str, str]] | None
+    ) -> Iterator[None]:
+        """Separate short-term references from the cross-thread long-term memory scope."""
+        token = self._extraction.set((thread_id, context))
+        try:
+            yield
+        finally:
+            self._extraction.reset(token)
+
+    def _context_scope(self, session_scope: str) -> str:
+        extraction = self._extraction.get()
+        if extraction is None:
+            return session_scope
+        return session_scope + "&source_thread_id=" + quote(extraction[0], safe="")
 
     @contextmanager
     def user_lock(self, user_id: str, agent_id: str) -> Iterator[None]:
@@ -195,6 +217,7 @@ class PostgresHistory:
         return [dict(payload, id=str(record_id)) for record_id, payload in rows]
 
     def save_messages(self, messages: list[dict[str, Any]], session_scope: str) -> None:
+        session_scope = self._context_scope(session_scope)
         with self.pool.connection() as conn:
             for message in messages:
                 self._insert(conn, "context", session_scope, message)
@@ -211,6 +234,10 @@ class PostgresHistory:
             )
 
     def get_last_messages(self, session_scope: str, limit: int = 10) -> list[dict[str, Any]]:
+        extraction = self._extraction.get()
+        if extraction is not None and extraction[1] is not None:
+            return extraction[1][-limit:] if limit > 0 else []
+        session_scope = self._context_scope(session_scope)
         with self.pool.connection() as conn:
             rows = conn.execute(
                 """SELECT payload FROM (

@@ -97,11 +97,41 @@ def test_clear_context_uses_escaped_sdk_scope_and_logical_deletion(history_store
         7,
         "mem0_test",
         _build_session_scope({"user_id": "alice&=中文", "agent_id": "mem0-chatbot"}),
+        _build_session_scope({"user_id": "alice&=中文", "agent_id": "mem0-chatbot"})
+        + "&source_thread_id=",
     )
     assert "is_delete = 1" in query
     assert "update_time = CURRENT_TIMESTAMP" in query
     assert "kind = 'context'" in query
     assert "is_delete = 0" in query
+    assert "starts_with(scope, %s)" in query
+
+
+def test_extraction_context_uses_thread_scope_and_does_not_fall_back_to_legacy(history_store):
+    history, conn = history_store
+    scope = "agent_id=mem0-chatbot&user_id=alice"
+    with history.extraction_scope("thread&=one", []):
+        assert history.get_last_messages(scope) == []
+        conn.execute.assert_not_called()
+        history.save_messages([{"role": "user", "content": "tea"}], scope)
+        insert = next(c for c in conn.execute.call_args_list if "INSERT INTO" in c.args[0])
+        assert insert.args[1][2] == scope + "&source_thread_id=thread%26%3Done"
+    conn.reset_mock()
+    with history.extraction_scope("thread-two", None):
+        history.get_last_messages(scope)
+        assert conn.execute.call_args.args[1][1] == scope + "&source_thread_id=thread-two"
+
+
+def test_extraction_reference_contains_assistant_context_and_resets_on_failure(history_store):
+    history, conn = history_store
+    context = [{"role": "assistant", "content": "Which city?"}]
+    with pytest.raises(RuntimeError):
+        with history.extraction_scope("thread", context):
+            assert history.get_last_messages("scope") == context
+            raise RuntimeError("cancelled")
+    conn.execute.return_value.fetchall.return_value = []
+    assert history.get_last_messages("scope") == []
+    assert conn.execute.call_args.args[1][1] == "scope"
 
 
 def test_list_is_scoped_and_uses_bounded_uuid_cursor(history_store):

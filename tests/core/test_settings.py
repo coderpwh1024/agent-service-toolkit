@@ -62,6 +62,12 @@ def test_app_token_ttl_is_limited_to_fifteen_days():
         Settings(_env_file=None, APP_TOKEN_TTL_SECONDS=1_296_001)
 
 
+@pytest.mark.parametrize("budget", [0, 2047, 131073])
+def test_mem0_chat_budget_rejects_invalid_limits(budget):
+    with pytest.raises(ValidationError, match="MEM0_CHAT_CONTEXT_TOKENS"):
+        Settings(_env_file=None, MEM0_CHAT_CONTEXT_TOKENS=budget)
+
+
 def test_selected_app_environment_uses_dotenv_and_process_override(tmp_path: Path):
     dotenv_path = tmp_path / ".env"
     dotenv_path.write_text("APP_ENV=test\n", encoding="utf-8")

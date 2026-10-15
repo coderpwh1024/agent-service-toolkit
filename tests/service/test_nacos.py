@@ -512,6 +512,7 @@ def test_mem0_nested_configuration_and_secret():
     threshold: 0.4
     timeout_seconds: 10
     max_context_chars: 3000
+    chat_context_tokens: 8000
 """,
     )
     assert config.MEM0_ENABLED
@@ -520,6 +521,7 @@ def test_mem0_nested_configuration_and_secret():
     assert config.MEM0_EMBEDDING_DIMS == 768
     assert config.MEM0_LLM_MODEL == "extraction-model"
     assert config.MEM0_TOP_K == 3
+    assert config.MEM0_CHAT_CONTEXT_TOKENS == 8000
     assert "memory-test-key" not in repr(config)
 
 

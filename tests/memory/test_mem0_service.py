@@ -1,11 +1,12 @@
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
 from core import settings
+from memory.mem0_history import PostgresHistory
 from memory.mem0_service import AGENT_ID, Mem0Service
 
 
@@ -13,6 +14,7 @@ from memory.mem0_service import AGENT_ID, Mem0Service
 async def test_sdk_scope_and_bounded_context(monkeypatch):
     monkeypatch.setattr(settings, "MEM0_MAX_CONTEXT_CHARS", 5)
     memory = Mock()
+    memory.db = PostgresHistory(MagicMock(), "mem0_test", 7)
     memory.search.return_value = {"results": [{"memory": "abcdef"}, {"memory": "other"}]}
     memory.add.return_value = {"results": []}
     with ThreadPoolExecutor(max_workers=1) as executor:
