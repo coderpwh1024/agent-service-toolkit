@@ -226,7 +226,7 @@ response.pretty_print()
 
 ### Mem0 对话记忆
 
-新增的 `mem0-chatbot` 位于 agent 列表首位，作为文字聊天默认 agent，支持 PostgreSQL/pgvector 长期记忆以及语音流式播报与插话取消。`/memories` API 支持查询、修改、单条删除、按用户批量删除及变更历史，并提供同步/异步客户端方法。配置位于 Nacos 的 `memory.mem0`；默认关闭长期记忆，完成数据库准备后设置 `enabled: true` 并重启。配置、存储说明和验证方法见 [Mem0 对话记忆](docs/Mem0_Memory.md)。
+新增的 `mem0-chatbot` 位于 agent 列表首位，作为文字聊天默认 agent，支持 PostgreSQL/pgvector 长期记忆以及语音流式播报与插话取消。用户可通过语音描述要修改或删除的记忆，经候选选择和语音确认后执行，也可列出记忆、清空自己的全部记忆和查询变更历史。`/memories` API 支持查询、修改、单条删除、按用户批量删除及变更历史，并提供同步/异步客户端方法。配置位于 Nacos 的 `memory.mem0`；默认关闭长期记忆，完成数据库准备后设置 `enabled: true` 并重启。配置、存储说明和验证方法见 [Mem0 对话记忆](docs/Mem0_Memory.md)。
 
 ### Nacos 3.x
 

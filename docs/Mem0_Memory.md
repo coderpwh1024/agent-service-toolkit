@@ -95,9 +95,39 @@ result = client.delete_all_memories(user_id="alice")
 - 长期事实属于第三方 SDK 管理的表，本功能沿用 SDK 的物理删除，同时保留第一方 `mem0_records` 审计历史和聊天记录；因此它是“删除可检索事实”，不是清除所有原始文本或隐私擦除功能。实体关联清理由 SDK 尽力执行。
 - 新历史在 JSONB 中记录 `user_id`、`agent_id`。旧部署中仍存在的记忆可通过实时所有者检查读取历史，并在修改/删除前补齐其旧历史的所有者。升级前已经被删除、且历史没有所有者信息的记忆无法可靠授权，返回 404，不猜测归属。不新增表或破坏性迁移。
 - 批量删除只影响当前用户的 `mem0-chatbot` 事实，不影响其他用户或其他智能体，超过 100 条也会继续分批删除；重复清空返回 `deleted_count: 0`。单条重复删除返回 404。
-- SDK 的向量更新/删除、历史写入和缓存清理不是一个原子事务，批量失败可能已删除部分记录。超时返回 504，已接受的 SDK 线程可能继续完成；连接或供应商错误返回 503。此时应先查询状态和历史，再决定是否重试，不能把错误当作已回滚。自动聊天提取仍是增量新增，聊天中的“忘记”指令不会自动调用这些管理接口。
+- SDK 的向量更新/删除、历史写入和缓存清理不是一个原子事务，批量失败可能已删除部分记录。超时返回 504，已接受的 SDK 线程可能继续完成；连接或供应商错误返回 503。此时应先查询状态和历史，再决定是否重试，不能把错误当作已回滚。自动聊天提取仍是增量新增；显式记忆管理指令走下述对话流程，内部复用记忆服务，不通过模型直接调用 HTTP 接口。
 
 操作语义参考 [Mem0 官方 OSS REST 文档](https://github.com/mem0ai/mem0/blob/main/docs/open-source/features/rest-api.mdx)，具体参数以项目固定的 Mem0 2.2.1 为准。
+
+## 通过语音或文字管理记忆
+
+在已有语音会话中选择 `agent_id=mem0-chatbot`，用户可以直接说出要管理的内容，不需要朗读 UUID。STT 转写经现有智能体入口执行，操作提示和结果进入原有 TTS 播报链路；文字入口也支持同一流程。已有 `/memories`、聊天和语音接口、默认 agent 兼容行为及 WebSocket 事件结构保持原样。
+
+| 用户说法 | 助手行为 |
+| --- | --- |
+| “列出你记住的我的信息” | 播报最多五条记忆及编号 |
+| “把我喜欢茶的记忆改成我喜欢咖啡” | 查找原记忆，读出原文和新内容，请求确认修改 |
+| “删除我喜欢茶的记忆” | 查找并读出目标，请求确认删除 |
+| “删除第二条” | 使用本线程刚才列出的第二条，重新读取并预览 |
+| “清空我的所有记忆” | 统计当前用户的全部长期记忆，播报数量，请求确认清空 |
+| “查看刚才那条记忆的变更历史” | 查询最近操作过的记忆，即使它已被删除，也可按归属读取历史 |
+
+例如一次完整的语音修改：
+
+1. 用户：“把我喜欢茶的记忆改成我喜欢咖啡。”
+2. 助手：“将把记忆‘我喜欢茶’修改为‘我喜欢咖啡’。请说确认修改，或说取消。”
+3. 用户：“确认修改。”
+4. 后端成功更新并清理提取缓存后，助手播报实际结果：“这条记忆已更新为‘我喜欢咖啡’。”
+
+查找到多条可能的记忆时，助手先编号播报，用户说“第二条”等选择目标，再说“确认删除”或“确认修改”。清空全部时可说“确认清空”。“确认”“是的”等也可确认当前预览；明确说出的操作类型必须与预览一致。说“取消”“不要了”等会清除待确认操作；转向其他普通话题也会结束待确认流程。缺少新内容、没有匹配结果或候选编号无效时，不执行写操作。假设示例、否定指令、关于如何管理记忆的说明性问题由结构化分类与普通聊天处理，不直接触发修改或删除。
+
+待确认操作保存在现有线程检查点的 `memory_dialogue` 中，绑定用户 ID，有效期五分钟，可在同一线程重连后继续；其他线程或用户不能沿用该确认。操作前在用户锁内重新核对原文及更新时间；语音清空会核对预览时全部记忆的摘要，期间有新增、修改或删除时要求重新发起确认。无需新增数据库表或调整已有管理接口。
+
+语义分类和候选匹配使用当前选择的回答模型及 Pydantic 结构化输出，要求模型支持工具调用或原生结构化输出；百炼使用 Function Calling；普通且不含相关关键词的聊天不增加分类调用。模型、搜索或存储不可用时失败可控，不伪造成功。内部分类 JSON 标记为 `skip_stream`，不会当作聊天 token 下发或播报；只将应用验证过的候选编号映射到真实 ID，用户身份始终来自认证绑定，不由模型填写。参考 [LangChain 结构化输出](https://reference.langchain.com/python/langchain-openai/chat_models/base/BaseChatOpenAI/with_structured_output) 和 [百炼 Function Calling](https://help.aliyun.com/zh/model-studio/qwen-function-calling)。
+
+管理请求、选择及确认轮次不进入 Mem0 自动提取；插话恢复附带的旧输入也不会被当作本轮新事实再次提取。成功、待确认、待选择及失败结果通过最终 AI 消息的 `response_metadata.memory_status` 区分，例如 `confirmation_required`、`selection_required`、`updated`、`deleted`、`cleared`、`cancelled`、`conflict`、`operation_failed`。普通聊天仍沿用原来的记忆状态。
+
+插话仍会立即停止失效播报。取消待确认操作不撤销已经提交到同步 SDK 的调用；已接受的修改或删除可能继续完成，超时或断线也不能视为回滚，应先查询记忆及历史。重复确认已成功的相同文本更新不会重复写历史；已删除的指定 UUID 不会被替换为其他目标；旧的清空确认不能删除之后新增的记忆。完整聊天记录及审计历史继续保留。语音列表和历史播报最多五项，完整结果仍可通过原有接口分页查询。
 
 ## 语音和流式接口
 
@@ -124,6 +154,7 @@ result = client.delete_all_memories(user_id="alice")
 ```sh
 uv sync --frozen
 uv run pytest tests/agents/test_mem0_chatbot.py tests/memory/test_mem0_service.py tests/memory/test_mem0_sdk.py tests/memory/test_mem0_management.py tests/memory/test_mem0_history.py tests/service/test_memories.py tests/client/test_memory_client.py tests/voice/test_realtime_service.py -q
+uv run pytest tests/agents/test_memory_commands.py tests/memory/test_mem0_mutations.py -q
 ./scripts/smoke_test.sh postgres
 ```
 

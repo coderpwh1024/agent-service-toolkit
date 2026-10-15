@@ -1,6 +1,8 @@
 """Bounded async access to Mem0's synchronous SDK and PostgreSQL resources."""
 
 import asyncio
+import hashlib
+import json
 import logging
 from collections.abc import AsyncIterator, Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -23,6 +25,7 @@ from schema.memory import (
     MemoryList,
     MemoryRecord,
 )
+from schema.memory_commands import MemoryMutation, MemoryMutationResult, MemorySnapshot
 
 logger = logging.getLogger(__name__)
 AGENT_ID = "mem0-chatbot"
@@ -33,6 +36,10 @@ class MemoryNotFoundError(LookupError):
 
 
 class MemoryBusyError(RuntimeError):
+    pass
+
+
+class MemoryConflictError(RuntimeError):
     pass
 
 
@@ -247,6 +254,83 @@ class Mem0Service:
             user_id=user_id,
             limit=limit,
             cursor=cursor,
+        )
+
+    def _search_records(self, query: str, user_id: str) -> MemoryList:
+        result = self.memory.search(
+            query=query,
+            filters={"user_id": user_id, "agent_id": AGENT_ID},
+            top_k=5,
+            threshold=settings.MEM0_THRESHOLD,
+        )
+        records = [self._get(item["id"], user_id) for item in result.get("results", [])[:5]]
+        return MemoryList(memories=records)
+
+    async def search_memory_records(self, query: str, user_id: str) -> MemoryList:
+        return await self._call(
+            "search_records",
+            self._search_records,
+            scope_user=user_id,
+            query=query,
+            user_id=user_id,
+        )
+
+    def _snapshot(self, user_id: str) -> MemorySnapshot:
+        digest = hashlib.sha256()
+        cursor = None
+        count = 0
+        while rows := self.memory.db.list_memories(user_id, AGENT_ID, 100, cursor):
+            for row in rows:
+                digest.update(
+                    json.dumps(
+                        [row["id"], row["data"], row.get("updated_at")], ensure_ascii=False
+                    ).encode()
+                )
+                digest.update(b"\n")
+            count += len(rows)
+            cursor = UUID(rows[-1]["id"])
+        return MemorySnapshot(count=count, revision=digest.hexdigest())
+
+    async def memory_snapshot(self, user_id: str) -> MemorySnapshot:
+        return await self._call("snapshot", self._snapshot, scope_user=user_id, user_id=user_id)
+
+    def _apply_mutation(self, user_id: str, mutation: MemoryMutation) -> MemoryMutationResult:
+        if mutation.action == "delete_all":
+            snapshot = self._snapshot(user_id)
+            if snapshot.count == 0:
+                self.memory.db.clear_context(user_id, AGENT_ID)
+                return MemoryMutationResult(status="cleared")
+            if snapshot.revision != mutation.revision:
+                raise MemoryConflictError("Memories changed after confirmation was requested")
+            result = self._delete_all(user_id)
+            return MemoryMutationResult(status="cleared", deleted_count=result.deleted_count)
+        target = mutation.target
+        if target is None:
+            raise ValueError("A memory target is required")
+        memory_id = str(target.id)
+        record = self._owned_memory(memory_id, user_id)
+        if mutation.action == "update" and record["memory"] == mutation.text:
+            return MemoryMutationResult(status="unchanged")
+        if record["memory"] != target.memory or record.get("updated_at") != target.updated_at:
+            raise MemoryConflictError("The target memory changed after it was selected")
+        if mutation.action == "delete":
+            self._delete(memory_id, user_id)
+            return MemoryMutationResult(status="deleted", deleted_count=1)
+        if mutation.text is None:
+            raise ValueError("Replacement memory text is required")
+        self._update(memory_id, user_id, mutation.text)
+        return MemoryMutationResult(status="updated")
+
+    async def apply_memory_mutation(
+        self, user_id: str, mutation: MemoryMutation
+    ) -> MemoryMutationResult:
+        """Check the spoken preview and mutate under the same user lock."""
+        return await self._call(
+            "apply_mutation",
+            self._apply_mutation,
+            scope_user=user_id,
+            user_id=user_id,
+            mutation=mutation,
         )
 
 

@@ -15,8 +15,9 @@ from pydantic import SecretStr
 
 from core.settings import Settings
 from memory.mem0_sdk import build_memory, close_memory
-from memory.mem0_service import Mem0Service, MemoryNotFoundError
+from memory.mem0_service import Mem0Service, MemoryConflictError, MemoryNotFoundError
 from memory.postgres import get_postgres_connection_string
+from schema.memory_commands import MemoryMutation, MemoryTarget
 
 
 @pytest.mark.docker
@@ -141,10 +142,15 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
             listing = await service.list_memories("alice", 1)
             assert [str(record.id) for record in listing.memories] == [memory_id]
             assert listing.next_cursor is None
+            old_target = MemoryTarget.model_validate(listing.memories[0].model_dump())
             with pytest.raises(MemoryNotFoundError):
                 await service.update_memory(memory_id, "bob", "tampered")
             updated = await service.update_memory(memory_id, "alice", "User prefers coffee")
             assert updated.memory == "User prefers coffee"
+            with pytest.raises(MemoryConflictError):
+                await service.apply_memory_mutation(
+                    "alice", MemoryMutation(action="delete", target=old_target)
+                )
             assert memory.db.get_last_messages("agent_id=mem0-chatbot&user_id=alice") == []
             history = await service.memory_history(memory_id, "alice", 1)
             assert history.history[0].event == "ADD"
@@ -171,7 +177,12 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
             assert first_page.next_cursor is not None
             last_page = await service.list_memories("alice", 100, first_page.next_cursor)
             assert len(last_page.memories) == 1
-            assert (await service.delete_all_memories("alice")).deleted_count == 101
+            snapshot = await service.memory_snapshot("alice")
+            assert snapshot.count == 101
+            cleared = await service.apply_memory_mutation(
+                "alice", MemoryMutation(action="delete_all", revision=snapshot.revision)
+            )
+            assert cleared.deleted_count == 101
             assert (await service.delete_all_memories("alice")).deleted_count == 0
             assert (await service.list_memories("alice")).memories == []
             assert (await service.list_memories("bob")).memories

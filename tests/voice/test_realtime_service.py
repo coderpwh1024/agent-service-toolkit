@@ -3,6 +3,7 @@ import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from time import monotonic, sleep
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -10,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.func import entrypoint
 from langgraph.graph import END, MessagesState, StateGraph
@@ -975,3 +977,160 @@ def test_mem0_cancel_invalidates_audio(voice_env, agent_id):
         read_until(ws, "session.closed")
     turns = list(repo.records.values())
     assert turns[0].interrupted and turns[0].execution_status == "cancelled"
+
+
+@pytest.mark.parametrize(
+    "action,confirmation,status",
+    [
+        ("update", "确认修改", "updated"),
+        ("delete", "确认删除", "deleted"),
+        ("delete", "取消", "cancelled"),
+        ("delete", "确认删除", "operation_failed"),
+    ],
+)
+def test_audio_transcripts_manage_memories_and_speak_results(
+    voice_env, monkeypatch, action, confirmation, status
+):
+    import importlib
+
+    from memory.mem0_service import Mem0Service
+    from schema.memory import MemoryList, MemoryRecord
+    from schema.memory_commands import MemoryMutationResult
+    from service import voice as voice_routes
+
+    module = importlib.import_module("agents.mem0_chatbot")
+    client, repo, agents, headers = voice_env
+    command = "把喜欢茶的记忆改成我喜欢咖啡" if action == "update" else "删除喜欢茶的记忆"
+
+    class CommandSpeech(FakeSpeech):
+        def __init__(self, config):
+            super().__init__(config)
+            self.utterances = 0
+
+        async def append_audio(self, ws, pcm):
+            self.utterances += 1
+            item_id = f"speech-{self.utterances}"
+            text = command if self.utterances == 1 else confirmation
+            await self.events.put({"type": "input_audio_buffer.speech_started", "item_id": item_id})
+            for _ in range(2):
+                await self.events.put(
+                    {
+                        "type": "conversation.item.input_audio_transcription.completed",
+                        "item_id": item_id,
+                        "transcript": text,
+                    }
+                )
+
+    class PlanningModel(FakeListChatModel):
+        def with_structured_output(self, schema, **kwargs):
+            return self | RunnableLambda(
+                lambda message: schema.model_validate_json(message.content)
+            )
+
+    record = MemoryRecord(id=uuid4(), memory="我喜欢茶", user_id="alice", agent_id="mem0-chatbot")
+    memory = AsyncMock(spec=Mem0Service)
+    memory.search_memory_records.return_value = MemoryList(memories=[record])
+    memory.apply_memory_mutation.return_value = MemoryMutationResult(
+        status="updated" if action == "update" else "deleted", deleted_count=int(action == "delete")
+    )
+    if status == "operation_failed":
+        memory.apply_memory_mutation.side_effect = TimeoutError("private-text")
+    model = PlanningModel(
+        responses=[
+            json.dumps(
+                {
+                    "action": action,
+                    "query": "喜欢茶",
+                    "text": "我喜欢咖啡" if action == "update" else None,
+                }
+            ),
+            '{"matching_indices":[1]}',
+        ]
+    )
+    monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
+    monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", CommandSpeech)
+    graph = module.mem0_chatbot.copy()
+    graph.checkpointer = MemorySaver()
+    agents["mem0-chatbot"] = graph
+    auth = headers()
+    session = create(client, auth, agent_id="mem0-chatbot")
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        ws.send_bytes(
+            encode_audio(b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, 0, kind=1)
+        )
+        preview = read_until(ws, "response.done")
+        spoken = "".join(item["text"] for item in preview if item["type"] == "text.delta")
+        assert "我喜欢茶" in spoken and "请说确认" in spoken
+        assert "matching_indices" not in spoken and '"action"' not in spoken
+        assert any(item["type"] == "audio" for item in preview)
+        memory.apply_memory_mutation.assert_not_awaited()
+        event(ws, "playback.finished", response_id=preview[-1]["response_id"])
+        ws.send_bytes(
+            encode_audio(b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, 1, kind=1)
+        )
+        result = read_until(ws, "response.done")
+        spoken = "".join(item["text"] for item in result if item["type"] == "text.delta")
+        assert any(item["type"] == "audio" for item in result)
+        if status == "updated":
+            assert "已更新" in spoken and "我喜欢咖啡" in spoken
+        elif status == "deleted":
+            assert "已删除" in spoken
+        elif status == "cancelled":
+            assert "已取消" in spoken
+        else:
+            assert "未能确认完成" in spoken and "已删除" not in spoken
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert len(repo.records) == 2
+    if status == "cancelled":
+        memory.apply_memory_mutation.assert_not_awaited()
+    else:
+        memory.apply_memory_mutation.assert_awaited_once()
+        user_id, mutation = memory.apply_memory_mutation.await_args.args
+        assert user_id == "alice" and mutation.target.id == record.id
+    memory.remember.assert_not_awaited()
+
+
+def test_cancelled_memory_preview_does_not_mutate_or_stream_planning_json(voice_env, monkeypatch):
+    import importlib
+
+    from memory.mem0_service import Mem0Service
+
+    module = importlib.import_module("agents.mem0_chatbot")
+    client, _, agents, headers = voice_env
+
+    class SlowPlanningModel(FakeListChatModel):
+        def with_structured_output(self, schema, **kwargs):
+            return self | RunnableLambda(
+                lambda message: schema.model_validate_json(message.content)
+            )
+
+    model = SlowPlanningModel(responses=['{"action":"delete","query":"tea"}'], sleep=0.03)
+    memory = AsyncMock(spec=Mem0Service)
+    monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
+    monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
+    graph = module.mem0_chatbot.copy()
+    graph.checkpointer = MemorySaver()
+    agents["mem0-chatbot"] = graph
+    auth = headers()
+    session = create(client, auth, agent_id="mem0-chatbot")
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="删除喜欢茶的记忆")
+        started = read_until(ws, "response.started")
+        old_id = started[-1]["response_id"]
+        event(ws, "response.cancel", response_id=old_id)
+        read_until(ws, "response.cancelled")
+        event(ws, "input.text", text="确认删除")
+        seen = read_until(ws, "response.done")
+        if seen[-1]["response_id"] == old_id:
+            seen += read_until(ws, "response.done")
+        text = "".join(item["text"] for item in seen if item["type"] == "text.delta")
+        assert "当前没有等待确认" in text
+        assert '"action"' not in text
+        assert all(item["frame"][2] != old_id for item in seen if item["type"] == "audio")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    memory.apply_memory_mutation.assert_not_awaited()
