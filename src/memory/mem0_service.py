@@ -319,6 +319,17 @@ class Mem0Service:
         return await self._call("snapshot", self._snapshot, scope_user=user_id, user_id=user_id)
 
     def _apply_mutation(self, user_id: str, mutation: MemoryMutation) -> MemoryMutationResult:
+        if mutation.action == "delete_many":
+            for target in mutation.targets:
+                record = self._owned_memory(str(target.id), user_id)
+                if (
+                    record["memory"] != target.memory
+                    or record.get("updated_at") != target.updated_at
+                ):
+                    raise MemoryConflictError("A selected memory changed after it was selected")
+            for target in mutation.targets:
+                self._delete(str(target.id), user_id)
+            return MemoryMutationResult(status="deleted", deleted_count=len(mutation.targets))
         if mutation.action == "delete_all":
             snapshot = self._snapshot(user_id)
             if snapshot.count == 0:

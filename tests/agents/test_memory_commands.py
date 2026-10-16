@@ -419,3 +419,115 @@ async def test_non_openai_models_use_their_structured_output_defaults():
         model, "delete my tea memory", MemoryDialogue(user_id="alice"), {}
     )
     assert intent.action == "delete" and intent.query == "tea"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("count", [0, 103])
+async def test_count_uses_all_user_memories_without_mutation(conversation, count):
+    say, memory, dialogue, parser, _, _ = conversation
+    parser.return_value = MemoryIntent(action="count")
+    memory.memory_snapshot.return_value = MemorySnapshot(count=count, revision="snapshot")
+    response = await say("我的记忆总共有多少条")
+    assert response.response_metadata["memory_status"] == "counted"
+    assert f"{count} 条" in response.content
+    memory.memory_snapshot.assert_awaited_once_with("alice")
+    memory.list_memories.assert_not_awaited()
+    memory.search_memory_records.assert_not_awaited()
+    memory.apply_memory_mutation.assert_not_awaited()
+    assert dialogue.pending is None
+
+
+@pytest.mark.asyncio
+async def test_lookup_specific_memory_and_query_by_listed_number(conversation):
+    say, memory, dialogue, parser, _, record = conversation
+    parser.return_value = MemoryIntent(action="list", query="喜欢茶")
+    result = await say("查询关于我喜欢茶的记忆")
+    assert result.response_metadata["memory_status"] == "listed"
+    assert record.memory in result.content
+    memory.search_memory_records.assert_awaited_once_with("喜欢茶", "alice")
+    parser.return_value = MemoryIntent(action="list", selection=1)
+    result = await say("查询第一条记忆")
+    assert record.memory in result.content
+    assert dialogue.last_target.id == record.id
+    memory.get_memory.assert_awaited_once_with(str(record.id), "alice")
+    memory.apply_memory_mutation.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_topic_batch_lists_candidates_then_confirms_only_selected_memories(conversation):
+    say, memory, dialogue, parser, _, record = conversation
+    second = record.model_copy(update={"id": uuid4(), "memory": "我喜欢红茶"})
+    memory.search_memory_records.return_value = MemoryList(memories=[record, second])
+    memory.get_memory.side_effect = lambda memory_id, _: next(
+        item for item in [record, second] if str(item.id) == memory_id
+    )
+    parser.return_value = MemoryIntent(action="delete_many", query="喜欢茶")
+    listed = await say("批量删除关于茶的记忆")
+    assert listed.response_metadata["memory_status"] == "listed"
+    assert "最多五条候选" in listed.content
+    assert dialogue.pending is None
+    memory.apply_memory_mutation.assert_not_awaited()
+    parser.return_value = MemoryIntent(action="delete_many", selections=[1, 2, 1])
+    preview = await say("删除第一条和第二条记忆")
+    assert "2 条" in preview.content and record.memory in preview.content
+    assert second.memory in preview.content
+    assert preview.response_metadata["memory_status"] == "confirmation_required"
+    memory.apply_memory_mutation.assert_not_awaited()
+    assert (await say("确认清空")).response_metadata["memory_status"] == "confirmation_required"
+    memory.apply_memory_mutation.return_value = MemoryMutationResult(
+        status="deleted", deleted_count=2
+    )
+    result = await say("嗯，确认删除。")
+    assert "2 条" in result.content
+    user_id, mutation = memory.apply_memory_mutation.await_args.args
+    assert user_id == "alice" and mutation.action == "delete_many"
+    assert {target.id for target in mutation.targets} == {record.id, second.id}
+    assert mutation.target is None and dialogue.pending is None
+    assert dialogue.choices == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("selections", [[0], [-1, 1], [1, 2], [99]])
+async def test_batch_invalid_numbers_never_delete_other_candidates(conversation, selections):
+    say, memory, dialogue, parser, _, record = conversation
+    dialogue.choices = [MemoryTarget(id=record.id, memory=record.memory)]
+    parser.return_value = MemoryIntent(action="delete_many", selections=selections)
+    response = await say("删除这些编号的记忆")
+    assert response.response_metadata["memory_status"] == "selection_required"
+    memory.get_memory.assert_not_awaited()
+    memory.apply_memory_mutation.assert_not_awaited()
+    assert dialogue.pending is None
+
+
+@pytest.mark.asyncio
+async def test_batch_can_be_cancelled_and_cannot_be_confirmed_twice(conversation):
+    say, memory, dialogue, parser, _, record = conversation
+    dialogue.choices = [MemoryTarget(id=record.id, memory=record.memory)]
+    parser.return_value = MemoryIntent(action="delete_many", selections=[1])
+    await say("批量删除第一条记忆")
+    assert (await say("取消")).response_metadata["memory_status"] == "cancelled"
+    memory.apply_memory_mutation.assert_not_awaited()
+    await say("批量删除第一条记忆")
+    await say("确认删除")
+    assert (await say("确认删除")).response_metadata["memory_status"] == "no_pending"
+    memory.apply_memory_mutation.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["count", "list", "delete_many"])
+async def test_new_memory_operations_fail_closed(conversation, action):
+    say, memory, _, parser, _, _ = conversation
+    parser.return_value = MemoryIntent(action=action, other_user=True)
+    assert (await say("查询或删除别人的记忆")).response_metadata["memory_status"] == "forbidden"
+    memory.memory_snapshot.assert_not_awaited()
+    memory.list_memories.assert_not_awaited()
+    parser.return_value = MemoryIntent(action=action)
+    assert (await say("查询或删除我的记忆", service=None)).response_metadata[
+        "memory_status"
+    ] == "disabled"
+    memory.memory_snapshot.side_effect = TimeoutError()
+    memory.list_memories.side_effect = TimeoutError()
+    assert (await say("查询或删除我的记忆")).response_metadata[
+        "memory_status"
+    ] == "operation_failed"
+    memory.apply_memory_mutation.assert_not_awaited()

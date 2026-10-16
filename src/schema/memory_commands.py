@@ -12,10 +12,13 @@ from schema.memory import MemoryText
 class MemoryIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    action: Literal["none", "list", "history", "update", "delete", "delete_all"]
+    action: Literal[
+        "none", "list", "count", "history", "update", "delete", "delete_many", "delete_all"
+    ]
     query: str = Field(default="", max_length=1000)
     text: MemoryText | None = None
     selection: int | None = Field(default=None, ge=1, le=10)
+    selections: list[int] = Field(default_factory=list, max_length=10)
     other_user: bool = False
 
 
@@ -37,13 +40,26 @@ class MemorySnapshot(BaseModel):
 
 
 class MemoryMutation(BaseModel):
-    action: Literal["update", "delete", "delete_all"]
+    action: Literal["update", "delete", "delete_many", "delete_all"]
     target: MemoryTarget | None = None
+    targets: list[MemoryTarget] = Field(default_factory=list, max_length=10)
     text: MemoryText | None = None
     revision: str | None = None
 
     @model_validator(mode="after")
     def validate_operation(self) -> "MemoryMutation":
+        if self.action == "delete_many":
+            if (
+                not self.targets
+                or len({target.id for target in self.targets}) != len(self.targets)
+                or self.target is not None
+                or self.text is not None
+                or self.revision is not None
+            ):
+                raise ValueError("Batch deletion requires distinct memory targets only")
+            return self
+        if self.targets:
+            raise ValueError("Only batch deletion accepts multiple targets")
         if self.action == "delete_all":
             if not self.revision or self.target is not None or self.text is not None:
                 raise ValueError("Bulk deletion requires only a memory snapshot revision")
@@ -58,7 +74,7 @@ class MemoryMutationResult(BaseModel):
 
 
 class PendingMemoryCommand(BaseModel):
-    action: Literal["update", "delete", "delete_all", "history"]
+    action: Literal["update", "delete", "delete_many", "delete_all", "history"]
     stage: Literal["select", "confirm"]
     choices: list[MemoryTarget] = Field(default_factory=list, max_length=10)
     text: MemoryText | None = None

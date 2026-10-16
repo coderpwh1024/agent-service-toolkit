@@ -207,12 +207,26 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
             assert first_page.next_cursor is not None
             last_page = await service.list_memories("alice", 100, first_page.next_cursor)
             assert len(last_page.memories) == 1
+            selected = [
+                MemoryTarget.model_validate(record.model_dump())
+                for record in first_page.memories[:2]
+            ]
+            batch = await service.apply_memory_mutation(
+                "alice", MemoryMutation(action="delete_many", targets=selected)
+            )
+            assert batch.deleted_count == 2
+            for target in selected:
+                with pytest.raises(MemoryNotFoundError):
+                    await service.get_memory(str(target.id), "alice")
+                assert (await service.memory_history(str(target.id), "alice")).history[
+                    -1
+                ].event == "DELETE"
             snapshot = await service.memory_snapshot("alice")
-            assert snapshot.count == 101
+            assert snapshot.count == 99
             cleared = await service.apply_memory_mutation(
                 "alice", MemoryMutation(action="delete_all", revision=snapshot.revision)
             )
-            assert cleared.deleted_count == 101
+            assert cleared.deleted_count == 99
             assert (await service.delete_all_memories("alice")).deleted_count == 0
             assert (await service.list_memories("alice")).memories == []
             assert (await service.list_memories("bob")).memories

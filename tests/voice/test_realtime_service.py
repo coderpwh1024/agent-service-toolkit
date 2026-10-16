@@ -1357,3 +1357,110 @@ def test_cancelled_memory_preview_does_not_mutate_or_stream_planning_json(voice_
         event(ws, "session.close")
         read_until(ws, "session.closed")
     memory.apply_memory_mutation.assert_not_awaited()
+
+
+@pytest.mark.parametrize("operation", ["count", "lookup", "delete_many", "delete_all"])
+def test_audio_memory_queries_and_bulk_deletion(voice_env, monkeypatch, operation):
+    import importlib
+
+    from memory.mem0_service import Mem0Service
+    from schema.memory import MemoryList, MemoryRecord
+    from schema.memory_commands import MemoryMutationResult, MemorySnapshot
+    from service import voice as voice_routes
+
+    module = importlib.import_module("agents.mem0_chatbot")
+    client, repo, agents, headers = voice_env
+    scenarios = {
+        "count": (["我的记忆总共有多少条"], [{"action": "count"}], ["103 条"]),
+        "lookup": (["查询关于茶的记忆"], [{"action": "list", "query": "茶"}], ["我喜欢茶"]),
+        "delete_many": (
+            ["列出我的记忆", "删除第一条和第二条记忆", "确认删除"],
+            [{"action": "list"}, {"action": "delete_many", "selections": [1, 2]}],
+            ["第2条", "将删除以下 2 条", "已删除选中的 2 条"],
+        ),
+        "delete_all": (
+            ["清空我的所有记忆", "确认清空"],
+            [{"action": "delete_all"}],
+            ["全部 103 条", "本次删除 103 条"],
+        ),
+    }
+    utterances, plans, expected = scenarios[operation]
+
+    class CommandSpeech(FakeSpeech):
+        def __init__(self, config):
+            super().__init__(config)
+            self.utterances = iter(enumerate(utterances))
+
+        async def append_audio(self, ws, pcm):
+            index, text = next(self.utterances)
+            item_id = f"memory-{index}"
+            await self.events.put({"type": "input_audio_buffer.speech_started", "item_id": item_id})
+            for _ in range(2):
+                await self.events.put(
+                    {
+                        "type": "conversation.item.input_audio_transcription.completed",
+                        "item_id": item_id,
+                        "transcript": text,
+                    }
+                )
+
+    class PlanningModel(FakeListChatModel):
+        def with_structured_output(self, schema, **kwargs):
+            return self | RunnableLambda(
+                lambda message: schema.model_validate_json(message.content)
+            )
+
+    records = [
+        MemoryRecord(id=uuid4(), memory=text, user_id="alice", agent_id="mem0-chatbot")
+        for text in ["我喜欢茶", "我住在上海"]
+    ]
+    memory = AsyncMock(spec=Mem0Service)
+    memory.list_memories.return_value = MemoryList(memories=records)
+    memory.search_memory_records.return_value = MemoryList(memories=records[:1])
+    memory.get_memory.side_effect = lambda memory_id, _: next(
+        record for record in records if str(record.id) == memory_id
+    )
+    memory.memory_snapshot.return_value = MemorySnapshot(count=103, revision="snapshot")
+    memory.apply_memory_mutation.return_value = MemoryMutationResult(
+        status="cleared" if operation == "delete_all" else "deleted",
+        deleted_count=103 if operation == "delete_all" else 2,
+    )
+    model = PlanningModel(responses=[json.dumps(plan) for plan in plans])
+    monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
+    monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", CommandSpeech)
+    graph = module.mem0_chatbot.copy()
+    graph.checkpointer = MemorySaver()
+    agents["mem0-chatbot"] = graph
+    auth = headers()
+    session = create(client, auth, agent_id="mem0-chatbot")
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        for index, expected_text in enumerate(expected):
+            ws.send_bytes(
+                encode_audio(
+                    b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, index, kind=1
+                )
+            )
+            result = read_until(ws, "response.done")
+            spoken = "".join(item["text"] for item in result if item["type"] == "text.delta")
+            assert expected_text in spoken
+            assert '"action"' not in spoken and '"selections"' not in spoken
+            assert any(item["type"] == "audio" for item in result)
+            if utterances[index] not in {"确认删除", "确认清空"}:
+                memory.apply_memory_mutation.assert_not_awaited()
+            event(ws, "playback.finished", response_id=result[-1]["response_id"])
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert len(repo.records) == len(utterances)
+    memory.remember.assert_not_awaited()
+    if operation in {"count", "lookup"}:
+        memory.apply_memory_mutation.assert_not_awaited()
+    else:
+        memory.apply_memory_mutation.assert_awaited_once()
+        user_id, mutation = memory.apply_memory_mutation.await_args.args
+        assert user_id == "alice" and mutation.action == operation
+        if operation == "delete_many":
+            assert {target.id for target in mutation.targets} == {record.id for record in records}
+        else:
+            assert mutation.revision == "snapshot"

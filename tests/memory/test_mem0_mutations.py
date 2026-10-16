@@ -186,3 +186,68 @@ async def test_empty_voice_clear_also_clears_extraction_context(mutation_service
     assert result.deleted_count == 0
     sdk.db.clear_context.assert_called_once_with("alice", AGENT_ID)
     sdk.delete.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_batch_deletes_only_selected_memories_and_retains_other_scopes(mutation_service):
+    service, sdk, rows = mutation_service
+    selected = [target(rows)]
+    for index, owner, agent in [
+        (2, "alice", AGENT_ID),
+        (3, "alice", AGENT_ID),
+        (4, "bob", AGENT_ID),
+        (5, "alice", "other"),
+    ]:
+        memory_id = str(UUID(int=index))
+        rows[memory_id] = dict(rows[MEMORY_ID], id=memory_id, user_id=owner, agent_id=agent)
+        if index == 2:
+            selected.append(MemoryTarget.model_validate(rows[memory_id]))
+    result = await service.apply_memory_mutation(
+        "alice", MemoryMutation(action="delete_many", targets=selected)
+    )
+    assert result.status == "deleted" and result.deleted_count == 2
+    assert set(rows) == {str(UUID(int=index)) for index in [3, 4, 5]}
+    assert sdk.db.bind_history_owner.call_count == 2
+    assert sdk.db.history_scope.call_count == 2
+    assert (await service.memory_snapshot("alice")).count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["changed", "missing", "foreign_user", "foreign_agent"])
+async def test_batch_validates_every_target_before_any_deletion(mutation_service, failure):
+    service, sdk, rows = mutation_service
+    first = target(rows)
+    second_id = str(UUID(int=2))
+    rows[second_id] = dict(rows[MEMORY_ID], id=second_id)
+    second = MemoryTarget.model_validate(rows[second_id])
+    if failure == "changed":
+        rows[second_id]["updated_at"] = "changed"
+    elif failure == "missing":
+        del rows[second_id]
+    elif failure == "foreign_user":
+        rows[second_id]["user_id"] = "bob"
+    else:
+        rows[second_id]["agent_id"] = "other"
+    error = MemoryConflictError if failure == "changed" else MemoryNotFoundError
+    with pytest.raises(error):
+        await service.apply_memory_mutation(
+            "alice", MemoryMutation(action="delete_many", targets=[first, second])
+        )
+    sdk.delete.assert_not_called()
+    sdk.db.clear_context.assert_not_called()
+    assert MEMORY_ID in rows
+
+
+def test_batch_mutation_rejects_empty_duplicate_or_mixed_targets():
+    from pydantic import ValidationError
+
+    selected = MemoryTarget(id=MEMORY_ID, memory="tea")
+    for fields in [
+        {"targets": []},
+        {"targets": [selected, selected]},
+        {"targets": [selected], "target": selected},
+        {"targets": [selected], "revision": "all"},
+        {"targets": [selected], "text": "replacement"},
+    ]:
+        with pytest.raises(ValidationError):
+            MemoryMutation(action="delete_many", **fields)

@@ -81,13 +81,20 @@ CANCELLATIONS = {
 }
 INTENT_PROMPT = """Classify the user's CURRENT request about their own stored long-term memories.
 Return the MemoryIntent schema only. This classifier cannot execute any action.
-Use update/delete/delete_all only for an explicit request to change/forget stored personal facts.
+Use update/delete/delete_many/delete_all only for an explicit request to change/forget stored personal facts.
 Ordinary facts ("I now prefer coffee"), hypothetical examples, quoted commands, questions about how
 deletion works, instructions to edit files/code/messages, and negated actions are action=none.
-list means the user asks which personal facts are stored. history means memory change history.
+list means the user asks which personal facts are stored, including lookup of a specific fact.
+count means the user asks the TOTAL number of their stored memories; do not infer it from search.
+history means memory change history.
 query describes the OLD fact to find, not the replacement. For update, text is the complete new fact
 explicitly requested by the user, in their language; never invent missing content. If missing, null.
 selection is a 1-based number only when the user explicitly selects a previously listed choice.
+delete_many means an explicit request to delete multiple specific memories. selections contains
+only the 1-based numbers explicitly selected from previous_choices_data (e.g. first and third).
+If deleting by topic without numbered choices, use delete_many with query and empty selections;
+the application will list candidates for the user to select. Never assume all search matches
+are all stored memories. Never expand a topic-limited deletion into delete_all.
 Set other_user=true only for a request to manage another account's memories. A fact about a friend
 stored in the current user's memories still belongs to the current user.
 Only an explicit request to forget ALL their stored personal facts is delete_all.
@@ -210,6 +217,9 @@ def _confirmation(pending: PendingMemoryCommand) -> str:
             f"将删除你当前的全部 {pending.snapshot.count} 条长期记忆，保留聊天记录和变更历史。"
             "请说确认清空，或说取消。"
         )
+    if pending.action == "delete_many":
+        contents = "；".join(f"“{target.memory}”" for target in pending.choices)
+        return f"将删除以下 {len(pending.choices)} 条长期记忆：{contents}。请说确认删除，或说取消。"
     if not pending.choices:
         raise ValueError("A selected memory is required")
     original = pending.choices[0].memory
@@ -245,7 +255,8 @@ async def _confirm(memory: Mem0Service, user_id: str, dialogue: MemoryDialogue) 
     target = pending.choices[0] if pending.choices else None
     mutation = MemoryMutation(
         action=pending.action,
-        target=target,
+        target=None if pending.action == "delete_many" else target,
+        targets=pending.choices if pending.action == "delete_many" else [],
         text=pending.text,
         revision=pending.snapshot.revision if pending.snapshot else None,
     )
@@ -256,6 +267,8 @@ async def _confirm(memory: Mem0Service, user_id: str, dialogue: MemoryDialogue) 
     if result.status == "cleared":
         return _reply(f"已清空你的长期记忆，本次删除 {result.deleted_count} 条。", "cleared")
     if result.status == "deleted":
+        if pending.action == "delete_many":
+            return _reply(f"已删除选中的 {result.deleted_count} 条长期记忆。", "deleted")
         return _reply(f"已删除记忆“{target.memory if target else ''}”。", "deleted")
     if target is not None:
         dialogue.last_target = target.model_copy(update={"memory": pending.text})
@@ -315,7 +328,12 @@ async def _handle(
             ),
             None,
         )
-        if pending is not None and explicit_action and explicit_action != pending.action:
+        expected_action = (
+            "delete"
+            if pending and pending.action == "delete_many"
+            else (pending.action if pending else None)
+        )
+        if pending is not None and explicit_action and explicit_action != expected_action:
             return _reply(
                 "你确认的操作与刚才的预览不同，本次没有执行。" + _confirmation(pending),
                 "confirmation_required",
@@ -347,7 +365,33 @@ async def _handle(
         return _reply("只能管理你自己账号下的长期记忆。", "forbidden")
     if intent.action == "none":
         return None
-    if intent.action == "list":
+    if intent.action == "count":
+        snapshot = await memory.memory_snapshot(user_id)
+        return _reply(f"你目前共有 {snapshot.count} 条长期记忆。", "counted")
+    if intent.action == "delete_many" and intent.selections:
+        indices = list(dict.fromkeys(intent.selections))
+        if any(index < 1 or index > len(dialogue.choices) for index in indices):
+            return _reply(
+                "编号不在刚才的候选中，请先查询记忆，再指定要删除的编号。", "selection_required"
+            )
+        targets = [
+            _target(await memory.get_memory(str(dialogue.choices[index - 1].id), user_id))
+            for index in indices
+        ]
+        dialogue.pending = PendingMemoryCommand(
+            action="delete_many",
+            stage="confirm",
+            choices=targets,
+            expires_at=datetime.now(UTC) + timedelta(minutes=5),
+        )
+        return _reply(_confirmation(dialogue.pending), "confirmation_required")
+    if intent.action == "list" and intent.selection is not None:
+        targets = await _resolve(intent, memory, user_id, dialogue, model, config)
+        if not targets:
+            return _reply("没有找到指定编号的长期记忆，请先让我列出记忆。", "not_found")
+        dialogue.last_target = targets[0]
+        return _reply(f"这条记忆是：{targets[0].memory}。", "listed")
+    if intent.action in {"list", "delete_many"}:
         result = (
             await memory.search_memory_records(intent.query, user_id)
             if intent.query.strip()
@@ -361,9 +405,12 @@ async def _handle(
             for index, target in enumerate(dialogue.choices, start=1)
         )
         suffix = "还有更多记忆，可通过记忆列表接口分页查看。" if result.next_cursor else ""
-        return _reply(
-            "我记得：" + text + "。你可以按编号指定要修改或删除的记忆。" + suffix, "listed"
+        instruction = (
+            "。这里只列出最多五条候选，请明确要删除的编号，例如：删除第一条和第三条记忆。"
+            if intent.action == "delete_many"
+            else "。你可以按编号指定要修改或删除的记忆。"
         )
+        return _reply("我记得：" + text + instruction + suffix, "listed")
     if intent.action == "delete_all":
         snapshot = await memory.memory_snapshot(user_id)
         if snapshot.count == 0:
