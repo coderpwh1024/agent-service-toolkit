@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from langchain_core.language_models.fake_chat_models import FakeListChatModel
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 
 from agents import DEFAULT_AGENT, get_all_agent_info
@@ -113,11 +113,8 @@ async def test_dialogue_guidance_is_system_only_across_turns(
     for text, response in zip(inputs, responses, strict=True):
         result = await graph.ainvoke({"messages": [HumanMessage(content=text)]}, config())
         prompt = model.ainvoke.await_args.args[0]
-        system_text = "\n".join(m.content for m in prompt if isinstance(m, SystemMessage))
-        assert "When a question repeats" in system_text
-        assert "Follow topic changes" in system_text
-        assert "requests repetition or confirmation" in system_text
-        assert "Fictional examples, not history" in system_text
+        assert isinstance(prompt[0], SystemMessage)
+        assert prompt[0].content == agent_module.SYSTEM_PROMPT
         actual_messages = [
             m for m in prompt if not isinstance(m, SystemMessage) and m.name != "retrieved_memories"
         ]
@@ -147,16 +144,17 @@ async def test_dialogue_guidance_is_system_only_across_turns(
 
 
 @pytest.mark.asyncio
-async def test_minimum_chat_budget_still_accepts_a_short_request(agent_setup, monkeypatch):
+async def test_legacy_chat_budget_does_not_limit_model_input(agent_setup, monkeypatch):
     graph, memory, model = agent_setup
     monkeypatch.setattr(agent_module.settings, "MEM0_CHAT_CONTEXT_TOKENS", 2048)
     memory.search.return_value = []
 
-    result = await graph.ainvoke({"messages": [HumanMessage(content="你好")]}, config())
+    text = "这是完整的用户输入。" * 1000
+    result = await graph.ainvoke({"messages": [HumanMessage(content=text)]}, config())
 
     model.ainvoke.assert_awaited_once()
     assert result["messages"][0].response_metadata["memory_status"] == "saved"
-    assert agent_module._estimate_tokens(model.ainvoke.await_args.args[0]) <= 2048
+    assert model.ainvoke.await_args.args[0][-1].content == text
 
 
 @pytest.mark.asyncio
@@ -234,37 +232,124 @@ async def test_stream_emits_only_chat_tokens(agent_setup, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_chat_budget_trims_model_input_but_preserves_checkpoint(agent_setup, monkeypatch):
+async def test_long_chat_window_preserves_complete_messages_and_checkpoint(
+    agent_setup, monkeypatch
+):
     graph, memory, model = agent_setup
     monkeypatch.setattr(agent_module.settings, "MEM0_CHAT_CONTEXT_TOKENS", 2400)
     memory.search.return_value = []
-    for index in range(8):
-        await graph.ainvoke(
-            {"messages": [HumanMessage(content=f"turn-{index}:" + "旧话题" * 30)]}, config()
-        )
+    expected_history = []
+    for index in range(13):
+        question = f"question-{index}:" + "长问题" * 1000
+        answer = f"answer-{index}:" + "长回答" * 1000
+        model.ainvoke.return_value = AIMessage(content=answer)
+        expected_history.append(("human", question))
+        await graph.ainvoke({"messages": [HumanMessage(content=question)]}, config())
+        expected_history.append(("ai", answer))
     prompt = model.ainvoke.await_args.args[0]
-    estimated = sum(
-        len(json.dumps(m.content, ensure_ascii=False).encode("utf-8")) + 32 for m in prompt
-    )
-    assert estimated <= 2400
-    assert prompt[-1].content.startswith("turn-7:")
-    assert not any(m.content.startswith("turn-0:") for m in prompt)
+    assert [(message.type, message.content) for message in prompt[2:]] == expected_history[:-1][
+        -20:
+    ]
     checkpoint = await graph.checkpointer.aget_tuple(config())
     history = messages_from_checkpoint(checkpoint.checkpoint)
-    assert len(history) == 16
-    assert history[0].content.startswith("turn-0:")
+    assert [(message.type, message.content) for message in history] == expected_history
 
 
 @pytest.mark.asyncio
-async def test_overlong_current_input_is_not_truncated_or_extracted(agent_setup, monkeypatch):
+@pytest.mark.parametrize("memory_enabled", [True, False])
+async def test_chat_window_keeps_latest_twenty_messages_and_full_checkpoint(
+    agent_setup, monkeypatch, memory_enabled
+):
+    graph, memory, model = agent_setup
+    if not memory_enabled:
+        monkeypatch.setattr(agent_module, "get_mem0_service", lambda: None)
+    expected_history = []
+    for index in range(13):
+        question = f"question-{index}"
+        answer = f"answer-{index}"
+        model.ainvoke.return_value = AIMessage(content=answer)
+        expected_history.append(("human", question))
+
+        await graph.ainvoke({"messages": [HumanMessage(content=question)]}, config())
+
+        prompt = model.ainvoke.await_args.args[0]
+        dialogue = [
+            (message.type, message.content)
+            for message in prompt
+            if not isinstance(message, SystemMessage) and message.name != "retrieved_memories"
+        ]
+        assert dialogue == expected_history[-20:]
+        references = [message for message in prompt if message.name == "retrieved_memories"]
+        assert len(references) == int(memory_enabled)
+        if references:
+            assert json.loads(references[0].content)["untrusted_user_memories"] == ["喜欢茶"]
+        expected_history.append(("ai", answer))
+
+    checkpoint = await graph.checkpointer.aget_tuple(config())
+    assert [
+        (message.type, message.content)
+        for message in messages_from_checkpoint(checkpoint.checkpoint)
+    ] == expected_history
+
+
+def test_chat_window_counts_only_user_and_assistant_messages():
+    dialogue = [
+        message
+        for index in range(12)
+        for message in (
+            HumanMessage(content=f"question-{index}"),
+            AIMessage(content=f"answer-{index}"),
+        )
+    ]
+    messages = []
+    for message in dialogue:
+        messages.extend(
+            [
+                message,
+                SystemMessage(content="old instruction"),
+                ToolMessage(content="old tool", tool_call_id="old"),
+            ]
+        )
+    messages.append(HumanMessage(content="current question"))
+
+    prompt = agent_module._chat_prompt(messages, [], "disabled")
+
+    assert [(message.type, message.content) for message in prompt[2:]] == [
+        (message.type, message.content) for message in (dialogue + messages[-1:])[-20:]
+    ]
+
+
+@pytest.mark.asyncio
+async def test_long_memories_cannot_displace_recent_dialogue(agent_setup):
+    graph, memory, model = agent_setup
+    question = "什么是上下文？"
+    answer = "这是供窗口测试的虚构历史回答。" * 25
+    model.ainvoke.return_value = AIMessage(content=answer)
+    await graph.ainvoke({"messages": [HumanMessage(content=question)]}, config())
+    facts = ["喜欢茶", "假" * 3000]
+    memory.search.return_value = facts
+
+    await graph.ainvoke({"messages": [HumanMessage(content=question)]}, config())
+
+    prompt = model.ainvoke.await_args.args[0]
+    assert [message.content for message in prompt[-3:]] == [question, answer, question]
+    reference = next(message for message in prompt if message.name == "retrieved_memories")
+    assert json.loads(reference.content)["untrusted_user_memories"] == facts
+    assert memory.search.return_value == ["喜欢茶", "假" * 3000]
+
+
+@pytest.mark.asyncio
+async def test_long_current_input_is_submitted_and_extracted(agent_setup, monkeypatch):
     graph, memory, model = agent_setup
     monkeypatch.setattr(agent_module.settings, "MEM0_CHAT_CONTEXT_TOKENS", 2048)
-    result = await graph.ainvoke({"messages": [HumanMessage(content="长" * 1000)]}, config())
-    assert result["messages"][0].response_metadata["memory_status"] == "input_too_long"
-    assert "拆分" in result["messages"][0].content
-    model.ainvoke.assert_not_awaited()
-    memory.search.assert_not_awaited()
-    memory.remember.assert_not_awaited()
+    text = "长" * 10000
+    result = await graph.ainvoke({"messages": [HumanMessage(content=text)]}, config())
+    assert result["messages"][0].response_metadata["memory_status"] == "saved"
+    assert model.ainvoke.await_args.args[0][-1].content == text
+    memory.search.assert_awaited_once_with(text, "alice")
+    memory.remember.assert_awaited_once_with(
+        [{"role": "user", "content": text}], "alice", "thread-a", context=[]
+    )
 
 
 @pytest.mark.asyncio
@@ -298,14 +383,17 @@ async def test_injection_text_stays_in_reference_data(agent_setup):
 
 
 @pytest.mark.asyncio
-async def test_large_memory_reference_cannot_displace_current_request(agent_setup, monkeypatch):
+async def test_large_memory_reference_and_current_request_are_both_submitted(
+    agent_setup, monkeypatch
+):
     graph, memory, model = agent_setup
     monkeypatch.setattr(agent_module.settings, "MEM0_CHAT_CONTEXT_TOKENS", 2400)
     memory.search.return_value = ["旧记忆" * 1000]
     await graph.ainvoke({"messages": [HumanMessage(content="hello")]}, config())
     prompt = model.ainvoke.await_args.args[0]
     assert prompt[-1].content == "hello"
-    assert not any(message.name == "retrieved_memories" for message in prompt)
+    reference = next(message for message in prompt if message.name == "retrieved_memories")
+    assert json.loads(reference.content)["untrusted_user_memories"] == ["旧记忆" * 1000]
 
 
 @pytest.mark.asyncio
