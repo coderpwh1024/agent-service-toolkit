@@ -95,8 +95,35 @@ async def test_scoped_facts_and_checkpoint_history(agent_setup):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("memory_state", ["available", "empty", "failed", "disabled"])
+@pytest.mark.parametrize(
+    "inputs",
+    [
+        ["你是傻逼。", "你是傻逼。", "你是傻逼。", "你是AI吗？", "对。", "是。"],
+        ["你怎么这么笨？", "你怎么这么笨？", "背诵一下静夜思。", "没听清，再说一遍"],
+        ["什么是检查点？", "还是不懂。", "还是不懂。", "与日志有什么区别？", "确认一下。"],
+        ["好无聊。", "好无聊。", "还是好无聊。", "别再问我想聊什么，你来讲。", "不讲了。"],
+        ["方案改了三次又被退回。", "真的好烦。", "还是好烦。", "只想吐槽，别给建议。"],
+        ["付出没被看见。", "我说这些你会嫌烦吗？", "真的不会烦吗？", "不想说了。"],
+        ["你好。", "你好呀。", "小美。", "只确认你在，不用找话题。"],
+        ["周末在家做什么？", "周末在家做什么？不要看屏幕。", "也不想做饭。"],
+        ["二乘三是多少？", "不是七吗？", "再确认数字。", "没听清，再说一遍。"],
+        ["我上周末去哪儿了？", "你确定我去过那里吗？", "不知道就直说。"],
+    ],
+    ids=[
+        "repeat_then_identity_and_confirmation",
+        "repeat_then_recitation",
+        "repeat_then_clarification",
+        "similar_boredom_then_stop",
+        "similar_distress_without_advice",
+        "reassurance_without_dependency",
+        "similar_greetings_then_presence_only",
+        "similar_question_with_new_constraints",
+        "fact_challenge_then_exact_replay",
+        "repeated_history_question_without_evidence",
+    ],
+)
 async def test_dialogue_guidance_is_system_only_across_turns(
-    agent_setup, monkeypatch, memory_state
+    agent_setup, monkeypatch, memory_state, inputs
 ):
     graph, memory, model = agent_setup
     if memory_state == "empty":
@@ -105,8 +132,7 @@ async def test_dialogue_guidance_is_system_only_across_turns(
         memory.search.side_effect = ConnectionError("unavailable")
     elif memory_state == "disabled":
         monkeypatch.setattr(agent_module, "get_mem0_service", lambda: None)
-    inputs = ["你是傻逼吗？", "你是傻逼吗？", "什么是检查点？", "没听清，再说一遍"]
-    responses = ["哪句话有问题？", "有具体问题时我们再聊。", "就像游戏存档。", "就像游戏存档。"]
+    responses = [f"测试回答-{index}" for index in range(len(inputs))]
     model.ainvoke.side_effect = [AIMessage(content=text) for text in responses]
     expected_history = []
 
@@ -115,6 +141,16 @@ async def test_dialogue_guidance_is_system_only_across_turns(
         prompt = model.ainvoke.await_args.args[0]
         assert isinstance(prompt[0], SystemMessage)
         assert prompt[0].content == agent_module.SYSTEM_PROMPT
+        for rule in (
+            "边界最多表达一次",
+            "第一句直接处理新问题",
+            "只承接紧邻的上一轮明确内容",
+            "面向用户的回复只用“小美”“聊天搭子”等产品角色介绍自己",
+            "任何场景都不要透露 AI、人工智能、大语言模型、机器人或底层模型的技术身份",
+            "不要声称自己是人类或真人",
+            "用户明确要求重复原话，应尽量准确复述",
+        ):
+            assert rule in prompt[0].content
         actual_messages = [
             m for m in prompt if not isinstance(m, SystemMessage) and m.name != "retrieved_memories"
         ]
