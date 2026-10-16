@@ -707,7 +707,10 @@ def test_wake_greeting_tts_failure_keeps_session_usable(voice_env, monkeypatch):
     assert next(iter(repo.records.values())).execution_status == "completed"
 
 
-@pytest.mark.parametrize("filler", ["嗯", "呢", "那"])
+@pytest.mark.parametrize(
+    "filler",
+    ["嗯", "呢", "那", "。", ".", "...", "．", "，？！", "；：", "——", "“”", "（ ）", "嗯。"],
+)
 def test_playback_echo_filler_does_not_cancel_or_start_a_turn(voice_env, monkeypatch, filler):
     from service import voice as voice_routes
 
@@ -747,6 +750,88 @@ def test_playback_echo_filler_does_not_cancel_or_start_a_turn(voice_env, monkeyp
     assert len(repo.records) == 1
     assert next(iter(repo.records.values())).response_id == response_id
     assert not next(iter(repo.records.values())).interrupted
+
+
+@pytest.mark.parametrize("text", ["你好。", "C++ 的 1.5 版本怎么用？", "嗯，帮我查天气。"])
+def test_punctuation_noise_is_ignored_before_meaningful_speech(voice_env, monkeypatch, text):
+    from service import voice as voice_routes
+
+    class PartialSpeech(SegmentedWakeSpeech):
+        async def append_audio(self, ws, pcm):
+            transcript = self.transcripts[self.index]
+            await self.events.put(
+                {
+                    "type": "conversation.item.input_audio_transcription.text",
+                    "text": transcript[:-1],
+                    "stash": transcript[-1:],
+                }
+            )
+            await super().append_audio(ws, pcm)
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(SegmentedWakeSpeech, "transcripts", ("。", text))
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", PartialSpeech)
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        for sequence in range(2):
+            ws.send_bytes(
+                encode_audio(
+                    b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, sequence, kind=1
+                )
+            )
+            events = read_until(ws, "transcript.final" if sequence == 0 else "response.done")
+            if sequence == 0:
+                assert events[-1]["text"] == ""
+                assert next(e for e in events if e["type"] == "transcript.partial")["text"] == ""
+                event(ws, "ping")
+                events.extend(read_until(ws, "pong"))
+                assert not any(e["type"] in {"input.accepted", "response.started"} for e in events)
+                assert repo.records == {}
+            else:
+                assert next(e for e in events if e["type"] == "transcript.partial")["text"] == text
+                event(ws, "playback.finished", response_id=events[-1]["response_id"])
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert [turn.input_text for turn in repo.records.values()] == [text]
+
+
+def test_punctuation_noise_does_not_reject_or_erase_a_split_wake(voice_env, monkeypatch):
+    from service import voice as voice_routes
+
+    client, repo, _, headers = voice_env
+    monkeypatch.setattr(SegmentedWakeSpeech, "transcripts", (".", "小美", "。", "小美"))
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", SegmentedWakeSpeech)
+    auth = headers()
+    session = create(client, auth, activation="wake_word", wake_word="小美小美")
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        all_events = []
+        for sequence in range(4):
+            ws.send_bytes(
+                encode_audio(
+                    b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, sequence, kind=1
+                )
+            )
+            events = read_until(ws, "response.done" if sequence == 3 else "transcript.final")
+            event(ws, "ping")
+            events.extend(read_until(ws, "pong"))
+            all_events.extend(events)
+            if sequence < 3:
+                assert not any(e["type"] in {"wake.accepted", "response.started"} for e in events)
+                assert repo.records == {}
+                if sequence in {0, 2}:
+                    assert next(e for e in events if e["type"] == "transcript.final")["text"] == ""
+        accepted = [e for e in all_events if e["type"] == "wake.accepted"]
+        assert len(accepted) == 1
+        assert accepted[0]["command"] == ""
+        response = next(e for e in all_events if e["type"] == "response.done")
+        event(ws, "playback.finished", response_id=response["response_id"])
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert [turn.input_text for turn in repo.records.values()] == [""]
+    assert repo.sessions[session["session_id"]].wake_status == "accepted"
 
 
 def test_meaningful_speech_still_interrupts_playback(voice_env, monkeypatch):

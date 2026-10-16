@@ -175,7 +175,9 @@ Dart 可用 `ByteData` 按 `Endian.big` 写帧头，PCM payload 保持设备重�
 | `ping` | 无 | 返回 `pong` |
 | `session.close` | 无 | 正常结束会话 |
 
-`server_vad` 模式持续发送麦克风流，包括判定句末所需的静音。百炼确认最终转写后，后端只提交一次 Agent。播放期间仍可上传经过 AEC 的麦克风音频；后端收到 ASR `speech_started` 会使当前回答失效并发出 `response.cancelled`。
+`server_vad` 模式持续发送麦克风流，包括判定句末所需的静音。百炼确认有效的最终转写后，后端只提交一次 Agent。只有空白、Unicode 标点（如 `。`、`.`、`...`、`，？！`）或已有语气词过滤规则命中的 ASR 中间/最终结果会下发为空文本，不创建业务轮次、不写入对话，也不取消正在播报的回答；唤醒确认期间遇到这类结果仍继续等待有效唤醒词。正常句子保留原文及标点，例如“你好。”和“C++ 的 1.5 版本怎么用？”。`input.text` 手动文字输入不受这条 ASR 过滤规则影响。
+
+播放期间仍可上传经过 AEC 的麦克风音频；ASR `speech_started` 仅发出 `input.started`，收到有效的最终转写并接受新输入后才使当前回答失效，发出 `response.cancelled`。本地能量 VAD 的 `input.speech_hint` 仍可暂时暂停播报，未被确认时约 800 ms 后恢复。
 
 ## 后端事件
 

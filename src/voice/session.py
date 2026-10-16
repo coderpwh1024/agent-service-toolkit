@@ -3,8 +3,8 @@
 import asyncio
 import contextlib
 import logging
-import re
 import time
+import unicodedata
 from collections import OrderedDict
 from datetime import UTC, datetime
 from typing import Any
@@ -51,8 +51,12 @@ NON_ACTIONABLE_VOICE_TEXT = frozenset({"嗯", "嗯嗯", "呃", "额", "啊", "�
 
 
 def is_non_actionable_voice_text(text: str) -> bool:
-    normalized = re.sub(r"[\s，,。！？!?、]+", "", text)
-    return normalized in NON_ACTIONABLE_VOICE_TEXT
+    normalized = "".join(
+        char
+        for char in text
+        if not char.isspace() and not unicodedata.category(char).startswith("P")
+    )
+    return not normalized or normalized in NON_ACTIONABLE_VOICE_TEXT
 
 
 class VoiceConnection:
@@ -397,17 +401,16 @@ class VoiceConnection:
                 case "input_audio_buffer.speech_stopped":
                     await self.emit("input.ended", input_id=item_id)
                 case "conversation.item.input_audio_transcription.text":
+                    text = event.get("text", "") + event.get("stash", "")
                     await self.emit(
                         "transcript.partial",
                         input_id=item_id,
-                        text=event.get("text", "") + event.get("stash", ""),
+                        text="" if is_non_actionable_voice_text(text) else text,
                     )
                 case "conversation.item.input_audio_transcription.completed":
                     input_id = f"{self.connection_id}:{item_id}"
                     if self.remember(input_id):
                         text = event.get("transcript", "")
-                        if self.wake_transcript_pending and not text.strip():
-                            continue
                         if (
                             not self.wake_transcript_pending
                             and self.session.activation == "wake_word"
@@ -415,7 +418,7 @@ class VoiceConnection:
                             match = match_wake_prefix(text, self.session.wake_word or "")
                             if match:
                                 text = match.command
-                        if not self.wake_transcript_pending and is_non_actionable_voice_text(text):
+                        if is_non_actionable_voice_text(text):
                             await self.emit("transcript.final", input_id=input_id, text="")
                             continue
                         await self.emit("transcript.final", input_id=input_id, text=text)
