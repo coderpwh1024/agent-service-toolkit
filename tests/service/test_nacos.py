@@ -3,13 +3,126 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from pydantic import SecretStr
+from v2.nacos.ai.model.prompt.prompt import Prompt
 
 from core.settings import Settings
 from service import nacos
 
 
+@pytest.fixture(autouse=True)
+def ai_client(monkeypatch, mem0_prompts):
+    client = AsyncMock()
+    templates = mem0_prompts.model_dump()
+    keys = nacos.Settings(_env_file=None, USE_FAKE_MODEL=True).MEM0_PROMPT_KEYS.model_dump()
+    by_key = {key: templates[name] for name, key in keys.items()}
+    client.get_prompt.side_effect = lambda param: Prompt(
+        promptKey=param.prompt_key, version="1.0.0", template=by_key[param.prompt_key]
+    )
+    monkeypatch.setattr(nacos.NacosAIService, "create_ai_service", AsyncMock(return_value=client))
+    return client
+
+
 def make_settings(**overrides) -> Settings:
     return Settings(USE_FAKE_MODEL=True, _env_file=None, **overrides)
+
+
+@pytest.mark.asyncio
+async def test_prompt_sdk_loads_all_published_templates(ai_client, mem0_prompts, tmp_path) -> None:
+    config = make_settings(
+        NACOS_ENABLED=True,
+        NACOS_CACHE_DIR=str(tmp_path / "cache"),
+        NACOS_LOG_DIR=str(tmp_path / "logs"),
+    )
+    integration = nacos.NacosIntegration(config)
+    try:
+        await integration.load_remote_prompts()
+        assert config.mem0_prompts == mem0_prompts
+        requests = [call.args[0] for call in ai_client.get_prompt.await_args_list]
+        assert [request.prompt_key for request in requests] == list(
+            config.MEM0_PROMPT_KEYS.model_dump().values()
+        )
+        assert all(request.label == "latest" for request in requests)
+    finally:
+        await integration.shutdown()
+    ai_client.shutdown.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        Prompt(),
+        Prompt(promptKey="wrong", version="1.0.0", template="rules"),
+        Prompt(promptKey="mem0-fact-extraction-system", template="rules"),
+        Prompt(promptKey="mem0-fact-extraction-system", version="1.0.0", template=""),
+        Prompt(promptKey="mem0-fact-extraction-system", version="1.0.0", template=" \n "),
+    ],
+)
+async def test_invalid_prompt_never_installs_partial_templates(
+    ai_client, mem0_prompts, tmp_path, invalid
+) -> None:
+    config = make_settings(
+        NACOS_ENABLED=True,
+        NACOS_CACHE_DIR=str(tmp_path / "cache"),
+        NACOS_LOG_DIR=str(tmp_path / "logs"),
+    )
+    config.mem0_prompts = mem0_prompts
+    original = ai_client.get_prompt.side_effect
+    ai_client.get_prompt.side_effect = lambda param: (
+        invalid if param.prompt_key == "mem0-fact-extraction-system" else original(param)
+    )
+    integration = nacos.NacosIntegration(config)
+    try:
+        with pytest.raises((RuntimeError, ValueError)):
+            await integration.load_remote_prompts()
+        assert config.mem0_prompts is mem0_prompts
+    finally:
+        await integration.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_prompt_provider_failure_does_not_fall_back(ai_client, tmp_path) -> None:
+    config = make_settings(
+        NACOS_ENABLED=True,
+        NACOS_CACHE_DIR=str(tmp_path / "cache"),
+        NACOS_LOG_DIR=str(tmp_path / "logs"),
+    )
+    ai_client.get_prompt.side_effect = ConnectionError("unavailable")
+    integration = nacos.NacosIntegration(config)
+    try:
+        with pytest.raises(ConnectionError):
+            await integration.load_remote_prompts()
+        with pytest.raises(RuntimeError, match="Nacos Prompt"):
+            _ = config.mem0_prompts
+    finally:
+        await integration.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_disabled_nacos_does_not_load_prompts(ai_client) -> None:
+    config = make_settings(NACOS_ENABLED=False)
+    integration = nacos.NacosIntegration(config)
+    await integration.load_remote_prompts()
+    ai_client.get_prompt.assert_not_awaited()
+    with pytest.raises(RuntimeError, match="Nacos Prompt"):
+        _ = config.mem0_prompts
+
+
+def test_prompt_references_are_configured_without_yaml_templates() -> None:
+    config = make_settings()
+    nacos.apply_remote_settings(
+        config,
+        "memory:\n  mem0:\n    prompt_label: stable\n"
+        "    prompt_keys:\n      chat_system: custom-mem0-chat\n",
+    )
+    assert config.MEM0_PROMPT_LABEL == "stable"
+    assert config.MEM0_PROMPT_KEYS.chat_system == "custom-mem0-chat"
+    assert config.MEM0_PROMPT_KEYS.extraction_system == "mem0-fact-extraction-system"
+
+
+def test_prompt_templates_cannot_be_supplied_as_main_yaml() -> None:
+    with pytest.raises(ValueError, match="Unknown Nacos settings: prompt"):
+        nacos.apply_remote_settings(make_settings(), "prompt:\n  mem0:\n    chat_system: rules\n")
 
 
 def test_apply_remote_settings_validates_and_updates_shared_settings() -> None:
@@ -266,6 +379,9 @@ async def test_load_remote_config(monkeypatch, tmp_path) -> None:
     await integration.load_remote_config()
 
     assert config.RAG_TOP_K == 7
+    request = config_client.get_config.await_args.args[0]
+    assert request.data_id == "agent-service-toolkit.yaml"
+    assert request.group == "DEFAULT_GROUP"
     client_config = create_config_service.await_args.args[0]
     assert client_config.server_list == ["127.0.0.1:8848"]
     assert client_config.username == "nacos"

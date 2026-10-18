@@ -16,8 +16,11 @@ from v2.nacos import (
     NacosNamingService,
     RegisterInstanceParam,
 )
+from v2.nacos.ai.model.ai_param import GetPromptParam
+from v2.nacos.ai.nacos_ai_service import NacosAIService
 
 from core.settings import Settings
+from schema.prompts import Mem0Prompts
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +50,8 @@ _MAIL_FIELDS = {
 _NESTED_SETTINGS: dict[str, Any] = {
     "memory": {
         "mem0": {
+            "prompt_keys": "MEM0_PROMPT_KEYS",
+            "prompt_label": "MEM0_PROMPT_LABEL",
             "enabled": "MEM0_ENABLED",
             "collection_name": "MEM0_COLLECTION_NAME",
             "llm_model": "MEM0_LLM_MODEL",
@@ -379,6 +384,7 @@ class NacosIntegration:
         self.config = config
         self.config_client: NacosConfigService | None = None
         self.naming_client: NacosNamingService | None = None
+        self.ai_client: NacosAIService | None = None
         self._registration: RegisterInstanceParam | None = None
 
     def _client_config(self) -> ClientConfig:
@@ -408,6 +414,7 @@ class NacosIntegration:
                 raise RuntimeError(
                     "NACOS_CONFIG_DATA_ID is required when Nacos storage configuration is mandatory"
                 )
+            await self.load_remote_prompts()
             return
 
         self.config_client = await NacosConfigService.create_config_service(self._client_config())
@@ -431,6 +438,23 @@ class NacosIntegration:
             required_fields=required_fields,
         )
         logger.info("Applied Nacos startup configuration fields: %s", ", ".join(updated))
+        await self.load_remote_prompts()
+
+    async def load_remote_prompts(self) -> None:
+        if not self.config.NACOS_ENABLED:
+            return
+        if self.ai_client is None:
+            self.ai_client = await NacosAIService.create_ai_service(self._client_config())
+        templates: dict[str, str] = {}
+        for name, key in self.config.MEM0_PROMPT_KEYS.model_dump().items():
+            prompt = await self.ai_client.get_prompt(
+                GetPromptParam(prompt_key=key, label=self.config.MEM0_PROMPT_LABEL)
+            )
+            if prompt.promptKey != key or not prompt.version or not prompt.template:
+                raise RuntimeError(f"Nacos Prompt {key} is missing or has no published template")
+            templates[name] = prompt.template
+        self.config.mem0_prompts = Mem0Prompts.model_validate(templates)
+        logger.info("Loaded %d Mem0 templates from Nacos Prompt management", len(templates))
 
     async def register_service(self) -> None:
         if not self.config.NACOS_ENABLED:
@@ -479,6 +503,12 @@ class NacosIntegration:
         )
 
     async def shutdown(self) -> None:
+        if self.ai_client is not None:
+            try:
+                await self.ai_client.shutdown()
+            except Exception:
+                logger.exception("Failed to shut down the Nacos AI client")
+            self.ai_client = None
         registration = self._registration
         self._registration = None
         if self.naming_client is not None:

@@ -11,6 +11,7 @@ from pydantic import (
     EmailStr,
     Field,
     HttpUrl,
+    PrivateAttr,
     SecretStr,
     TypeAdapter,
     computed_field,
@@ -35,6 +36,7 @@ from schema.models import (
     Provider,
     VertexAIModelName,
 )
+from schema.prompts import Mem0PromptKeys, Mem0Prompts
 from schema.voice import VoiceOption, normalize_wake_word
 
 
@@ -232,6 +234,10 @@ class Settings(BaseSettings):
     RAG_COLLECTION_NAME: str = "acmetech-employee-handbook"
     RAG_TOP_K: int = Field(default=5, ge=1, le=50)
 
+    _mem0_prompts: Mem0Prompts | None = PrivateAttr(default=None)
+    MEM0_PROMPT_KEYS: Mem0PromptKeys = Field(default_factory=Mem0PromptKeys)
+    MEM0_PROMPT_LABEL: str = Field(default="latest", min_length=1, pattern=r"\S")
+
     MEM0_ENABLED: bool = False
     MEM0_COLLECTION_NAME: str = Field(default="mem0_chat", pattern=r"^mem0_[a-z][a-z0-9_]{0,39}$")
     MEM0_LLM_MODEL: str = Field(default="qwen-plus", min_length=1)
@@ -285,6 +291,16 @@ class Settings(BaseSettings):
     AZURE_OPENAI_DEPLOYMENT_MAP: dict[str, str] = Field(
         default_factory=dict, description="Map of model names to Azure deployment IDs"
     )
+
+    @property
+    def mem0_prompts(self) -> Mem0Prompts:
+        if self._mem0_prompts is None:
+            raise RuntimeError("Mem0 prompts must be loaded from Nacos Prompt management")
+        return self._mem0_prompts
+
+    @mem0_prompts.setter
+    def mem0_prompts(self, value: Mem0Prompts) -> None:
+        self._mem0_prompts = value
 
     def model_post_init(self, __context: Any) -> None:
         has_nacos_password = bool(self.NACOS_PASSWORD and self.NACOS_PASSWORD.get_secret_value())

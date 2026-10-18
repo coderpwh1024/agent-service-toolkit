@@ -8,6 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langgraph.checkpoint.memory import MemorySaver
 
 from agents import DEFAULT_AGENT, get_all_agent_info
+from core.settings import Settings
 from service.agent_runner import graph_events
 from service.utils import messages_from_checkpoint
 
@@ -32,6 +33,41 @@ def config(user="alice", thread="thread-a"):
 def test_mem0_agent_is_first_and_default():
     assert DEFAULT_AGENT == "mem0-chatbot"
     assert get_all_agent_info()[0].key == DEFAULT_AGENT
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("memory_state", ["available", "empty", "failed", "disabled"])
+async def test_chat_uses_loaded_prompts_and_preserves_untrusted_memories(
+    agent_setup, monkeypatch, memory_state, mem0_prompts
+) -> None:
+    graph, memory, model = agent_setup
+    remote = Settings(_env_file=None, USE_FAKE_MODEL=True)
+    prompts = mem0_prompts.model_dump()
+    prompts.update(
+        chat_system='Remote rules {"example": []}', memory_status_template="State: {status}"
+    )
+    remote.mem0_prompts = mem0_prompts.model_validate(prompts)
+    monkeypatch.setattr(agent_module.settings, "_mem0_prompts", remote.mem0_prompts)
+    if memory_state == "empty":
+        memory.search.return_value = []
+    elif memory_state == "failed":
+        memory.search.side_effect = ConnectionError("unavailable")
+    elif memory_state == "disabled":
+        monkeypatch.setattr(agent_module, "get_mem0_service", lambda: None)
+
+    await graph.ainvoke({"messages": [HumanMessage(content="hello")]}, config())
+
+    prompt = model.ainvoke.await_args.args[0]
+    expected_status = {"empty": "available", "failed": "search_failed"}.get(
+        memory_state, memory_state
+    )
+    assert prompt[0].content == prompts["chat_system"]
+    assert prompt[1].content == f"State: {expected_status}"
+    assert prompt[-1].content == "hello"
+    references = [message for message in prompt if message.name == "retrieved_memories"]
+    assert len(references) == int(memory_state == "available")
+    if references:
+        assert isinstance(references[0], HumanMessage)
 
 
 @pytest.mark.asyncio
@@ -140,17 +176,7 @@ async def test_dialogue_guidance_is_system_only_across_turns(
         result = await graph.ainvoke({"messages": [HumanMessage(content=text)]}, config())
         prompt = model.ainvoke.await_args.args[0]
         assert isinstance(prompt[0], SystemMessage)
-        assert prompt[0].content == agent_module.SYSTEM_PROMPT
-        for rule in (
-            "边界最多表达一次",
-            "第一句直接处理新问题",
-            "只承接紧邻的上一轮明确内容",
-            "面向用户的回复只用“小美”“聊天搭子”等产品角色介绍自己",
-            "任何场景都不要透露 AI、人工智能、大语言模型、机器人或底层模型的技术身份",
-            "不要声称自己是人类或真人",
-            "用户明确要求重复原话，应尽量准确复述",
-        ):
-            assert rule in prompt[0].content
+        assert prompt[0].content == agent_module.settings.mem0_prompts.chat_system
         actual_messages = [
             m for m in prompt if not isinstance(m, SystemMessage) and m.name != "retrieved_memories"
         ]

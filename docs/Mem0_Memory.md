@@ -30,6 +30,47 @@ memory:
 
 PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`，维持 PostgreSQL 16 与原数据卷路径。已有数据库先备份，再按部署方式安装扩展；不要删除数据卷。启动账户需要创建 Mem0 表和 `vector` 扩展的权限；生产环境可由 DBA 提前执行 `CREATE EXTENSION IF NOT EXISTS vector`。新 agent 启用 Mem0 后，数据库、扩展或必要配置不可用会阻止服务启动，避免隐式使用 SQLite 或内存存储。
 
+## 提示词配置
+
+Mem0 的提示词正文统一存放在 **Nacos 的 AI → Prompt 管理中心**，每条独立维护、版本化并发布。应用的 `agent-service-toolkit.yaml` 只保存模型、存储等参数以及可选的 Prompt Key/标签引用，不保存提示词正文。代码和仓库没有本地提示词文件或默认正文回退。
+
+| 默认 Prompt Key | 用途及来源 |
+| --- | --- |
+| `mem0-chat-system` | 聊天角色、表达和记忆信任边界，原 `mem0_chatbot.SYSTEM_PROMPT` |
+| `mem0-memory-status` | 记忆服务状态系统消息，原动态系统文本；必须且只能包含一次 `{status}` 占位符 |
+| `mem0-memory-intent` | 记忆管理意图识别，原 `memory_commands.INTENT_PROMPT`，输出 `MemoryIntent` |
+| `mem0-memory-match` | 记忆候选匹配，原 `memory_commands.MATCH_PROMPT`，输出 `MemoryMatch` |
+| `mem0-fact-extraction-instructions` | 项目事实提取规则，原 `build_memory()` 中的 `custom_instructions` |
+| `mem0-fact-extraction-system` | 真实提取请求的系统消息，原 Mem0 2.2.1 的 `ADDITIVE_EXTRACTION_PROMPT` |
+
+启动时先加载普通配置，再通过官方 Python SDK `NacosAIService.get_prompt()` 分别读取上述六条 Prompt 的 `latest` 发布版本，统一校验成功后才安装到运行时配置；随后初始化智能体和 Mem0。任一 Prompt 不可用、内容为空白、没有版本或状态模板非法，均导致启动失败，不混用部分模板。正文中的 JSON 花括号保持原样，只有状态模板使用 Python 的 `{status}` 替换，不调用 Nacos 的 `{{variable}}` 渲染。
+
+`mem0-fact-extraction-instructions` 是 SDK 动态输入中 `Custom Instructions` 部分的规则，并不是系统消息本身。适配层在实际调用提取模型之前，将 SDK 自带系统消息替换为 `mem0-fact-extraction-system` 的已加载正文；当前用户消息、近期历史、观察日期和已有记忆仍由 SDK 按原协议组装。修改、删除的确认流程和用户归属校验继续由应用代码执行。
+
+可以在普通配置中指定另一组 Key 或已发布标签，例如：
+
+```yaml
+memory:
+  mem0:
+    prompt_label: stable
+    prompt_keys:
+      chat_system: my-mem0-chat-system
+```
+
+没有指定的 Key 仍使用表中的默认名称。关闭 Nacos 时不会自动加载 Mem0 提示词，因此 `mem0-chatbot` 不能运行；其他不依赖这些提示词的 agent 仍可使用。`MEM0_ENABLED=false` 只关闭长期记忆，不免除聊天和记忆意图识别对 Prompt 的要求。提示词只在启动时加载，修改发布版本或标签后需重启服务。测试中使用独立的替身模板，不访问真实配置中心或付费模型。
+
+发布必须使用 Prompt 管理能力创建版本并发布，使 Prompt 同时可在管理中心查询并由客户端读取。普通配置的 `config-set` 不等同于 Prompt 发布，不能仅往某个特殊分组写入 JSON 来替代版本管理。
+
+### 本地发布与 CLI
+
+2026-10-17 已将上表六条 Prompt 发布到本机 Nacos 3.2.4 的 `public` 命名空间，版本均为 `1.0.0`、状态为 `online`，标签 `latest` 指向该版本。CLI 回读和项目 Python SDK 回读均已逐字核对原文；聊天与管理提示词来自原项目代码，提取系统消息来自锁定的 Mem0 2.2.1。
+
+本机原有 `nacos-cli 1.0.0` 不含 Prompt 命令。本次使用官方 nacos-cli 源码的隔离扩展构建，位于 `~/.nacos/prompt-cli/nacos-cli`，原 CLI 保持不变。同目录的 `prompt.go`、`prompt_test.go` 和 `BUILD.md` 保留命令源码、测试及上游提交信息，不含认证信息或提示词正文。
+
+该构建提供 `prompt-list`、`prompt-describe <key>`、`prompt-get <key>`、`prompt-draft <key>`、`prompt-submit <key>` 和 `prompt-publish <key>`，分别通过官方 Prompt 接口执行查询和正常发布流程。创建草稿时正文由标准输入提供；提交后没有配置审核流水线的本地 Nacos 会自动发布，存在流水线时应完成审核后再发布。没有加入强制发布命令。
+
+认证通过 CLI 的 `--config` 或认证参数提供，不把密码写入仓库或示例。连接参数为 `--host 127.0.0.1 --port 8848 --namespace public`。已发布的正文后续直接在 Nacos Prompt 管理中心维护；应用重启后读取对应标签的发布版本。
+
 ## 记忆与隔离
 
 - 会话历史：原 PostgreSQL checkpointer 按 `thread_id` 保存完整消息，供聊天历史、取消恢复与语音播放上下文使用。
@@ -42,7 +83,7 @@ PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`
 
 ## 自动提取规则
 
-项目规则位于 `src/memory/mem0_sdk.py` 的 `build_memory()` → `custom_instructions`，使用中文编写。`src/agents/mem0_chatbot.py` 决定提交本轮最后一条有效用户文本，并通过 `_extraction_context()` 提供历史参考；`src/memory/mem0_history.py` 的 `get_last_messages()` 将参考交给 SDK。这些规则与 Mem0 的 `ADDITIVE_EXTRACTION_PROMPT` 共同作用，不是仅凭提示词就能强制执行的过滤器。
+项目附加规则位于 Nacos Prompt 管理中心的 `mem0-fact-extraction-instructions`，使用中文编写。`src/memory/mem0_sdk.py` 的 `build_memory()` 将加载后的规则传入 `custom_instructions`。`src/agents/mem0_chatbot.py` 决定提交本轮最后一条有效用户文本，并通过 `_extraction_context()` 提供历史参考；`src/memory/mem0_history.py` 的 `get_last_messages()` 将参考交给 SDK。这些规则与 `mem0-fact-extraction-system`（从 Mem0 的 `ADDITIVE_EXTRACTION_PROMPT` 提取）共同作用，不是仅凭提示词就能强制执行的过滤器。
 
 ### 公开资料与项目取舍
 
@@ -69,7 +110,7 @@ PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`
 
 ### 验证范围
 
-`tests/memory/test_mem0_sdk.py` 使用真实 SDK 和替身提取模型，验证中文规则、当前消息、历史问题和旧记忆分开传入，合法结果按原文写入，以及空结果不写向量。它不证明真实模型已经正确完成隐私识别、意图判断或事实筛选。已有测试继续覆盖非法输出、供应商失败和线程参考边界。
+`tests/memory/test_mem0_sdk.py` 使用真实 SDK 和替身提取模型，验证配置规则及系统消息的替换、当前消息、历史问题和旧记忆分开传入，合法结果按原文写入，以及空结果不写向量。它不证明真实模型已经正确完成隐私识别、意图判断或事实筛选。已有测试继续覆盖非法输出、供应商失败和线程参考边界。
 
 真实模型评估应在相同模型和参数下多次比较下列人工场景；这些是人工评估用例，不是自动测试已验证的模型效果：
 

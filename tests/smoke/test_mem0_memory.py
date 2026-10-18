@@ -22,7 +22,7 @@ from schema.memory_commands import MemoryMutation, MemoryTarget
 
 @pytest.mark.docker
 @pytest.mark.asyncio
-async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_path):
+async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_path, mem0_prompts):
     collection = f"mem0_smoke_{uuid4().hex[:16]}"
     monkeypatch.setenv("MEM0_TELEMETRY", "false")
     monkeypatch.setenv("MEM0_DIR", str(tmp_path))
@@ -33,6 +33,7 @@ async def test_mem0_facts_survive_reconnect_and_isolate_users(monkeypatch, tmp_p
         MEM0_COLLECTION_NAME=collection,
         MEM0_EMBEDDING_DIMS=3,
     )
+    config.mem0_prompts = mem0_prompts
 
     def forbidden(*args, **kwargs):
         raise AssertionError("Mem0 must not use SQLite")

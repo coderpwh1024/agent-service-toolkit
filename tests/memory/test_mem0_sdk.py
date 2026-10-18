@@ -13,7 +13,7 @@ from memory.mem0_sdk import ValidatedExtractionLlm, build_memory, close_memory
 
 
 @pytest.fixture
-def extraction_bridge(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespace]:
+def extraction_bridge(monkeypatch: pytest.MonkeyPatch, mem0_prompts) -> Iterator[SimpleNamespace]:
     monkeypatch.setenv("MEM0_TELEMETRY", "false")
     from mem0.utils.factory import EmbedderFactory, LlmFactory, VectorStoreFactory
 
@@ -36,10 +36,40 @@ def extraction_bridge(monkeypatch: pytest.MonkeyPatch) -> Iterator[SimpleNamespa
     conn = pool.connection.return_value.__enter__.return_value
     conn.execute.return_value.fetchone.return_value = ("vector(1024)",)
     config = Settings(_env_file=None, USE_FAKE_MODEL=True, MEM0_API_KEY=SecretStr("test"))
+    config.mem0_prompts = mem0_prompts
     memory = build_memory(config, pool)
     conn.execute.return_value.fetchone.return_value = None
     try:
-        yield SimpleNamespace(memory=memory, provider=provider, vector_store=vector_store)
+        yield SimpleNamespace(
+            memory=memory, provider=provider, vector_store=vector_store, config=config, pool=pool
+        )
+    finally:
+        close_memory(memory)
+
+
+def test_sdk_uses_loaded_extraction_prompts(extraction_bridge: SimpleNamespace) -> None:
+    bridge = extraction_bridge
+    prompts = bridge.config.mem0_prompts.model_dump()
+    prompts["extraction"] = 'Remote extraction policy. Empty result: {"memory": []}'
+    prompts["extraction_system"] = "Remote extraction system rules"
+    bridge.config.mem0_prompts = bridge.config.mem0_prompts.model_validate(prompts)
+    connection = bridge.pool.connection.return_value.__enter__.return_value
+    connection.execute.return_value.fetchone.return_value = ("vector(1024)",)
+    memory = build_memory(bridge.config, bridge.pool)
+    try:
+        bridge.provider.generate_response.return_value = '{"memory": []}'
+        connection.execute.return_value.fetchone.return_value = None
+
+        result = memory.add(
+            [{"role": "user", "content": "hello"}], user_id="alice", agent_id="mem0-chatbot"
+        )
+
+        request = bridge.provider.generate_response.call_args.kwargs
+        assert prompts["extraction"] in request["messages"][1]["content"]
+        assert request["messages"][0] == {"role": "system", "content": prompts["extraction_system"]}
+        assert memory.custom_instructions == prompts["extraction"]
+        assert result == {"results": []}
+        bridge.vector_store.insert.assert_not_called()
     finally:
         close_memory(memory)
 
@@ -91,8 +121,7 @@ def test_extraction_policy_and_sources_reach_real_sdk(
     assert "用户喜欢茶" in existing
     assert current in new
     assert bridge.memory.custom_instructions in policy
-    for boundary in ("未来交流仍有价值", "敏感个人信息", "不要记住", "这里只能新增记忆"):
-        assert boundary in policy
+    assert request["messages"][0]["content"] == bridge.config.mem0_prompts.extraction_system
     assert [record["memory"] for record in result["results"]] == facts
     if facts:
         payloads = bridge.vector_store.insert.call_args.kwargs["payloads"]
@@ -105,7 +134,7 @@ def test_extraction_policy_and_sources_reach_real_sdk(
     bridge.vector_store.delete.assert_not_called()
 
 
-def test_real_sdk_bridge_never_opens_sqlite(monkeypatch, tmp_path):
+def test_real_sdk_bridge_never_opens_sqlite(monkeypatch, tmp_path, mem0_prompts):
     monkeypatch.setenv("MEM0_TELEMETRY", "false")
     monkeypatch.setenv("MEM0_DIR", str(tmp_path))
     from mem0 import Memory
@@ -121,6 +150,7 @@ def test_real_sdk_bridge_never_opens_sqlite(monkeypatch, tmp_path):
     connection = pool.connection.return_value.__enter__.return_value = Mock()
     connection.execute.return_value.fetchone.return_value = ("vector(1024)",)
     config = Settings(_env_file=None, USE_FAKE_MODEL=True, MEM0_API_KEY=SecretStr("test"))
+    config.mem0_prompts = mem0_prompts
     memory = build_memory(config, pool)
     try:
         assert isinstance(memory, Memory)
@@ -196,7 +226,7 @@ def test_valid_extraction_preserves_sdk_linking_fields():
     assert '"linked_memory_ids":["0"]' in model.generate_response(messages=[])
 
 
-def test_real_sdk_update_delete_and_history_preserve_owner(monkeypatch, tmp_path):
+def test_real_sdk_update_delete_and_history_preserve_owner(monkeypatch, tmp_path, mem0_prompts):
     monkeypatch.setenv("MEM0_TELEMETRY", "false")
     monkeypatch.setenv("MEM0_DIR", str(tmp_path))
     from mem0.utils.factory import VectorStoreFactory
@@ -208,6 +238,7 @@ def test_real_sdk_update_delete_and_history_preserve_owner(monkeypatch, tmp_path
     conn = pool.connection.return_value.__enter__.return_value
     conn.execute.return_value.fetchone.return_value = ("vector(1024)",)
     config = Settings(_env_file=None, USE_FAKE_MODEL=True, MEM0_API_KEY=SecretStr("test"))
+    config.mem0_prompts = mem0_prompts
     memory = build_memory(config, pool)
     memory_id = str(uuid4())
     rows = {

@@ -228,6 +228,8 @@ response.pretty_print()
 
 新增的 `mem0-chatbot` 位于 agent 列表首位，作为文字聊天默认 agent，支持 PostgreSQL/pgvector 长期记忆以及语音流式播报与插话取消。用户可通过语音描述要修改或删除的记忆，经候选选择和语音确认后执行，也可列出记忆、清空自己的全部记忆和查询变更历史。`/memories` API 支持查询、修改、单条删除、按用户批量删除及变更历史，并提供同步/异步客户端方法。配置位于 Nacos 的 `memory.mem0`；默认关闭长期记忆，完成数据库准备后设置 `enabled: true` 并重启。配置、存储说明和验证方法见 [Mem0 对话记忆](docs/Mem0_Memory.md)。
 
+Mem0 的六项提示词（含 SDK 提取系统消息）由 Nacos 的 AI → Prompt 管理中心独立管理，程序在启动时通过官方 SDK 读取已发布版本，不使用本地提示词文件或默认正文。Prompt Key、标签和启动要求见 [Mem0 提示词配置](docs/Mem0_Memory.md#提示词配置)。
+
 ### Nacos 3.x
 
 项目使用官方 `nacos-sdk-python` 连接 Nacos 3.x。Nacos 3 默认将控制台和客户端服务分开：控制台可位于 `http://127.0.0.1:8080/`，应用 SDK 应连接服务器端口 `127.0.0.1:8848`，并确保对应的 gRPC 端口 `9848` 可访问。
