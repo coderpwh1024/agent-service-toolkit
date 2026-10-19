@@ -70,6 +70,15 @@ def test_app_token_ttl_is_limited_to_fifteen_days():
         Settings(_env_file=None, APP_TOKEN_TTL_SECONDS=1_296_001)
 
 
+def test_email_timezone_must_be_valid():
+    assert (
+        Settings(_env_file=None, EMAIL_SKILL_TIMEZONE="Asia/Tokyo").EMAIL_SKILL_TIMEZONE
+        == "Asia/Tokyo"
+    )
+    with pytest.raises(ValidationError, match="EMAIL_SKILL_TIMEZONE"):
+        Settings(_env_file=None, EMAIL_SKILL_TIMEZONE="invalid-zone")
+
+
 @pytest.mark.parametrize("budget", [0, 2047, 131073])
 def test_mem0_chat_budget_rejects_invalid_limits(budget):
     with pytest.raises(ValidationError, match="MEM0_CHAT_CONTEXT_TOKENS"):

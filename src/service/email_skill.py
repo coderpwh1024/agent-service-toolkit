@@ -1,14 +1,15 @@
 """User-bound email delivery with Redis replay protection."""
 
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 
 from core import settings
 from schema import ApiResponse, api_success
-from schema.email_skill import EmailContent, EmailSendRequest, EmailSendResult
+from schema.email_skill import EmailContent, EmailScheduleError, EmailSendRequest, EmailSendResult
 from service.access import principal
 from skills.email import (
     EmailSkillRateLimited,
@@ -38,12 +39,17 @@ async def email_skill_lifespan(app: FastAPI) -> AsyncIterator[None]:
         raise ValueError("The email skill requires an encrypted SMTP transport")
     if not settings.SMTP_USERNAME or not settings.SMTP_PASSWORD:
         raise ValueError("The email skill requires SMTP credentials")
-    set_email_skill_service(EmailSkillService(auth.users, auth.sender, auth.codes.redis))
+    service = EmailSkillService(auth.users, auth.sender, auth.codes.redis)
+    set_email_skill_service(service)
+    scheduler = asyncio.create_task(service.run_scheduler(), name="email-scheduler")
     logger.info("Email skill runtime started")
     try:
         yield
     finally:
         set_email_skill_service(None)
+        scheduler.cancel()
+        with suppress(asyncio.CancelledError):
+            await scheduler
         logger.info("Email skill runtime stopped")
 
 
@@ -63,8 +69,13 @@ async def send_current_user_email(
         result = await service.send(
             identity.user_id,
             str(body.request_id),
-            EmailContent.model_validate(body.model_dump(exclude={"request_id"})),
+            EmailContent.model_validate(body.model_dump(exclude={"request_id", "send_at"})),
+            send_at=body.send_at,
         )
+    except EmailScheduleError:
+        raise HTTPException(
+            422, "Send time must include a timezone and be in the next 24 hours"
+        ) from None
     except EmailSkillUserUnavailable:
         raise HTTPException(403, "A registered signed-in user is required") from None
     except EmailSkillRateLimited:

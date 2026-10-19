@@ -4,6 +4,7 @@ from json import loads
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Annotated, Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import dotenv_values, find_dotenv
 from pydantic import (
@@ -142,7 +143,17 @@ class Settings(BaseSettings):
     EMAIL_SKILL_VERSION: str | None = Field(default=None, min_length=1)
     EMAIL_SKILL_LABEL: str = Field(default="latest", min_length=1)
     EMAIL_SKILL_TIMEOUT_SECONDS: float = Field(default=20, ge=1, le=120)
+    EMAIL_SKILL_TIMEZONE: str = "Asia/Shanghai"
     _email_skill: EmailSkill | None = PrivateAttr(default=None)
+
+    @field_validator("EMAIL_SKILL_TIMEZONE")
+    @classmethod
+    def validate_email_skill_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ValueError, ZoneInfoNotFoundError) as exc:
+            raise ValueError("EMAIL_SKILL_TIMEZONE must be an IANA timezone") from exc
+        return value
 
     @property
     def email_skill(self) -> EmailSkill | None:

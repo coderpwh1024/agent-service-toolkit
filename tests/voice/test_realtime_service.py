@@ -1604,7 +1604,7 @@ def test_audio_memory_queries_and_bulk_deletion(voice_env, monkeypatch, operatio
 
 
 @pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
-@pytest.mark.parametrize("delivery_status", ["sent", "unknown"])
+@pytest.mark.parametrize("delivery_status", ["sent", "unknown", "scheduled"])
 def test_audio_transcript_sends_email_and_speaks_actual_result(
     voice_env, monkeypatch, agent_name, delivery_status
 ):
@@ -1625,7 +1625,8 @@ def test_audio_transcript_sends_email_and_speaks_actual_result(
                     {
                         "type": "conversation.item.input_audio_transcription.completed",
                         "item_id": "email-audio-input",
-                        "transcript": "给我发邮件，主题是会议提醒，正文是明天下午三点开会。",
+                        "transcript": ("十分钟后" if delivery_status == "scheduled" else "")
+                        + "给我发邮件，主题是会议提醒，正文是明天下午三点开会。",
                     }
                 )
 
@@ -1635,16 +1636,24 @@ def test_audio_transcript_sends_email_and_speaks_actual_result(
                 lambda message: schema.model_validate_json(message.content)
             )
 
-    service = Mock(send=AsyncMock(return_value=EmailSendResult(status=delivery_status)))
+    target = datetime.now(UTC) + timedelta(minutes=10)
+    service = Mock(
+        send=AsyncMock(
+            return_value=EmailSendResult(
+                status=delivery_status, send_at=target if delivery_status == "scheduled" else None
+            )
+        )
+    )
     monkeypatch.setattr(email, "_service", service)
     monkeypatch.setattr(settings, "EMAIL_SKILL_ENABLED", True)
     monkeypatch.setattr(
         settings, "_email_skill", EmailSkill(EMAIL_SKILL_NAME, "发邮件", "Workflow", "digest")
     )
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", EmailSpeech)
-    model = EmailModel(
-        responses=['{"action":"send","subject":"会议提醒","body":"明天下午三点开会。"}']
-    )
+    intent = {"action": "send", "subject": "会议提醒", "body": "明天下午三点开会。"}
+    if delivery_status == "scheduled":
+        intent.update(timing="scheduled", send_at=target.isoformat())
+    model = EmailModel(responses=[json.dumps(intent, ensure_ascii=False)])
     monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
     if agent_name == "mem0_chatbot":
         monkeypatch.setattr(module, "get_mem0_service", lambda: None)
@@ -1662,7 +1671,8 @@ def test_audio_transcript_sends_email_and_speaks_actual_result(
         events = read_until(ws, "response.done")
         spoken = "".join(item["text"] for item in events if item["type"] == "text.delta")
         assert any(item["type"] == "audio" for item in events)
-        assert "提交发送" in spoken if delivery_status == "sent" else "不确定" in spoken
+        expected = {"sent": "提交发送", "unknown": "不确定", "scheduled": "已预约"}
+        assert expected[delivery_status] in spoken
         assert '"action"' not in spoken and "Workflow" not in spoken
         event(ws, "session.close")
         read_until(ws, "session.closed")
@@ -1670,4 +1680,6 @@ def test_audio_transcript_sends_email_and_speaks_actual_result(
     user_id, request_id, content = service.send.await_args.args
     assert user_id == "7" and request_id.startswith("voice-input-")
     assert content.subject == "会议提醒" and content.body == "明天下午三点开会。"
+    if delivery_status == "scheduled":
+        assert service.send.await_args.kwargs["send_at"] == target
     assert len(repo.records) == 1

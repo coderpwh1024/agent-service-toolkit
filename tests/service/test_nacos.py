@@ -56,12 +56,13 @@ def test_email_skill_settings_map_from_nacos():
     config = make_settings()
     nacos.apply_remote_settings(
         config,
-        "skills:\n  email:\n    enabled: true\n    version: '1.0.0'\n    label: stable\n    timeout_seconds: 15\n",
+        "skills:\n  email:\n    enabled: true\n    version: '1.0.0'\n    label: stable\n    timeout_seconds: 15\n    timezone: Asia/Shanghai\n",
     )
     assert config.EMAIL_SKILL_ENABLED
     assert config.EMAIL_SKILL_VERSION == "1.0.0"
     assert config.EMAIL_SKILL_LABEL == "stable"
     assert config.EMAIL_SKILL_TIMEOUT_SECONDS == 15
+    assert config.EMAIL_SKILL_TIMEZONE == "Asia/Shanghai"
 
 
 @pytest.mark.asyncio

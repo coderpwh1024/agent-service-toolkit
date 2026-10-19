@@ -1,4 +1,6 @@
 import importlib
+import json
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -8,7 +10,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from agents.email_commands import handle_email_command
 from core import settings
 from core.skills import EMAIL_SKILL_NAME, EmailSkill
-from schema.email_skill import EmailContent, EmailIntent, EmailSendResult
+from schema.email_skill import EmailContent, EmailIntent, EmailScheduleError, EmailSendResult
 from skills import email
 
 
@@ -84,7 +86,7 @@ async def test_missing_or_forged_authenticated_identity_cannot_send(email_runtim
     "action,recipient,status",
     [
         ("none", "current_user", None),
-        ("cancel", "current_user", "cancelled"),
+        ("cancel", "current_user", "rejected"),
         ("send", "other", "rejected"),
     ],
 )
@@ -174,3 +176,123 @@ async def test_both_streaming_agents_execute_skill_and_checkpoint_result(
     model.ainvoke.assert_not_awaited()
     checkpoint = await graph.checkpointer.aget_tuple(config())
     assert checkpoint.checkpoint["channel_values"]["__previous__"]["email_dialogue"] is None
+
+
+@pytest.mark.asyncio
+async def test_spoken_relative_time_has_runtime_clock_and_schedules(email_runtime):
+    service, model, structured = email_runtime
+    target = datetime.now(UTC) + timedelta(minutes=10)
+    structured.ainvoke.return_value = EmailIntent(
+        action="send", subject="提醒", body="开会", timing="scheduled", send_at=target
+    )
+    service.send.return_value = EmailSendResult(status="scheduled", send_at=target)
+    response, draft = await handle_email_command(
+        HumanMessage(content="十分钟后给我发邮件，主题是提醒，正文是开会", id="voice-schedule"),
+        None,
+        model,
+        config(),
+    )
+    assert response.response_metadata["email_status"] == "scheduled"
+    assert "已预约" in response.content and "尚未发送" in response.content
+    service.send.assert_awaited_once_with(
+        "7", "voice-schedule", EmailContent(subject="提醒", body="开会"), send_at=target
+    )
+    data = json.loads(structured.ainvoke.await_args.args[0][1].content)
+    reference = datetime.fromisoformat(data["current_time"])
+    assert reference.utcoffset() == timedelta(hours=8)
+    assert data["timezone"] == "Asia/Shanghai"
+    assert draft is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("timing", ["scheduled", "unclear"])
+async def test_missing_delivery_time_never_falls_back_to_immediate(email_runtime, timing):
+    service, model, structured = email_runtime
+    structured.ainvoke.return_value = EmailIntent(
+        action="send", subject="提醒", body="开会", timing=timing
+    )
+    response, draft = await handle_email_command(
+        HumanMessage(content="晚点给我发邮件，主题是提醒，正文是开会"), None, model, config()
+    )
+    assert response.response_metadata["email_status"] == "draft"
+    assert "发送时间" in response.content
+    assert draft["timing"] == timing
+    service.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_invalid_delivery_time_keeps_content_for_correction(email_runtime):
+    service, model, structured = email_runtime
+    structured.ainvoke.return_value = EmailIntent(
+        action="send",
+        subject="提醒",
+        body="开会",
+        timing="scheduled",
+        send_at=datetime.now(UTC) - timedelta(hours=1),
+    )
+    service.send.side_effect = EmailScheduleError()
+    response, draft = await handle_email_command(
+        HumanMessage(content="昨天给我发邮件，主题是提醒，正文是开会"), None, model, config()
+    )
+    assert response.response_metadata["email_status"] == "invalid_time"
+    assert "24小时" in response.content
+    assert draft["subject"] == "提醒" and draft["body"] == "开会"
+    service.send.side_effect = None
+    target = datetime.now(UTC) + timedelta(minutes=10)
+    structured.ainvoke.return_value = EmailIntent(
+        action="send", subject="提醒", body="开会", timing="scheduled", send_at=target
+    )
+    service.send.return_value = EmailSendResult(status="scheduled", send_at=target)
+    response, _ = await handle_email_command(
+        HumanMessage(content="改成十分钟后"), draft, model, config()
+    )
+    assert response.response_metadata["email_status"] == "scheduled"
+
+
+@pytest.mark.asyncio
+async def test_delivery_time_survives_missing_body_followup(email_runtime):
+    service, model, structured = email_runtime
+    target = datetime.now(UTC) + timedelta(hours=1)
+    structured.ainvoke.return_value = EmailIntent(
+        action="draft", subject="提醒", timing="scheduled", send_at=target
+    )
+    _, draft = await handle_email_command(
+        HumanMessage(content="一小时后给我发邮件，主题是提醒"), None, model, config()
+    )
+    assert draft["send_at"]
+    structured.ainvoke.return_value = EmailIntent(
+        action="send", subject="提醒", body="开会", timing="scheduled", send_at=target
+    )
+    service.send.return_value = EmailSendResult(status="scheduled", send_at=target)
+    response, _ = await handle_email_command(
+        HumanMessage(content="正文是开会"), draft, model, config()
+    )
+    assert response.response_metadata["email_status"] == "scheduled"
+    prompt = json.loads(structured.ainvoke.await_args.args[0][1].content)
+    assert datetime.fromisoformat(prompt["pending"]["send_at"]) == target
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("clear_time", [False, True])
+async def test_pending_delivery_time_cannot_be_silently_dropped(email_runtime, clear_time):
+    service, model, structured = email_runtime
+    target = datetime.now(UTC) + timedelta(hours=1)
+    structured.ainvoke.return_value = EmailIntent(
+        action="draft", subject="提醒", timing="scheduled", send_at=target
+    )
+    _, draft = await handle_email_command(
+        HumanMessage(content="一小时后给我发邮件，主题是提醒"), None, model, config()
+    )
+    structured.ainvoke.return_value = EmailIntent(
+        action="send", subject="提醒", body="开会", clear_send_at=clear_time
+    )
+    if not clear_time:
+        service.send.return_value = EmailSendResult(status="scheduled", send_at=target)
+    response, _ = await handle_email_command(
+        HumanMessage(content="正文是开会，立即发送" if clear_time else "正文是开会"),
+        draft,
+        model,
+        config(),
+    )
+    assert response.response_metadata["email_status"] == ("sent" if clear_time else "scheduled")
+    assert service.send.await_args.kwargs == ({} if clear_time else {"send_at": target})

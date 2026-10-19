@@ -55,6 +55,7 @@ _NESTED_SETTINGS: dict[str, Any] = {
             "version": "EMAIL_SKILL_VERSION",
             "label": "EMAIL_SKILL_LABEL",
             "timeout_seconds": "EMAIL_SKILL_TIMEOUT_SECONDS",
+            "timezone": "EMAIL_SKILL_TIMEZONE",
         },
     },
     "memory": {

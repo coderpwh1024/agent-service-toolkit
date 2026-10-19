@@ -188,26 +188,35 @@ def test_endpoint_binds_token_user_and_rejects_spoofed_recipient(
     sender.send_email.assert_awaited_once_with("user@example.com", "主题", "正文")
 
 
-def test_bundled_script_calls_authenticated_endpoint_without_recipient(monkeypatch, capsys):
+@pytest.mark.parametrize("status", ["sent", "scheduled"])
+def test_bundled_script_calls_authenticated_endpoint_without_recipient(monkeypatch, capsys, status):
     path = Path("skills/send-current-user-email/scripts/send_email.py")
     spec = importlib.util.spec_from_file_location("skill_send_email", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     monkeypatch.setenv("AGENT_SERVICE_URL", "https://service.example.com")
     monkeypatch.setenv("AGENT_USER_ACCESS_TOKEN", "signed-in-token")
+    send_at = "2030-01-01T09:00:00+08:00"
+    scheduled_input = ',"send_at":"' + send_at + '"' if status == "scheduled" else ""
     monkeypatch.setattr(
         module.sys,
         "stdin",
-        io.StringIO('{"request_id":"' + str(uuid4()) + '","subject":"主题","body":"正文"}'),
+        io.StringIO(
+            '{"request_id":"'
+            + str(uuid4())
+            + '","subject":"主题","body":"正文"'
+            + scheduled_input
+            + "}"
+        ),
     )
-    response = io.StringIO('{"data":{"status":"sent"}}')
+    response = io.StringIO('{"data":{"status":"' + status + '","send_at":"' + send_at + '"}}')
     opener = Mock(open=Mock(return_value=response))
     monkeypatch.setattr(module, "build_opener", Mock(return_value=opener))
     assert module.main() == 0
     request = opener.open.call_args.args[0]
     assert request.full_url == "https://service.example.com/skills/email/send"
     assert request.get_header("Authorization") == "Bearer signed-in-token"
-    assert "sent" in capsys.readouterr().out
+    assert status in capsys.readouterr().out
 
 
 def test_client_cannot_forge_skill_identity(test_client, mock_agent, monkeypatch):
