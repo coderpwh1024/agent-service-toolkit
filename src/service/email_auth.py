@@ -10,6 +10,7 @@ import ssl
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
 from email.message import EmailMessage
+from email.utils import formatdate, make_msgid
 from pathlib import Path
 from typing import Any, LiteralString, Protocol, cast
 
@@ -33,6 +34,7 @@ from schema.auth import (
 )
 from service.access import create_access_token
 from service.user_profiles import QiniuAvatarStorage, UserProfileService
+from skills.email import EmailDeliveryError
 
 VERIFICATION_CODE_TTL_SECONDS = 180
 EMAIL_SEND_LIMIT = 6
@@ -89,10 +91,6 @@ class EmailRateLimitError(Exception):
 
 
 class InvalidVerificationCodeError(Exception):
-    pass
-
-
-class EmailDeliveryError(Exception):
     pass
 
 
@@ -306,11 +304,18 @@ class SMTPEmailSender:
         self.use_ssl = config.SMTP_USE_SSL
 
     async def send_code(self, email: str, code: str) -> None:
+        await self.send_email(
+            email, "登录验证码", f"您的验证码是 {code}，3 分钟内有效。请勿将验证码告知他人。"
+        )
+
+    async def send_email(self, email: str, subject: str, body: str) -> None:
         message = EmailMessage()
-        message["Subject"] = "登录验证码"
+        message["Subject"] = subject
         message["From"] = self.from_email
         message["To"] = email
-        message.set_content(f"您的验证码是 {code}，3 分钟内有效。请勿将验证码告知他人。")
+        message["Date"] = formatdate(localtime=False)
+        message["Message-ID"] = make_msgid()
+        message.set_content(body, charset="utf-8")
         try:
             await asyncio.to_thread(self._send, message)
         except (OSError, smtplib.SMTPException) as exc:

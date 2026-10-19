@@ -3,7 +3,7 @@ import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from time import monotonic, sleep
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
@@ -1601,3 +1601,73 @@ def test_audio_memory_queries_and_bulk_deletion(voice_env, monkeypatch, operatio
             assert {target.id for target in mutation.targets} == {record.id for record in records}
         else:
             assert mutation.revision == "snapshot"
+
+
+@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
+@pytest.mark.parametrize("delivery_status", ["sent", "unknown"])
+def test_audio_transcript_sends_email_and_speaks_actual_result(
+    voice_env, monkeypatch, agent_name, delivery_status
+):
+    import importlib
+
+    from core.skills import EMAIL_SKILL_NAME, EmailSkill
+    from schema.email_skill import EmailSendResult
+    from service import voice as voice_routes
+    from skills import email
+
+    module = importlib.import_module(f"agents.{agent_name}")
+    client, repo, agents, headers = voice_env
+
+    class EmailSpeech(FakeSpeech):
+        async def append_audio(self, ws, pcm):
+            for _ in range(2):
+                await self.events.put(
+                    {
+                        "type": "conversation.item.input_audio_transcription.completed",
+                        "item_id": "email-audio-input",
+                        "transcript": "给我发邮件，主题是会议提醒，正文是明天下午三点开会。",
+                    }
+                )
+
+    class EmailModel(FakeListChatModel):
+        def with_structured_output(self, schema, **kwargs):
+            return self | RunnableLambda(
+                lambda message: schema.model_validate_json(message.content)
+            )
+
+    service = Mock(send=AsyncMock(return_value=EmailSendResult(status=delivery_status)))
+    monkeypatch.setattr(email, "_service", service)
+    monkeypatch.setattr(settings, "EMAIL_SKILL_ENABLED", True)
+    monkeypatch.setattr(
+        settings, "_email_skill", EmailSkill(EMAIL_SKILL_NAME, "发邮件", "Workflow", "digest")
+    )
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", EmailSpeech)
+    model = EmailModel(
+        responses=['{"action":"send","subject":"会议提醒","body":"明天下午三点开会。"}']
+    )
+    monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
+    if agent_name == "mem0_chatbot":
+        monkeypatch.setattr(module, "get_mem0_service", lambda: None)
+    graph = getattr(module, agent_name).copy()
+    graph.checkpointer = MemorySaver()
+    agent_id = agent_name.replace("_", "-")
+    agents[agent_id] = graph
+    auth = headers("7")
+    session = create(client, auth, agent_id=agent_id)
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        ws.send_bytes(
+            encode_audio(b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, 0, kind=1)
+        )
+        events = read_until(ws, "response.done")
+        spoken = "".join(item["text"] for item in events if item["type"] == "text.delta")
+        assert any(item["type"] == "audio" for item in events)
+        assert "提交发送" in spoken if delivery_status == "sent" else "不确定" in spoken
+        assert '"action"' not in spoken and "Workflow" not in spoken
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    service.send.assert_awaited_once()
+    user_id, request_id, content = service.send.await_args.args
+    assert user_id == "7" and request_id.startswith("voice-input-")
+    assert content.subject == "会议提醒" and content.body == "明天下午三点开会。"
+    assert len(repo.records) == 1

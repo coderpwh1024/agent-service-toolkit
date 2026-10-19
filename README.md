@@ -98,6 +98,7 @@ docker compose watch
 
 - [设置阿里云百炼千问](docs/Alibaba_Bailian.md)
 - [移动端实时语音 API](docs/Voice_API.md)
+- [语音触发的当前用户邮件发送技能](docs/Email_Skill.md)
 - [设置 Ollama](docs/Ollama.md)
 - [设置 VertexAI](docs/VertexAI.md)
 - [使用 PostgreSQL 设置 RAG 与记忆库](docs/RAG_Assistant.md)

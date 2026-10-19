@@ -35,7 +35,12 @@ router = APIRouter(prefix="/agui")
 
 # Managed by the protocol (thread_id comes from RunAgentInput) or the checkpointer,
 # so clients may not override them via forwardedProps.configurable.
-RESERVED_CONFIGURABLE_KEYS = {"thread_id", "checkpoint_id", "checkpoint_ns"}
+RESERVED_CONFIGURABLE_KEYS = {
+    "thread_id",
+    "checkpoint_id",
+    "checkpoint_ns",
+    "authenticated_user_id",
+}
 
 
 def _base_config(input_data: RunAgentInput, agent_id: str) -> RunnableConfig:
@@ -130,6 +135,7 @@ async def agui_run(
             str(input_data.run_id), configurable["user_id"], input_data.thread_id
         )
     config = _base_config(input_data, agent_id)
+    config["configurable"]["authenticated_user_id"] = request.state.principal.user_id
     encoder = EventEncoder(accept=request.headers.get("accept", ""))
     return StreamingResponse(
         _event_stream(agent_id, graph, input_data, config, encoder, repo),

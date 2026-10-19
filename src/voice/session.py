@@ -70,6 +70,7 @@ class VoiceConnection:
         provider: AlibabaRealtime,
         settings: Settings,
         expires_at: int | None = None,
+        authenticated_user_id: str | None = None,
     ):
         self.task: asyncio.Task | None = None
         self.ws = websocket
@@ -79,6 +80,7 @@ class VoiceConnection:
         self.provider = provider
         self.settings = settings
         self.expires_at = expires_at
+        self.authenticated_user_id = authenticated_user_id
         self.connection_id = str(uuid4())
         self.closed = asyncio.Event()
         self.outgoing: asyncio.PriorityQueue = asyncio.PriorityQueue(settings.VOICE_QUEUE_SIZE)
@@ -603,7 +605,12 @@ class VoiceConnection:
                     user_id=self.session.user_id,
                 )
                 kwargs, run_id = await _handle_input(
-                    data, self.agent, self.session.agent_id, self.repo, auto_resume=False
+                    data,
+                    self.agent,
+                    self.session.agent_id,
+                    self.repo,
+                    auto_resume=False,
+                    authenticated_user_id=self.authenticated_user_id,
                 )
                 if token_mode:
                     kwargs["config"]["configurable"]["voice_enable_thinking"] = (

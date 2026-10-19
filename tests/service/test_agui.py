@@ -146,6 +146,14 @@ def test_agui_unknown_agent(mock_agui_agent, test_client) -> None:
     assert response.status_code == 404
 
 
+def test_agui_rejects_forged_email_identity(mock_agui_agent, test_client) -> None:
+    response = test_client.post(
+        "/agui/model-agent/run",
+        json=run_input(forwardedProps={"configurable": {"authenticated_user_id": "7"}}),
+    )
+    assert response.status_code == 422
+
+
 def test_agui_configurable_passthrough(mock_agui_agent, allow_fake_model, test_client) -> None:
     """forwardedProps.configurable values reach the agent's configurable."""
     body = run_input(

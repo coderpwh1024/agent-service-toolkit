@@ -16,10 +16,11 @@ from v2.nacos import (
     NacosNamingService,
     RegisterInstanceParam,
 )
-from v2.nacos.ai.model.ai_param import GetPromptParam
+from v2.nacos.ai.model.ai_param import DownloadSkillParam, GetPromptParam
 from v2.nacos.ai.nacos_ai_service import NacosAIService
 
 from core.settings import Settings
+from core.skills import EMAIL_SKILL_NAME, read_email_skill
 from schema.prompts import Mem0Prompts
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,14 @@ _MAIL_FIELDS = {
     "username": "SMTP_USERNAME",
 }
 _NESTED_SETTINGS: dict[str, Any] = {
+    "skills": {
+        "email": {
+            "enabled": "EMAIL_SKILL_ENABLED",
+            "version": "EMAIL_SKILL_VERSION",
+            "label": "EMAIL_SKILL_LABEL",
+            "timeout_seconds": "EMAIL_SKILL_TIMEOUT_SECONDS",
+        },
+    },
     "memory": {
         "mem0": {
             "prompt_keys": "MEM0_PROMPT_KEYS",
@@ -421,6 +430,7 @@ class NacosIntegration:
                     "NACOS_CONFIG_DATA_ID is required when Nacos storage configuration is mandatory"
                 )
             await self.load_remote_prompts()
+            await self.load_remote_skills()
             return
 
         self.config_client = await NacosConfigService.create_config_service(self._client_config())
@@ -445,6 +455,26 @@ class NacosIntegration:
         )
         logger.info("Applied Nacos startup configuration fields: %s", ", ".join(updated))
         await self.load_remote_prompts()
+        await self.load_remote_skills()
+
+    async def load_remote_skills(self) -> None:
+        self.config.email_skill = None
+        if not self.config.EMAIL_SKILL_ENABLED:
+            return
+        if not self.config.NACOS_ENABLED:
+            raise ValueError("The email skill requires Nacos Skill management")
+        if self.ai_client is None:
+            self.ai_client = await NacosAIService.create_ai_service(self._client_config())
+        archive = await self.ai_client.download_skill_zip(
+            DownloadSkillParam(
+                skill_name=EMAIL_SKILL_NAME,
+                version=self.config.EMAIL_SKILL_VERSION,
+                label=None if self.config.EMAIL_SKILL_VERSION else self.config.EMAIL_SKILL_LABEL,
+            )
+        )
+        skill = read_email_skill(archive)
+        self.config.email_skill = skill
+        logger.info("Loaded Nacos skill name=%s digest=%s", skill.name, skill.digest[:12])
 
     async def load_remote_prompts(self) -> None:
         if not self.config.NACOS_ENABLED:

@@ -19,6 +19,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.skills import EmailSkill
 from schema.models import (
     AlibabaModelName,
     AllModelEnum,
@@ -137,6 +138,19 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: EmailStr | None = None
     SMTP_USE_TLS: bool = True
     SMTP_USE_SSL: bool = False
+    EMAIL_SKILL_ENABLED: bool = False
+    EMAIL_SKILL_VERSION: str | None = Field(default=None, min_length=1)
+    EMAIL_SKILL_LABEL: str = Field(default="latest", min_length=1)
+    EMAIL_SKILL_TIMEOUT_SECONDS: float = Field(default=20, ge=1, le=120)
+    _email_skill: EmailSkill | None = PrivateAttr(default=None)
+
+    @property
+    def email_skill(self) -> EmailSkill | None:
+        return self._email_skill
+
+    @email_skill.setter
+    def email_skill(self, value: EmailSkill | None) -> None:
+        self._email_skill = value
 
     VOICE_ENABLED: bool = False
     VOICE_LLM_ENABLE_THINKING: bool = False

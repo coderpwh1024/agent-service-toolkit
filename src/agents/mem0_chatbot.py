@@ -15,6 +15,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.func import entrypoint
 from pydantic import ValidationError
 
+from agents.email_commands import handle_email_command
 from agents.memory_commands import handle_memory_command
 from core import get_model, settings
 from memory.mem0_service import get_mem0_service
@@ -27,6 +28,7 @@ CHAT_MESSAGE_LIMIT = 20
 class Mem0ChatState(TypedDict):
     messages: list[BaseMessage]
     memory_dialogue: NotRequired[dict[str, Any]]
+    email_dialogue: NotRequired[dict[str, Any] | None]
 
 
 def _chat_prompt(messages: list[BaseMessage], facts: list[str], status: str) -> list[BaseMessage]:
@@ -118,6 +120,23 @@ async def mem0_chatbot(
         else get_model(model_name)
     )
     if user_messages:
+        email_response, email_dialogue = await handle_email_command(
+            next(
+                message for message in reversed(new_messages) if isinstance(message, HumanMessage)
+            ),
+            previous.get("email_dialogue") if previous else None,
+            model,
+            config,
+        )
+        if email_response is not None:
+            return entrypoint.final(
+                value={"messages": [email_response]},
+                save={
+                    "messages": messages + [email_response],
+                    "memory_dialogue": dialogue.model_dump(mode="json"),
+                    "email_dialogue": email_dialogue,
+                },
+            )
         command_response = await handle_memory_command(
             user_messages[-1]["content"], memory, user_id, dialogue, model, config
         )

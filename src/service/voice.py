@@ -244,6 +244,7 @@ async def voice_websocket(websocket: WebSocket, session_id: UUID):
                 AlibabaRealtime(settings),
                 settings,
                 identity.expires_at,
+                authenticated_user_id=identity.user_id,
             )
             connection.task = asyncio.current_task()
             connections[str(session_id)] = connection

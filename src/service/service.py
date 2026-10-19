@@ -66,6 +66,8 @@ from service.chat_records import (
 )
 from service.email_auth import email_auth_lifespan
 from service.email_auth import router as email_auth_router
+from service.email_skill import email_skill_lifespan
+from service.email_skill import router as email_skill_router
 from service.memories import router as memories_router
 from service.nacos import NacosIntegration
 from service.threads import list_user_threads
@@ -143,7 +145,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 agent.checkpointer = saver
                 # Set store for long-term memory (cross-conversation knowledge)
                 agent.store = store
-            async with mem0_lifespan(), email_auth_lifespan(app), voice_lifespan(app):
+            async with (
+                mem0_lifespan(),
+                email_auth_lifespan(app),
+                email_skill_lifespan(app),
+                voice_lifespan(app),
+            ):
                 await nacos.register_service()
                 app.state.nacos = nacos
                 try:
@@ -162,6 +169,7 @@ router = APIRouter(dependencies=[Depends(verify_bearer)])
 # AG-UI protocol endpoints inherit the same bearer auth - see service/agui.py
 router.include_router(agui_router)
 router.include_router(memories_router)
+router.include_router(email_skill_router)
 
 
 def _uses_protocol_response(path: str) -> bool:
@@ -234,6 +242,7 @@ async def _handle_input(
     repo: VoiceRepository | None = None,
     *,
     auto_resume: bool = True,
+    authenticated_user_id: str | None = None,
 ) -> tuple[dict[str, Any], UUID]:
     """
     Parse user input and handle any required interrupt resumption.
@@ -243,7 +252,7 @@ async def _handle_input(
     thread_id = user_input.thread_id or str(uuid4())
     user_id = user_input.user_id or str(uuid4())
 
-    configurable = {"thread_id": thread_id, "user_id": user_id}
+    configurable: dict[str, Any] = {"thread_id": thread_id, "user_id": user_id}
     if user_input.model is not None:
         ensure_model_available(user_input.model)
         configurable["model"] = user_input.model
@@ -257,13 +266,22 @@ async def _handle_input(
 
     if user_input.agent_config:
         # Check for reserved keys (including 'model' even if not in configurable)
-        reserved_keys = {"thread_id", "user_id", "model", "checkpoint_id", "checkpoint_ns"}
+        reserved_keys = {
+            "thread_id",
+            "user_id",
+            "model",
+            "checkpoint_id",
+            "checkpoint_ns",
+            "authenticated_user_id",
+        }
         if overlap := reserved_keys & user_input.agent_config.keys():
             raise HTTPException(
                 status_code=422,
                 detail=f"agent_config contains reserved keys: {overlap}",
             )
         configurable.update(user_input.agent_config)
+
+    configurable["authenticated_user_id"] = authenticated_user_id
 
     config = RunnableConfig(
         configurable=configurable,
@@ -312,11 +330,17 @@ async def invoke(
         await authorize_thread(
             repo, agent, user_input.thread_id, agent_id, identity, user_input.user_id, create=True
         )
-        return api_success(await _invoke(user_input, agent_id, repo))
+        return api_success(
+            await _invoke(user_input, agent_id, repo, authenticated_user_id=identity.user_id)
+        )
 
 
 async def _invoke(
-    user_input: UserInput, agent_id: str, repo: VoiceRepository | None
+    user_input: UserInput,
+    agent_id: str,
+    repo: VoiceRepository | None,
+    *,
+    authenticated_user_id: str | None = None,
 ) -> ChatMessage:
     """
     Invoke an agent with user input to retrieve a final response.
@@ -332,7 +356,9 @@ async def _invoke(
     # you'd want to include it. You could update the API to return a list of ChatMessages
     # in that case.
     agent: AgentGraph = get_agent(agent_id)
-    kwargs, run_id = await _handle_input(user_input, agent, agent_id, repo)
+    kwargs, run_id = await _handle_input(
+        user_input, agent, agent_id, repo, authenticated_user_id=authenticated_user_id
+    )
 
     try:
         response_events: list[tuple[str, Any]] = await agent.ainvoke(**kwargs, stream_mode=["updates", "values"])  # type: ignore # fmt: skip
@@ -361,12 +387,16 @@ async def message_generator(
     user_input: StreamInput,
     agent_id: str = DEFAULT_AGENT,
     repo: VoiceRepository | None = None,
+    *,
+    authenticated_user_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     agent = get_agent(agent_id)
     user_input.thread_id = user_input.thread_id or str(uuid4())
     try:
         async with thread_guard(repo, user_input.thread_id):
-            kwargs, run_id = await _handle_input(user_input, agent, agent_id, repo)
+            kwargs, run_id = await _handle_input(
+                user_input, agent, agent_id, repo, authenticated_user_id=authenticated_user_id
+            )
             async for event in graph_events(
                 agent,
                 kwargs,
@@ -446,7 +476,7 @@ async def stream(
         create=True,
     )
     return StreamingResponse(
-        message_generator(user_input, agent_id, repo),
+        message_generator(user_input, agent_id, repo, authenticated_user_id=identity.user_id),
         media_type="text/event-stream",
     )
 
