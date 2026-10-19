@@ -459,6 +459,62 @@ def test_audio_starts_while_model_is_still_generating_and_reports_latency(
     assert latency["text_to_audio_ms"] >= 0
 
 
+@pytest.mark.parametrize("failure", ["before_audio", "after_audio", "persistent"])
+def test_tts_timeout_retries_only_undelivered_segments(voice_env, monkeypatch, failure):
+    from service import voice as voice_routes
+
+    connections = []
+    attempts = []
+
+    class TimeoutSpeech(FakeSpeech):
+        @asynccontextmanager
+        async def synthesizer(self, session):
+            connection = object()
+            connections.append(connection)
+            yield connection
+
+        async def synthesize(self, ws, text):
+            attempts.append((ws, text))
+            if len(attempts) == 2 or (failure == "persistent" and len(attempts) > 2):
+                if failure == "after_audio":
+                    yield b"\0\0" * 480
+                raise TimeoutError("upstream stalled")
+            yield b"\0\0" * 480
+
+    client, repo, agents, headers = voice_env
+    response = "第一句正常播放。第二句测试超时。第三句继续播放。"
+    agents["chatbot"] = build_chatbot([response])
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", TimeoutSpeech)
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="测试分段超时恢复")
+        events = read_until(ws, "response.done")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    assert "".join(item["text"] for item in events if item["type"] == "text.delta") == response
+    turn = next(iter(repo.records.values()))
+    assert turn.execution_status == "completed"
+    if failure == "before_audio":
+        assert events[-1]["audio_status"] == "completed"
+        assert "".join(segment.text for segment in turn.segments) == response
+        assert all(segment.complete and segment.samples == 480 for segment in turn.segments)
+        assert len(connections) == 2
+        assert attempts[1][1] == attempts[2][1]
+        assert attempts[1][0] is not attempts[2][0]
+        assert not any(item["type"] == "error" for item in events)
+    else:
+        assert events[-1]["audio_status"] == "failed"
+        assert events[-1]["error_code"] == "tts_failed"
+        assert len(connections) == (1 if failure == "after_audio" else 3)
+        assert len(attempts) == (2 if failure == "after_audio" else 4)
+        assert turn.segments[0].complete
+        assert not turn.segments[1].complete
+        assert turn.segments[1].samples == (480 if failure == "after_audio" else 0)
+
+
 def test_tts_failure_finishes_without_deadlock_or_false_success(voice_env, monkeypatch):
     from service import voice as voice_routes
 

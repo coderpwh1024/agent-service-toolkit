@@ -20,6 +20,8 @@ class SpeechProviderError(Exception):
 
 
 class AlibabaRealtime:
+    FIRST_AUDIO_TIMEOUT = 5.0
+
     def __init__(self, settings: Settings):
         self.settings = settings
 
@@ -113,9 +115,14 @@ class AlibabaRealtime:
     async def synthesize(self, ws: ClientConnection, text: str) -> AsyncIterator[bytes]:
         await self.send(ws, "input_text_buffer.append", text=text)
         await self.send(ws, "input_text_buffer.commit")
+        first_audio_deadline = asyncio.get_running_loop().time() + min(
+            self.FIRST_AUDIO_TIMEOUT, self.settings.VOICE_UPSTREAM_TIMEOUT
+        )
+        received_audio = False
         async with asyncio.timeout(120):
             while True:
-                event = await self.receive(ws)
+                async with asyncio.timeout_at(None if received_audio else first_audio_deadline):
+                    event = await self.receive(ws)
                 if event.get("type") == "response.audio.delta":
                     try:
                         data = base64.b64decode(event["delta"], validate=True)
@@ -124,6 +131,7 @@ class AlibabaRealtime:
                     if len(data) % 2:
                         raise SpeechProviderError("Unaligned upstream PCM")
                     if data:
+                        received_audio = True
                         yield data
                 elif event.get("type") == "response.done":
                     response = event.get("response", {})

@@ -476,7 +476,10 @@ class VoiceConnection:
 
     async def speak(self, turn: VoiceTurn, text_queue: asyncio.Queue[str | None]) -> None:
         try:
-            async with self.provider.synthesizer(self.session) as tts:
+            async with contextlib.AsyncExitStack() as tts_connections:
+                tts = await tts_connections.enter_async_context(
+                    self.provider.synthesizer(self.session)
+                )
                 self.mark_timing(turn.response_id, "tts_ready")
                 async for text in SpeechText().stream(text_queue):
                     if turn.response_id in self.invalid:
@@ -491,8 +494,25 @@ class VoiceConnection:
                         segment_index=segment.index,
                         text=text,
                     )
-                    async for pcm in self.provider.synthesize(tts, text):
-                        await self.emit_audio(pcm, turn, segment)
+                    for attempt in range(3):
+                        try:
+                            async for pcm in self.provider.synthesize(tts, text):
+                                await self.emit_audio(pcm, turn, segment)
+                            break
+                        except TimeoutError:
+                            if segment.samples or attempt == 2:
+                                raise
+                            logger.warning(
+                                "Retrying undelivered voice segment response_id=%s "
+                                "segment_index=%s attempt=%s",
+                                turn.response_id,
+                                segment.index,
+                                attempt + 2,
+                            )
+                            await tts_connections.aclose()
+                            tts = await tts_connections.enter_async_context(
+                                self.provider.synthesizer(self.session)
+                            )
                     segment.complete = True
                     await self.emit(
                         "audio.segment.done",
