@@ -204,6 +204,32 @@ async def test_tts_first_audio_deadline_is_not_reset_by_metadata():
 
 
 @pytest.mark.asyncio
+async def test_tts_provider_error_keeps_safe_code_without_echoing_input():
+    socket = Socket()
+    stream = InferenceStream(socket, session(), settings(), "tts")
+    first = asyncio.create_task(anext(stream.synthesize("合成测试。", 1)))
+    await asyncio.sleep(0)
+    socket.events.put_nowait(
+        json.dumps(
+            {
+                "header": {
+                    "event": "task-failed",
+                    "task_id": socket.task_id,
+                    "error_code": "InvalidParameter",
+                    "error_message": "private provider details",
+                },
+                "payload": {},
+            }
+        )
+    )
+    with pytest.raises(SpeechProviderError) as caught:
+        await first
+    assert caught.value.code == "InvalidParameter"
+    assert caught.value.retryable is False
+    assert "private provider details" not in str(caught.value)
+
+
+@pytest.mark.asyncio
 async def test_cancelled_recognition_closes_the_upstream_connection(monkeypatch):
     socket = Socket()
     entered = asyncio.Event()

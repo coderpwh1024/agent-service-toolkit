@@ -20,15 +20,13 @@ class SpeechText:
         result = []
         while self.buffer:
             limit = self.max_chars if self.started else min(self.max_chars, self.FIRST_CHUNK_CHARS)
-            boundary = next(
-                (
-                    match
-                    for match in re.finditer(r"[。！？!?；;\n]|[，,：:]\s*", self.buffer)
-                    if match.end() <= limit
-                    and (match.end() >= 12 or final or match.group()[0] in "。！？!?\n")
-                ),
-                None,
-            )
+            boundaries = [
+                match
+                for match in re.finditer(r"[。！？!?；;\n]|[，,：:]\s*", self.buffer)
+                if match.end() <= limit
+                and (match.end() >= 12 or final or match.group()[0] in "。！？!?\n")
+            ]
+            boundary = boundaries[-1 if self.started else 0] if boundaries else None
             if boundary:
                 cut = boundary.end()
             elif len(self.buffer) >= limit:
@@ -65,12 +63,18 @@ class SpeechText:
                 phrases = self.feed("", flush=True)
                 pending_since = monotonic() if self.buffer else None
             else:
-                phrases = self.feed(text or "", final=text is None)
+                final = text is None
+                tokens = [text or ""]
+                while not final and not queue.empty():
+                    token = queue.get_nowait()
+                    final = token is None
+                    tokens.append(token or "")
+                phrases = self.feed("".join(tokens), final=final)
                 if self.buffer and pending_since is None:
                     pending_since = monotonic()
                 elif not self.buffer:
                     pending_since = None
-                if text is None:
+                if final:
                     for phrase in phrases:
                         yield phrase
                     return
@@ -88,4 +92,5 @@ class SpeechText:
         text = "".join(spoken)
         text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
         text = re.sub(r"https?://\S+", "", text)
-        return re.sub(r"[`*#>|]", "", text).strip()
+        text = re.sub(r"[`*#>|]", "", text).strip()
+        return text if any(char.isalnum() for char in text) else ""

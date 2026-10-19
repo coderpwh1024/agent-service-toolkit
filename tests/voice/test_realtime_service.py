@@ -418,7 +418,7 @@ def test_slow_tts_applies_backpressure_without_truncating_audio(voice_env, monke
     done = events[-1]
     completed_segments = [item for item in events if item["type"] == "audio.segment.done"]
     assert "".join(item["text"] for item in events if item["type"] == "text.delta") == response
-    assert len(completed_segments) == 20
+    assert 1 < len(completed_segments) <= 20
     assert done["status"] == "completed"
     assert done["execution_status"] == "completed"
     assert done["audio_status"] == "completed"
@@ -427,7 +427,8 @@ def test_slow_tts_applies_backpressure_without_truncating_audio(voice_env, monke
         item["type"] == "error" and item.get("code") == "tts_backpressure" for item in events
     )
     turn = next(iter(repo.records.values()))
-    assert len(turn.segments) == 20
+    assert len(turn.segments) == len(completed_segments)
+    assert "".join(segment.text for segment in turn.segments) == response
     assert all(segment.complete and segment.samples > 0 for segment in turn.segments)
 
 
@@ -575,6 +576,49 @@ def test_tts_failure_finishes_without_deadlock_or_false_success(voice_env, monke
     assert turn.status == "failed"
     assert turn.execution_status == "completed"
     assert turn.audio_status == "failed"
+
+
+def test_standalone_punctuation_does_not_truncate_the_rest_of_a_reply(voice_env, monkeypatch):
+    import voice.session as voice_session
+    from service import voice as voice_routes
+    from service.agent_runner import AgentEvent
+
+    first_audio = asyncio.Event()
+
+    class ValidTextSpeech(FakeSpeech):
+        async def synthesize(self, ws, text):
+            if not any(char.isalnum() for char in text):
+                raise SpeechProviderError("Speech inference task failed")
+            yield b"\0\0" * 480
+            first_audio.set()
+
+    async def stalled_graph(*args, **kwargs):
+        yield AgentEvent("token", "我说你好。", "message-1")
+        await asyncio.wait_for(first_audio.wait(), 1)
+        yield AgentEvent("token", "”", "message-1")
+        await asyncio.sleep(0.45)
+        yield AgentEvent("token", "接下来还有完整的回答。", "message-1")
+
+    client, repo, agents, headers = voice_env
+    response = "我说你好。”接下来还有完整的回答。"
+    agents["chatbot"] = build_chatbot([response], sleep=0.01)
+    monkeypatch.setattr(voice_session, "graph_events", stalled_graph)
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", ValidTextSpeech)
+    auth = headers()
+    session = create(client, auth)
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="检查引号后继续播报")
+        events = read_until(ws, "response.done")
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+
+    assert events[-1]["audio_status"] == "completed"
+    turn = next(iter(repo.records.values()))
+    assert "".join(char for char in turn.generated_text if char.isalnum()) == "".join(
+        char for segment in turn.segments for char in segment.text if char.isalnum()
+    )
+    assert all(segment.complete and segment.samples > 0 for segment in turn.segments)
 
 
 def test_voice_capabilities_expose_compatible_ids_and_display_metadata(voice_env):

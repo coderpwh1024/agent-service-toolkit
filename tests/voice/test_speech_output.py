@@ -60,3 +60,24 @@ async def test_backlogged_tokens_preserve_all_text_and_sentence_order():
         queue.put_nowait(token)
     queue.put_nowait(None)
     assert "".join([phrase async for phrase in SpeechText().stream(queue)]) == text
+
+
+@pytest.mark.parametrize("text", ["。", "？", "！”", "……", "，", "**。**", "🙂", "\n”\n"])
+def test_punctuation_only_fragments_are_not_sent_to_tts(text):
+    assert SpeechText().feed(text, final=True) == []
+
+
+def test_closing_quote_after_a_sentence_does_not_abort_later_speech():
+    speech = SpeechText()
+    phrases = speech.feed("我说：“你好。")
+    phrases += speech.feed("”", flush=True)
+    phrases += speech.feed("接下来还有完整的回答。", final=True)
+    assert phrases == ["我说：“你好。", "接下来还有完整的回答。"]
+
+
+def test_backlogged_sentences_after_the_opening_share_a_tts_request():
+    speech = SpeechText()
+    assert speech.feed("先说第一句。第二句和第三句，应该连续播报。最后一句。", final=True) == [
+        "先说第一句。",
+        "第二句和第三句，应该连续播报。最后一句。",
+    ]

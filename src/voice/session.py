@@ -501,15 +501,21 @@ class VoiceConnection:
                                 await self.emit_audio(pcm, turn, segment)
                             break
                         except (TimeoutError, SpeechProviderError) as error:
-                            if segment.samples or attempt == 2:
+                            if (
+                                segment.samples
+                                or attempt == 2
+                                or isinstance(error, SpeechProviderError)
+                                and not error.retryable
+                            ):
                                 raise
                             logger.warning(
                                 "Retrying undelivered voice segment response_id=%s "
-                                "segment_index=%s attempt=%s error=%s",
+                                "segment_index=%s attempt=%s error=%s provider_code=%s",
                                 turn.response_id,
                                 segment.index,
                                 attempt + 2,
                                 type(error).__name__,
+                                getattr(error, "code", None),
                             )
                             await tts_connections.aclose()
                             tts = await tts_connections.enter_async_context(
@@ -526,8 +532,17 @@ class VoiceConnection:
         except asyncio.CancelledError:
             turn.audio_status = "cancelled"
             raise
-        except Exception:
-            logger.exception("Voice synthesis failed for response %s", turn.response_id)
+        except Exception as error:
+            segment = turn.segments[-1] if turn.segments else None
+            logger.exception(
+                "Voice synthesis failed response_id=%s segment_index=%s chars=%s "
+                "samples=%s provider_code=%s",
+                turn.response_id,
+                segment.index if segment else None,
+                len(segment.text) if segment else 0,
+                segment.samples if segment else 0,
+                getattr(error, "code", None),
+            )
             turn.audio_status = "failed"
             turn.error_code = "tts_failed"
             await self.emit(

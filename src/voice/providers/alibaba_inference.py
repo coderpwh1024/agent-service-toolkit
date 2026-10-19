@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 from collections import deque
 from collections.abc import AsyncIterator
 from typing import Any, Literal
@@ -65,7 +66,13 @@ class InferenceStream:
         if header.get("task_id") != self.task_id:
             raise SpeechProviderError("Inference event belongs to a different task")
         if header.get("event") == "task-failed":
-            raise SpeechProviderError("Speech inference task failed")
+            code = str(header.get("error_code", "unknown"))
+            code = code if re.fullmatch(r"[A-Za-z0-9_.-]{1,96}", code) else "unknown"
+            raise SpeechProviderError(
+                f"Speech inference task failed: {code}",
+                code=code,
+                retryable=code not in {"InvalidParameter", "InvalidApiKey", "AccessDenied"},
+            )
         return event
 
     async def start(self) -> None:
