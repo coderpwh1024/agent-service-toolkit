@@ -38,6 +38,7 @@ from schema.models import (
 )
 from schema.prompts import Mem0PromptKeys, Mem0Prompts
 from schema.voice import VoiceOption, normalize_wake_word
+from voice.catalog import validate_speech_configuration
 
 
 class DatabaseType(StrEnum):
@@ -143,6 +144,12 @@ class Settings(BaseSettings):
     VOICE_REALTIME_PROXY: str | None = None
     VOICE_REALTIME_STT_MODEL: str = "qwen3-asr-flash-realtime"
     VOICE_REALTIME_TTS_MODEL: str = "qwen3-tts-flash-realtime"
+    VOICE_REALTIME_STT_PROTOCOL: Literal["auto", "realtime", "inference"] = "auto"
+    VOICE_REALTIME_TTS_PROTOCOL: Literal["auto", "realtime", "inference"] = "auto"
+    VOICE_REALTIME_STT_URL: str | None = None
+    VOICE_REALTIME_TTS_URL: str | None = None
+    VOICE_REALTIME_VOICES_MODEL: str | None = None
+    VOICE_REALTIME_VOICE_CATALOG: dict[str, list[VoiceOption]] = Field(default_factory=dict)
     VOICE_REALTIME_VOICES: list[VoiceOption] = Field(
         default_factory=lambda: [VoiceOption(id="Cherry", name="Cherry")]
     )
@@ -424,6 +431,8 @@ class Settings(BaseSettings):
         """Reject an enabled realtime voice service without configured voice options."""
         if self.VOICE_ENABLED and not self.VOICE_REALTIME_VOICES:
             raise ValueError("VOICE_REALTIME_VOICES must not be empty when voice is enabled")
+        if self.VOICE_ENABLED:
+            validate_speech_configuration(self)
 
     def require_mem0_configuration(self) -> None:
         key = self.MEM0_API_KEY or self.DASHSCOPE_API_KEY

@@ -5,7 +5,7 @@ import base64
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -13,10 +13,9 @@ from websockets.asyncio.client import ClientConnection, connect
 
 from core.settings import Settings
 from schema.voice import VoiceSession
-
-
-class SpeechProviderError(Exception):
-    pass
+from voice.catalog import speech_endpoint, speech_protocol
+from voice.providers.alibaba_inference import InferenceStream
+from voice.providers.errors import SpeechProviderError
 
 
 class AlibabaRealtime:
@@ -26,14 +25,23 @@ class AlibabaRealtime:
         self.settings = settings
 
     @asynccontextmanager
-    async def connection(self, model: str):
-        url = urlsplit(self.settings.VOICE_REALTIME_URL)
-        if url.scheme != "wss" or url.query or url.fragment:
-            raise SpeechProviderError("Realtime endpoint must be a wss URL without a query")
+    async def connection(self, model: str, role: Literal["stt", "tts"] = "stt"):
+        protocol = speech_protocol(
+            model, role, getattr(self.settings, f"VOICE_REALTIME_{role.upper()}_PROTOCOL")
+        )
+        url = urlsplit(
+            speech_endpoint(
+                self.settings.VOICE_REALTIME_URL,
+                protocol,
+                getattr(self.settings, f"VOICE_REALTIME_{role.upper()}_URL"),
+            )
+        )
         key = self.settings.DASHSCOPE_API_KEY
         if not key:
             raise SpeechProviderError("DASHSCOPE_API_KEY is required")
-        endpoint = urlunsplit(url._replace(query=urlencode({"model": model})))
+        endpoint = urlunsplit(
+            url._replace(query=urlencode({"model": model}) if protocol == "realtime" else "")
+        )
         async with connect(
             endpoint,
             additional_headers={"Authorization": f"Bearer {key.get_secret_value()}"},
@@ -51,7 +59,11 @@ class AlibabaRealtime:
         async with asyncio.timeout(self.settings.VOICE_UPSTREAM_TIMEOUT):
             await ws.send(json.dumps({"event_id": str(uuid4()), "type": event_type, **data}))
 
-    async def receive(self, ws: ClientConnection, *, timeout: bool = True) -> dict[str, Any]:
+    async def receive(
+        self, ws: ClientConnection | InferenceStream, *, timeout: bool = True
+    ) -> dict[str, Any]:
+        if isinstance(ws, InferenceStream):
+            return await ws.receive(timeout=timeout)
         async with asyncio.timeout(self.settings.VOICE_UPSTREAM_TIMEOUT if timeout else None):
             event = json.loads(await ws.recv())
         if not isinstance(event, dict):
@@ -70,6 +82,18 @@ class AlibabaRealtime:
     @asynccontextmanager
     async def recognize(self, session: VoiceSession):
         async with self.connection(self.settings.VOICE_REALTIME_STT_MODEL) as ws:
+            if (
+                speech_protocol(
+                    self.settings.VOICE_REALTIME_STT_MODEL,
+                    "stt",
+                    self.settings.VOICE_REALTIME_STT_PROTOCOL,
+                )
+                == "inference"
+            ):
+                stream = InferenceStream(ws, session, self.settings, "stt")
+                await stream.start()
+                yield stream
+                return
             config: dict[str, Any] = {
                 "input_audio_format": "pcm",
                 "sample_rate": 16000,
@@ -87,15 +111,31 @@ class AlibabaRealtime:
             await self.ready(ws)
             yield ws
 
-    async def append_audio(self, ws: ClientConnection, pcm: bytes) -> None:
+    async def append_audio(self, ws: ClientConnection | InferenceStream, pcm: bytes) -> None:
+        if isinstance(ws, InferenceStream):
+            await ws.append_audio(pcm)
+            return
         await self.send(ws, "input_audio_buffer.append", audio=base64.b64encode(pcm).decode())
 
-    async def commit_audio(self, ws: ClientConnection) -> None:
+    async def commit_audio(self, ws: ClientConnection | InferenceStream) -> None:
+        if isinstance(ws, InferenceStream):
+            await ws.commit_audio()
+            return
         await self.send(ws, "input_audio_buffer.commit")
 
     @asynccontextmanager
     async def synthesizer(self, session: VoiceSession):
-        async with self.connection(self.settings.VOICE_REALTIME_TTS_MODEL) as ws:
+        async with self.connection(self.settings.VOICE_REALTIME_TTS_MODEL, "tts") as ws:
+            if (
+                speech_protocol(
+                    self.settings.VOICE_REALTIME_TTS_MODEL,
+                    "tts",
+                    self.settings.VOICE_REALTIME_TTS_PROTOCOL,
+                )
+                == "inference"
+            ):
+                yield InferenceStream(ws, session, self.settings, "tts")
+                return
             await self.send(
                 ws,
                 "session.update",
@@ -112,7 +152,15 @@ class AlibabaRealtime:
             await self.ready(ws)
             yield ws
 
-    async def synthesize(self, ws: ClientConnection, text: str) -> AsyncIterator[bytes]:
+    async def synthesize(
+        self, ws: ClientConnection | InferenceStream, text: str
+    ) -> AsyncIterator[bytes]:
+        if isinstance(ws, InferenceStream):
+            async for chunk in ws.synthesize(
+                text, min(self.FIRST_AUDIO_TIMEOUT, self.settings.VOICE_UPSTREAM_TIMEOUT)
+            ):
+                yield chunk
+            return
         await self.send(ws, "input_text_buffer.append", text=text)
         await self.send(ws, "input_text_buffer.commit")
         first_audio_deadline = asyncio.get_running_loop().time() + min(

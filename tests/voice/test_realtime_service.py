@@ -22,6 +22,7 @@ from starlette.websockets import WebSocketDisconnect
 from core import settings
 from schema.voice import ZERO_UUID, VoiceOption, VoiceTurn, decode_audio, encode_audio
 from service import app
+from voice.providers.errors import SpeechProviderError
 
 
 class MemoryRepository:
@@ -275,6 +276,36 @@ def create(client, headers, **body):
     return response.json()["data"]
 
 
+def test_model_upgrade_advertises_bound_voices_and_rejects_stale_selection(voice_env, monkeypatch):
+    client, repo, agents, headers = voice_env
+    auth = headers()
+    previous = create(client, auth, voice="Cherry")
+    monkeypatch.setattr(settings, "VOICE_REALTIME_TTS_MODEL", "qwen-audio-3.1-tts-flash")
+    data = client.get("/voice/capabilities", headers=auth).json()["data"]
+    assert data["voice_catalog_model"] == "qwen-audio-3.1-tts-flash"
+    assert data["default_voice"] == "longanhuan_v3.1"
+    assert "Cherry" not in data["voices"]
+    assert data["input_format"] == "pcm16_16000_mono"
+    assert data["output_format"] == "pcm16_24000_mono"
+    assert client.post("/voice/sessions", headers=auth, json={"voice": "Cherry"}).status_code == 422
+    assert create(client, auth)["voice"] == data["default_voice"]
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with connect(client, previous, auth):
+            pytest.fail("A session with an obsolete voice must not connect")
+    assert caught.value.code == 4409
+
+
+def test_voice_language_is_checked_against_the_model_catalog(voice_env, monkeypatch):
+    client, repo, agents, headers = voice_env
+    monkeypatch.setattr(settings, "VOICE_REALTIME_TTS_MODEL", "qwen-audio-3.1-tts-flash")
+    auth = headers()
+    response = client.post(
+        "/voice/sessions", headers=auth, json={"voice": "yuxiaoyun_v3.1", "language": "en"}
+    )
+    assert response.status_code == 422
+    assert create(client, auth, voice="yuxiaoyun_v3.1", language="zh")["voice"] == "yuxiaoyun_v3.1"
+
+
 def event(ws, kind, **data):
     ws.send_json({"type": kind, "event_id": str(uuid4()), **data})
 
@@ -460,7 +491,8 @@ def test_audio_starts_while_model_is_still_generating_and_reports_latency(
 
 
 @pytest.mark.parametrize("failure", ["before_audio", "after_audio", "persistent"])
-def test_tts_timeout_retries_only_undelivered_segments(voice_env, monkeypatch, failure):
+@pytest.mark.parametrize("error_type", [TimeoutError, SpeechProviderError])
+def test_tts_failure_retries_only_undelivered_segments(voice_env, monkeypatch, failure, error_type):
     from service import voice as voice_routes
 
     connections = []
@@ -478,7 +510,7 @@ def test_tts_timeout_retries_only_undelivered_segments(voice_env, monkeypatch, f
             if len(attempts) == 2 or (failure == "persistent" and len(attempts) > 2):
                 if failure == "after_audio":
                     yield b"\0\0" * 480
-                raise TimeoutError("upstream stalled")
+                raise error_type("upstream stalled")
             yield b"\0\0" * 480
 
     client, repo, agents, headers = voice_env
@@ -556,8 +588,13 @@ def test_voice_capabilities_expose_compatible_ids_and_display_metadata(voice_env
     assert data["voices"] == ["Cherry", "Serena"]
     assert data["default_voice"] == "Cherry"
     assert data["voice_options"] == [
-        {"id": "Cherry", "name": "芊悦", "description": "阳光积极、亲切自然"},
-        {"id": "Serena", "name": "苏瑶", "description": "温柔自然"},
+        {
+            "id": "Cherry",
+            "name": "芊悦",
+            "description": "阳光积极、亲切自然",
+            "languages": ["zh", "en"],
+        },
+        {"id": "Serena", "name": "苏瑶", "description": "温柔自然", "languages": ["zh", "en"]},
     ]
     assert data["wake_word"]["enabled"] is True
     assert data["wake_word"]["keyword"] == "小美小美"

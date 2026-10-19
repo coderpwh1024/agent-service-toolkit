@@ -28,6 +28,7 @@ class VoiceOption(BaseModel):
     id: str = Field(min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=100)
     description: str = Field(default="", max_length=300)
+    languages: list[Literal["zh", "en"]] = Field(default=["zh", "en"], min_length=1, max_length=2)
 
     @model_validator(mode="before")
     @classmethod

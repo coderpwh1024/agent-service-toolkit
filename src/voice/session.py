@@ -43,6 +43,7 @@ from service.agent_runner import graph_events, thread_guard
 from service.utils import messages_from_checkpoint
 from voice.persistence import VoiceRepository
 from voice.providers.alibaba_realtime import AlibabaRealtime
+from voice.providers.errors import SpeechProviderError
 from voice.speech_output import SpeechText
 from voice.wake_word import match_wake_prefix
 
@@ -499,15 +500,16 @@ class VoiceConnection:
                             async for pcm in self.provider.synthesize(tts, text):
                                 await self.emit_audio(pcm, turn, segment)
                             break
-                        except TimeoutError:
+                        except (TimeoutError, SpeechProviderError) as error:
                             if segment.samples or attempt == 2:
                                 raise
                             logger.warning(
                                 "Retrying undelivered voice segment response_id=%s "
-                                "segment_index=%s attempt=%s",
+                                "segment_index=%s attempt=%s error=%s",
                                 turn.response_id,
                                 segment.index,
                                 attempt + 2,
+                                type(error).__name__,
                             )
                             await tts_connections.aclose()
                             tts = await tts_connections.enter_async_context(

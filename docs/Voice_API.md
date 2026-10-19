@@ -78,6 +78,59 @@ Content-Type: application/json
 
 返回的 `data.access_token` 是带 `sub`、`exp`、`aud` 和 `iss` 的 HS256 JWT，`data.expires_at` 是过期时间的 Unix 秒数。Flutter 后续 HTTP 和 WebSocket 握手都使用 `Authorization: Bearer <access_token>`。Token 用户不能读取其他用户的线程、语音会话、运行或反馈记录。已有令牌不会因配置变更自动延长；更新配置并重启服务后，用户下次登录获取的新令牌才有 15 天有效期。
 
+## 模型升级与音色绑定
+
+后端按模型家族选择百炼的两套流式协议，再转换成本文的统一协议。App 始终上传 16 kHz 单声道 PCM16、播放 24 kHz 单声道 PCM16，无需随上游模型版本修改音频帧。
+
+| 模型家族 | 上游协议 | 音色配置 |
+| --- | --- | --- |
+| `qwen3-asr-flash-realtime` 及日期快照 | Realtime：`session.update`、Base64 音频 | 不适用 |
+| `qwen-audio-<版本>-asr-flash-message/streaming` | Inference：`run-task`、二进制音频 | 不适用 |
+| `fun-asr-realtime`、16 kHz `paraformer-realtime` | Inference | 不适用 |
+| `qwen3-tts-*-realtime`、`qwen-tts-realtime` 及日期快照 | Realtime：文本缓冲、Base64 PCM | Flash 系统音色兼容原有 `voices`；VC/VD 必须绑定模型专属目录 |
+| `qwen-audio-3.0-tts-plus/flash`、`qwen-audio-3.1-tts-flash` | Inference：文本任务、二进制 PCM | 按模型选择内置系统音色，或使用模型专属目录 |
+| `cosyvoice-*` | Inference | 必须提供模型专属音色目录 |
+
+协议依据：[WebSocket 协议总览](https://help.aliyun.com/zh/model-studio/realtime-websocket-overview)、[ASR Message 客户端事件](https://help.aliyun.com/zh/model-studio/qwen-asr-message-client-events)、[ASR Message 服务端事件](https://help.aliyun.com/zh/model-studio/qwen-asr-message-server-events)、[TTS 客户端事件](https://help.aliyun.com/zh/model-studio/qwen-audio-tts-client-events)。音色依据：[Qwen Audio TTS 官方列表](https://help.aliyun.com/en/model-studio/qwen-audio-tts-voice-list)。内置目录是其中的系统音色子集，不是账号音色发现接口。
+
+例如使用 Qwen Audio 3.1 时，在已有 Nacos YAML 中修改以下节点即可，保留其他认证、存储配置：
+
+```yaml
+voice:
+  enabled: true
+  realtime:
+    url: wss://dashscope.aliyuncs.com/api-ws/v1/realtime
+    stt_model: qwen-audio-3.1-asr-flash-message
+    tts_model: qwen-audio-3.1-tts-flash
+    stt_protocol: auto
+    tts_protocol: auto
+```
+
+`auto` 会保留配置地址中的地域和 Workspace 域名，将路径切换为所选协议的 `/api-ws/v1/realtime` 或 `/api-ws/v1/inference`。不会跨地域回退。`stt_url`、`tts_url` 可分别指定完整 WSS 地址，适合专有网关；不允许 URL 内嵌凭据、查询串或 fragment，认证仍使用 `models.dashscope.api_key`。
+
+Qwen Audio 3.1 默认使用 `longanhuan_v3.1`，并公布其他匹配音色；不会把旧版的 `Cherry`、`Serena` 当成新模型的音色。需要定制或使用其他模型时，为模型配置明确的目录：
+
+```yaml
+voice:
+  realtime:
+    voice_catalog:
+      qwen-audio-3.1-tts-flash:
+        - id: longanlingxin_v3.1
+          name: 龙安灵心
+          description: 多语言与方言女声
+          languages: [zh, en]
+```
+
+查找顺序为：`voice_catalog` 中精确匹配当前模型的目录、`voices_model` 与当前模型相同时绑定的旧 `voices`、已知家族的内置目录。原有 Qwen Realtime 配置未指定 `voices_model` 时继续使用 `voices`，保持兼容。模型专属目录的 ID、支持语言及地域必须由部署者按供应商文档核实；复刻、设计音色也须绑定其实际目标模型。目录不会从旧模型自动迁移。每条音色的 `languages` 可配置 `zh`、`en`，默认两者；服务在创建会话时拒绝不支持的明确语言。
+
+同协议的快照升级无需改 App。新家族无法自动识别时，可显式设置 `stt_protocol` 或 `tts_protocol` 为 `realtime` / `inference`，同时提供正确地址和模型专属音色；这仅适用于事件结构兼容的流式模型。HTTP 文件转写、离线合成、8 kHz 专用识别、全模态对话或未来全新协议不能仅靠模型名兼容，需实现对应的转换后才能使用。未知家族或缺少目录会在启动校验时明确失败。
+
+Inference 识别按任务和句子标识归一化：中间结果替换显示，最终结果去重；手动模式聚合本次任务的句子，仅在提交完成时产生一次最终输入，然后启动下一任务。Inference TTS 为每个语音段创建独立任务并流式转发 PCM，保留首包超时、取消、回压和连接关闭行为。供应商错误不会被当成空转录或合成成功。
+
+`GET /voice/capabilities` 保留 `voices`、`default_voice`、`voice_options`，并增加 `voice_catalog_model`、音色 `languages` 和 `turn_detection_modes`。Flutter 每次建立会话前重新读取能力，旧音色失效时选用当前目录的默认音色；中文聊天只显示支持中文的音色，并校验目录模型和音频格式。已存储会话的音色若不属于当前模型，WebSocket 返回 4409，客户端需新建会话。
+
+配置仍在服务启动时从 Nacos 加载，修改模型或目录后需重启后端，再在 App 中重连。关闭 Nacos 时，上述新增字段分别对应 `VOICE_REALTIME_STT_PROTOCOL`、`VOICE_REALTIME_TTS_PROTOCOL`、`VOICE_REALTIME_STT_URL`、`VOICE_REALTIME_TTS_URL`、`VOICE_REALTIME_VOICES_MODEL`、`VOICE_REALTIME_VOICE_CATALOG`，目录环境变量使用 JSON。
+
 ## HTTP 接口
 
 | 方法与路径 | 用途 |

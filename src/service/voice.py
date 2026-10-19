@@ -16,6 +16,7 @@ from schema.voice import VoiceSession, VoiceSessionInput, client_event_adapter, 
 from service.access import authenticate, authorize_thread, bind_user, principal, repository
 from service.agent_runner import thread_guard
 from service.utils import ensure_model_available
+from voice.catalog import voice_options
 from voice.persistence import VoiceRepository
 from voice.providers.alibaba_realtime import AlibabaRealtime
 from voice.session import VoiceConnection
@@ -72,8 +73,8 @@ async def owned_session(repo: VoiceRepository, session_id: UUID, identity) -> Vo
 @router.get("/capabilities", response_model=ApiResponse[dict[str, Any]])
 async def capabilities(request: Request) -> ApiResponse[dict[str, Any]]:
     principal(request)
-    voice_options = settings.VOICE_REALTIME_VOICES
-    voice_ids = [voice.id for voice in voice_options]
+    options = voice_options(settings) if settings.VOICE_ENABLED else []
+    voice_ids = [voice.id for voice in options]
     return api_success(
         {
             "enabled": settings.VOICE_ENABLED,
@@ -85,9 +86,11 @@ async def capabilities(request: Request) -> ApiResponse[dict[str, Any]]:
             "max_audio_payload_bytes": 6400,
             "voices": voice_ids,
             "default_voice": voice_ids[0] if voice_ids else None,
-            "voice_options": [voice.model_dump() for voice in voice_options],
+            "voice_options": [voice.model_dump() for voice in options],
             "stt_model": settings.VOICE_REALTIME_STT_MODEL,
             "tts_model": settings.VOICE_REALTIME_TTS_MODEL,
+            "voice_catalog_model": settings.VOICE_REALTIME_TTS_MODEL,
+            "turn_detection_modes": ["server_vad", "manual"],
             "session_seconds": settings.VOICE_SESSION_SECONDS,
             "wake_word": {
                 "enabled": settings.VOICE_WAKE_ENABLED,
@@ -133,12 +136,16 @@ async def create_session(body: VoiceSessionInput, request: Request) -> ApiRespon
         agent = get_agent(body.agent_id)
     except KeyError:
         raise HTTPException(404, "Agent not found") from None
-    voice_ids = [voice.id for voice in settings.VOICE_REALTIME_VOICES]
+    options = voice_options(settings)
+    voice_ids = [voice.id for voice in options]
     if not voice_ids:
         raise HTTPException(503, "No realtime voices are configured")
     voice = body.voice or voice_ids[0]
     if voice not in voice_ids:
         raise HTTPException(422, "Unsupported voice")
+    selected = next(option for option in options if option.id == voice)
+    if body.language != "auto" and body.language not in selected.languages:
+        raise HTTPException(422, "The selected voice does not support this language")
     if body.model is not None:
         ensure_model_available(body.model)
     if body.activation == "wake_word":
@@ -220,6 +227,8 @@ async def voice_websocket(websocket: WebSocket, session_id: UUID):
         session = await owned_session(repo, session_id, identity)
         if session.status == "closed" or session.expires_at <= datetime.now(UTC):
             raise HTTPException(410, "Voice session expired or closed")
+        if session.voice not in {option.id for option in voice_options(settings)}:
+            raise HTTPException(409, "Speech configuration changed; create a new voice session")
         connections = websocket.app.state.voice_connections
         if len(connections) >= settings.VOICE_MAX_SESSIONS:
             raise HTTPException(429, "Voice capacity reached")

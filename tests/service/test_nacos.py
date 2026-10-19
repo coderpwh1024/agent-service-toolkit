@@ -7,6 +7,7 @@ from v2.nacos.ai.model.prompt.prompt import Prompt
 
 from core.settings import Settings
 from service import nacos
+from voice.catalog import voice_options
 
 
 @pytest.fixture(autouse=True)
@@ -182,6 +183,34 @@ def test_nacos_remote_config_must_resolve_model_provider() -> None:
         nacos.apply_remote_settings(config, "RAG_TOP_K: 7\n")
 
 
+def test_nacos_voice_catalog_and_protocol_overrides_are_applied() -> None:
+    config = make_settings()
+    updated = nacos.apply_remote_settings(
+        config,
+        """voice:
+  enabled: true
+  realtime:
+    stt_model: qwen-audio-3.1-asr-flash-message
+    tts_model: custom-tts
+    tts_protocol: inference
+    stt_url: wss://speech.example.com/asr
+    tts_url: wss://speech.example.com/tts
+    voices_model: old-model
+    voice_catalog:
+      custom-tts:
+        - id: custom-voice
+          name: 自定义音色
+          languages: [zh]
+""",
+    )
+    assert config.VOICE_REALTIME_TTS_PROTOCOL == "inference"
+    assert config.VOICE_REALTIME_STT_URL == "wss://speech.example.com/asr"
+    assert config.VOICE_REALTIME_TTS_URL == "wss://speech.example.com/tts"
+    assert "VOICE_REALTIME_VOICE_CATALOG" in updated
+    assert voice_options(config)[0].id == "custom-voice"
+    assert voice_options(config)[0].languages == ["zh"]
+
+
 def test_nested_nacos_config_maps_sections_to_settings() -> None:
     config = make_settings()
 
@@ -292,6 +321,9 @@ voice:
     proxy: null
     stt_model: realtime-stt
     tts_model: realtime-tts
+    stt_protocol: realtime
+    tts_protocol: realtime
+    voices_model: realtime-tts
     voices:
       - id: Cherry
         name: 芊悦
