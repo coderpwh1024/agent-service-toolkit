@@ -33,6 +33,40 @@ async def test_sdk_scope_and_bounded_context(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_rerank_uses_larger_scoped_candidate_pool_and_falls_back(monkeypatch):
+    monkeypatch.setattr(settings, "MEM0_TOP_K", 2)
+    monkeypatch.setattr(settings, "MEM0_RERANK_CANDIDATES", 8)
+    memory = Mock()
+    memory.search.return_value = {
+        "results": [{"memory": "tea"}, {"memory": "coffee"}, {"memory": "water"}]
+    }
+    reranker = Mock()
+    reranker.rerank.return_value = [{"memory": "water"}, {"memory": "coffee"}]
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        service = Mem0Service(memory, executor, reranker=reranker)
+        assert await service.search("drink", "alice") == ["water", "coffee"]
+        memory.search.assert_called_with(
+            query="drink",
+            filters={"user_id": "alice", "agent_id": AGENT_ID},
+            top_k=8,
+            threshold=settings.MEM0_THRESHOLD,
+        )
+        reranker.rerank.side_effect = ConnectionError("unavailable")
+        assert await service.search("drink", "alice") == ["tea", "coffee"]
+
+
+@pytest.mark.asyncio
+async def test_empty_candidates_skip_reranker():
+    memory = Mock()
+    memory.search.return_value = {"results": []}
+    reranker = Mock()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        service = Mem0Service(memory, executor, reranker=reranker)
+        assert await service.search("drink", "alice") == []
+        reranker.rerank.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_cancellation_retains_worker_capacity():
     started, release = Event(), Event()
 
@@ -96,6 +130,31 @@ async def test_lifecycle_initialization_and_cleanup(monkeypatch, failure):
     assert mem0_service._active_service is None
     if failure in {None, "close"}:
         closer.assert_called_once_with(memory)
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_closes_reranker_on_build_failure(monkeypatch):
+    from pydantic import SecretStr
+
+    from memory import mem0_service
+
+    monkeypatch.setattr(settings, "MEM0_ENABLED", True)
+    monkeypatch.setattr(settings, "MEM0_API_KEY", SecretStr("test"))
+    monkeypatch.setattr(settings, "MEM0_RERANK_MODEL", "qwen3.7-text-rerank")
+    monkeypatch.setattr(settings, "MEM0_RERANK_URL", "https://example.test/rerank")
+    pool = Mock()
+    reranker = Mock()
+    builder = Mock(side_effect=ValueError("build failed"))
+    monkeypatch.setattr(mem0_service, "ConnectionPool", lambda *args, **kwargs: pool)
+    monkeypatch.setattr(mem0_service, "Mem0Reranker", Mock(return_value=reranker))
+    monkeypatch.setattr(mem0_service, "build_memory", builder)
+    monkeypatch.setattr(mem0_service, "get_postgres_connection_string", lambda: "dbname=test")
+    monkeypatch.setattr(mem0_service, "validate_postgres_config", lambda: None)
+    with pytest.raises(ValueError, match="build failed"):
+        async with mem0_service.mem0_lifespan():
+            pass
+    reranker.close.assert_called_once()
+    pool.close.assert_called_once()
 
 
 def test_enabled_memory_requires_key(monkeypatch):

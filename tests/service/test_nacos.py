@@ -714,6 +714,10 @@ def test_mem0_nested_configuration_and_secret():
     embedding_dims: 768
     top_k: 3
     threshold: 0.4
+    rerank_model: qwen3.7-text-rerank
+    rerank_url: https://example.test/api/v1/services/rerank/text-rerank/text-rerank
+    rerank_candidates: 12
+    rerank_timeout_seconds: 4
     timeout_seconds: 10
     max_context_chars: 3000
     chat_context_tokens: 8000
@@ -725,6 +729,9 @@ def test_mem0_nested_configuration_and_secret():
     assert config.MEM0_EMBEDDING_DIMS == 768
     assert config.MEM0_LLM_MODEL == "extraction-model"
     assert config.MEM0_TOP_K == 3
+    assert config.MEM0_RERANK_MODEL == "qwen3.7-text-rerank"
+    assert config.MEM0_RERANK_CANDIDATES == 12
+    assert config.MEM0_RERANK_TIMEOUT_SECONDS == 4
     assert config.MEM0_CHAT_CONTEXT_TOKENS == 8000
     assert "memory-test-key" not in repr(config)
 

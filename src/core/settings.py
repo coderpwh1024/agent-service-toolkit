@@ -272,13 +272,17 @@ class Settings(BaseSettings):
 
     MEM0_ENABLED: bool = False
     MEM0_COLLECTION_NAME: str = Field(default="mem0_chat", pattern=r"^mem0_[a-z][a-z0-9_]{0,39}$")
-    MEM0_LLM_MODEL: str = Field(default="qwen-plus", min_length=1)
+    MEM0_LLM_MODEL: str = Field(default="qwen3.8-max", min_length=1)
     MEM0_API_KEY: SecretStr | None = None
     MEM0_BASE_URL: Annotated[str, BeforeValidator(check_str_is_http)] | None = None
     MEM0_EMBEDDING_MODEL: str | None = Field(default=None, min_length=1)
     MEM0_EMBEDDING_DIMS: int = Field(default=1024, ge=1, le=4096)
     MEM0_TOP_K: int = Field(default=5, ge=1, le=50)
     MEM0_THRESHOLD: float = Field(default=0.3, ge=0, le=1)
+    MEM0_RERANK_MODEL: str | None = Field(default=None, min_length=1)
+    MEM0_RERANK_URL: Annotated[str, BeforeValidator(check_str_is_http)] | None = None
+    MEM0_RERANK_CANDIDATES: int = Field(default=20, ge=1, le=100)
+    MEM0_RERANK_TIMEOUT_SECONDS: float = Field(default=5, ge=1, le=30)
     MEM0_TIMEOUT_SECONDS: float = Field(default=20, ge=1, le=120)
     MEM0_MAX_CONTEXT_CHARS: int = Field(default=6000, ge=100, le=50000)
     MEM0_CHAT_CONTEXT_TOKENS: int = Field(
@@ -463,6 +467,8 @@ class Settings(BaseSettings):
         key = self.MEM0_API_KEY or self.DASHSCOPE_API_KEY
         if self.MEM0_ENABLED and (key is None or not key.get_secret_value().strip()):
             raise ValueError("MEM0_API_KEY or DASHSCOPE_API_KEY is required when MEM0_ENABLED=true")
+        if self.MEM0_ENABLED and bool(self.MEM0_RERANK_MODEL) != bool(self.MEM0_RERANK_URL):
+            raise ValueError("MEM0_RERANK_MODEL and MEM0_RERANK_URL must be configured together")
 
     @computed_field  # type: ignore[prop-decorator]
     @property

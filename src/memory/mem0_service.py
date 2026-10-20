@@ -16,6 +16,7 @@ from psycopg_pool import ConnectionPool
 
 from core.settings import settings
 from memory.mem0_history import PostgresHistory
+from memory.mem0_rerank import Mem0Reranker
 from memory.mem0_sdk import build_memory, close_memory
 from memory.postgres import get_postgres_connection_string, validate_postgres_config
 from schema.memory import (
@@ -44,9 +45,17 @@ class MemoryConflictError(RuntimeError):
 
 
 class Mem0Service:
-    def __init__(self, memory: Any, executor: ThreadPoolExecutor, *, max_pending: int = 8) -> None:
+    def __init__(
+        self,
+        memory: Any,
+        executor: ThreadPoolExecutor,
+        *,
+        reranker: Mem0Reranker | None = None,
+        max_pending: int = 8,
+    ) -> None:
         self.memory = memory
         self.executor = executor
+        self.reranker = reranker
         self.pending: set[asyncio.Future[Any]] = set()
         self.max_pending = max_pending
 
@@ -92,19 +101,35 @@ class Mem0Service:
             )
             raise
 
-    async def search(self, query: str, user_id: str) -> list[str]:
-        result = await self._call(
-            "search",
-            self.memory.search,
-            scope_user=user_id,
+    def _search_candidates(self, query: str, user_id: str, top_k: int) -> list[dict[str, Any]]:
+        candidate_count = max(top_k, settings.MEM0_RERANK_CANDIDATES) if self.reranker else top_k
+        result = self.memory.search(
             query=query,
             filters={"user_id": user_id, "agent_id": AGENT_ID},
-            top_k=settings.MEM0_TOP_K,
+            top_k=candidate_count,
             threshold=settings.MEM0_THRESHOLD,
+        )
+        candidates = result.get("results", [])
+        if not self.reranker or len(candidates) < 2:
+            return candidates[:top_k]
+        try:
+            return self.reranker.rerank(query, candidates, top_k)
+        except Exception as exc:
+            logger.warning("Mem0 rerank failed error_type=%s", type(exc).__name__)
+            return candidates[:top_k]
+
+    async def search(self, query: str, user_id: str) -> list[str]:
+        candidates = await self._call(
+            "search",
+            self._search_candidates,
+            scope_user=user_id,
+            query=query,
+            top_k=settings.MEM0_TOP_K,
+            user_id=user_id,
         )
         memories: list[str] = []
         remaining = settings.MEM0_MAX_CONTEXT_CHARS
-        for item in result.get("results", []):
+        for item in candidates:
             text = item.get("memory")
             if isinstance(text, str) and text.strip() and remaining > 0:
                 memories.append(text[:remaining])
@@ -281,13 +306,8 @@ class Mem0Service:
         )
 
     def _search_records(self, query: str, user_id: str) -> MemoryList:
-        result = self.memory.search(
-            query=query,
-            filters={"user_id": user_id, "agent_id": AGENT_ID},
-            top_k=5,
-            threshold=settings.MEM0_THRESHOLD,
-        )
-        records = [self._get(item["id"], user_id) for item in result.get("results", [])[:5]]
+        candidates = self._search_candidates(query, user_id, 5)
+        records = [self._get(item["id"], user_id) for item in candidates]
         return MemoryList(memories=records)
 
     async def search_memory_records(self, query: str, user_id: str) -> MemoryList:
@@ -399,7 +419,18 @@ async def mem0_lifespan() -> AsyncIterator[None]:
         },
     )
     memory = None
+    reranker = None
     try:
+        if settings.MEM0_RERANK_MODEL and settings.MEM0_RERANK_URL:
+            key = settings.MEM0_API_KEY or settings.DASHSCOPE_API_KEY
+            if key is None:
+                raise ValueError("Mem0 reranking requires an API key")
+            reranker = Mem0Reranker(
+                settings.MEM0_RERANK_MODEL,
+                settings.MEM0_RERANK_URL,
+                key.get_secret_value(),
+                settings.MEM0_RERANK_TIMEOUT_SECONDS,
+            )
         await asyncio.to_thread(pool.open, wait=True, timeout=settings.MEM0_TIMEOUT_SECONDS)
         initialization = asyncio.get_running_loop().run_in_executor(
             executor, build_memory, settings, pool
@@ -409,7 +440,7 @@ async def mem0_lifespan() -> AsyncIterator[None]:
         except asyncio.CancelledError:
             memory = await initialization
             raise
-        _active_service = Mem0Service(memory, executor)
+        _active_service = Mem0Service(memory, executor, reranker=reranker)
         logger.info(
             "Mem0 initialized backend=pgvector collection=%s", settings.MEM0_COLLECTION_NAME
         )
@@ -424,7 +455,11 @@ async def mem0_lifespan() -> AsyncIterator[None]:
                 await asyncio.to_thread(close_memory, memory)
         finally:
             try:
-                await asyncio.to_thread(executor.shutdown, wait=True, cancel_futures=True)
+                if reranker is not None:
+                    await asyncio.to_thread(reranker.close)
             finally:
-                await asyncio.to_thread(pool.close)
+                try:
+                    await asyncio.to_thread(executor.shutdown, wait=True, cancel_futures=True)
+                finally:
+                    await asyncio.to_thread(pool.close)
         logger.info("Mem0 resources closed")

@@ -11,18 +11,24 @@ memory:
   mem0:
     enabled: true
     collection_name: mem0_chat
-    llm_model: qwen-plus
+    llm_model: qwen3.8-max
     embedding_model: qwen3.7-text-embedding-flash
     embedding_dims: 1024
     top_k: 5
     threshold: 0.3
+    rerank_model: qwen3.7-text-rerank
+    rerank_url: https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank
+    rerank_candidates: 20
+    rerank_timeout_seconds: 5
     timeout_seconds: 20
     max_context_chars: 6000
 ```
 
 默认复用 `models.dashscope.api_key` 和 `base_url`；未单独配置 `embedding_model` 时也复用全局模型。上述示例为 Mem0 单独指定了 1024 维的 flash 模型，避免改变其他功能使用的全局 embedding 模型。也可在 `memory.mem0` 中单独设置 `api_key` 和 `base_url`，接入支持聊天 JSON 输出与 embeddings 的 OpenAI 兼容服务。`llm_model` 是记忆提取模型，与用户在聊天界面选择的回答模型独立。`embedding_dims` 必须与供应商实际支持的 dimensions 参数一致；启用前确认模型可用性与配额。
 
-关闭 Nacos 时使用对应的 `MEM0_ENABLED`、`MEM0_COLLECTION_NAME`、`MEM0_LLM_MODEL`、`MEM0_API_KEY`、`MEM0_BASE_URL`、`MEM0_EMBEDDING_MODEL`、`MEM0_EMBEDDING_DIMS`、`MEM0_TOP_K`、`MEM0_THRESHOLD`、`MEM0_TIMEOUT_SECONDS` 和 `MEM0_MAX_CONTEXT_CHARS` 环境变量。密钥字段使用 `SecretStr`。默认 `MEM0_ENABLED=false`，让现有部署可以先完成数据库准备；此时新 agent 只有会话历史，响应中会返回 `memory_status=disabled`。远程配置只在启动时加载，修改后重启服务。
+长期记忆检索先由 Mem0 在当前用户和智能体范围内进行向量召回，并融合 PostgreSQL 全文检索及可用的实体信号。启用 `rerank_model` 后，先取最多 `rerank_candidates` 条通过 `threshold` 的候选，再由百炼 `qwen3.7-text-rerank` 重排序，最后取 `top_k` 条传给回答模型。记忆管理中的按主题查找使用同一流程。候选不足两条时不发起重排序；重排序接口失败或返回无效结果时记录错误类型，并按原检索顺序取前 `top_k` 条。重排序请求只发送候选记忆文本和查询；用户隔离在召回时完成。请求内查询及单条候选最多发送 2000 字符，原始记忆不被截断或改写。该排序模型使用独立的 DashScope HTTP 接口，`rerank_url` 不应填写聊天模型的 `/compatible-mode/v1` 地址；默认复用 Mem0 的 API Key。关闭重排序时同时删除 `rerank_model` 与 `rerank_url`。参考[百炼文本排序 API](https://help.aliyun.com/zh/model-studio/text-rerank-api)。
+
+关闭 Nacos 时使用对应的 `MEM0_ENABLED`、`MEM0_COLLECTION_NAME`、`MEM0_LLM_MODEL`、`MEM0_API_KEY`、`MEM0_BASE_URL`、`MEM0_EMBEDDING_MODEL`、`MEM0_EMBEDDING_DIMS`、`MEM0_TOP_K`、`MEM0_THRESHOLD`、`MEM0_RERANK_MODEL`、`MEM0_RERANK_URL`、`MEM0_RERANK_CANDIDATES`、`MEM0_RERANK_TIMEOUT_SECONDS`、`MEM0_TIMEOUT_SECONDS` 和 `MEM0_MAX_CONTEXT_CHARS` 环境变量。密钥字段使用 `SecretStr`。默认 `MEM0_ENABLED=false`，让现有部署可以先完成数据库准备；此时新 agent 只有会话历史，响应中会返回 `memory_status=disabled`。远程配置只在启动时加载，修改后重启服务。
 
 `mem0-chatbot` 的回答上下文最多包含当前线程最近 20 条用户和助手消息，包含本轮用户输入；用户消息和助手消息各算一条，不是 20 轮。系统规则和本轮检索出的长期记忆单独加入，不占这 20 条名额。语音中断后的播放说明使用助手角色，也计入消息窗口。完整聊天检查点和长期记忆继续保留，窗口之外的对话不会从数据库删除；长期事实仍可跨线程检索。原有 `chatbot` Agent 保持原来的上下文行为。
 

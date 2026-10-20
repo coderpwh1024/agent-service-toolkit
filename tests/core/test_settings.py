@@ -85,6 +85,34 @@ def test_mem0_chat_budget_rejects_invalid_limits(budget):
         Settings(_env_file=None, MEM0_CHAT_CONTEXT_TOKENS=budget)
 
 
+def test_mem0_reranker_requires_model_and_url_together():
+    from pydantic import SecretStr
+
+    for options in (
+        {"MEM0_RERANK_MODEL": "qwen3.7-text-rerank"},
+        {"MEM0_RERANK_URL": "https://example.test/rerank"},
+    ):
+        config = Settings(
+            _env_file=None,
+            USE_FAKE_MODEL=True,
+            MEM0_ENABLED=True,
+            MEM0_API_KEY=SecretStr("test"),
+            **options,
+        )
+        with pytest.raises(ValueError, match="MEM0_RERANK_MODEL and MEM0_RERANK_URL"):
+            config.require_mem0_configuration()
+
+    config = Settings(
+        _env_file=None,
+        USE_FAKE_MODEL=True,
+        MEM0_ENABLED=True,
+        MEM0_API_KEY=SecretStr("test"),
+        MEM0_RERANK_MODEL="qwen3.7-text-rerank",
+        MEM0_RERANK_URL="https://example.test/rerank",
+    )
+    config.require_mem0_configuration()
+
+
 def test_selected_app_environment_uses_dotenv_and_process_override(tmp_path: Path):
     dotenv_path = tmp_path / ".env"
     dotenv_path.write_text("APP_ENV=test\n", encoding="utf-8")
