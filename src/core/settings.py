@@ -188,13 +188,13 @@ class Settings(BaseSettings):
     VOICE_WAKE_ENABLED: bool = True
     VOICE_WAKE_WORD: str = Field(default="小美小美", min_length=2, max_length=40)
     VOICE_WAKE_CONFIRM_WITH_ASR: bool = True
-    VOICE_WAKE_PRE_ROLL_MS: int = Field(default=2200, ge=400, le=2500)
+    VOICE_WAKE_PRE_ROLL_MS: int = Field(default=4000, ge=400, le=6000)
     VOICE_WAKE_CONFIRM_SECONDS: float = Field(default=10, ge=2, le=30)
     VOICE_WAKE_GREETING: str = Field(
         default="我在，小美随时为你服务。", min_length=1, max_length=100
     )
-    VOICE_WAKE_KWS_SCORE: float = Field(default=1.0, ge=0.1, le=10)
-    VOICE_WAKE_KWS_THRESHOLD: float = Field(default=0.5, ge=0.01, le=1)
+    VOICE_WAKE_KWS_SCORE: float = Field(default=1.5, ge=0.1, le=10)
+    VOICE_WAKE_KWS_THRESHOLD: float = Field(default=0.25, ge=0.01, le=1)
     VOICE_CLIENT_VAD_RMS_DBFS: float = Field(default=-42, ge=-80, le=-10)
     VOICE_CLIENT_VAD_FRAMES: int = Field(default=3, ge=1, le=20)
     VOICE_AUDIO_METRICS_SECONDS: int = Field(default=5, ge=2, le=60)

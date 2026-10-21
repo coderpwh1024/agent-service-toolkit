@@ -301,7 +301,10 @@ class VoiceConnection:
                     raise ValueError("Invalid input audio sequence or connection")
                 self.input_sequence = seq
                 self.input_samples += len(pcm) // 2
-                if self.input_samples > (time.monotonic() - self.started + 3) * 16000:
+                pre_roll = (
+                    self.session.pre_roll_samples if self.session.activation == "wake_word" else 0
+                )
+                if self.input_samples > pre_roll + (time.monotonic() - self.started + 3) * 16000:
                     raise ValueError("Audio must be paced in realtime")
                 async with asyncio.timeout(2):
                     await self.audio_in.put(pcm)

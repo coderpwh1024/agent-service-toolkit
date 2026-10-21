@@ -1683,3 +1683,56 @@ def test_audio_transcript_sends_email_and_speaks_actual_result(
     if delivery_status == "scheduled":
         assert service.send.await_args.kwargs["send_at"] == target
     assert len(repo.records) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("wake_activation", [True, False])
+async def test_audio_pacing_accounts_for_declared_wake_preroll(wake_activation):
+    from schema.voice import VoiceSession
+    from voice.session import VoiceConnection
+
+    session = VoiceSession(
+        user_id="synthetic-wake",
+        voice="Cherry",
+        expires_at=datetime.now(UTC) + timedelta(minutes=1),
+        activation="wake_word" if wake_activation else "tap",
+        wake_word="小美小美" if wake_activation else None,
+        pre_roll_samples=64000 if wake_activation else 0,
+    )
+    websocket = Mock()
+    connection = VoiceConnection(websocket, session, Mock(), Mock(), Mock(), settings)
+    frames = [
+        {
+            "type": "websocket.receive",
+            "bytes": encode_audio(
+                b"\0\0" * 3200, connection.connection_id, str(ZERO_UUID), 0, sequence, kind=1
+            ),
+        }
+        for sequence in range(25)
+    ]
+    websocket.receive = AsyncMock(side_effect=[*frames, {"type": "websocket.disconnect"}])
+    if wake_activation:
+        await connection.receiver()
+        assert connection.audio_in.qsize() == 25
+        assert connection.input_samples == 80000
+    else:
+        with pytest.raises(ValueError, match="paced in realtime"):
+            await connection.receiver()
+
+
+def test_wake_preroll_can_cover_a_slow_double_call(voice_env, monkeypatch):
+    client, _, _, headers = voice_env
+    monkeypatch.setattr(settings, "VOICE_WAKE_PRE_ROLL_MS", 4000)
+    auth = headers()
+    capabilities = client.get("/voice/capabilities", headers=auth).json()["data"]
+    assert capabilities["wake_word"]["pre_roll_ms"] == 4000
+    session = create(
+        client, auth, activation="wake_word", wake_word="小美小美", pre_roll_samples=64000
+    )
+    assert session["pre_roll_samples"] == 64000
+    rejected = client.post(
+        "/voice/sessions",
+        headers=auth,
+        json={"activation": "wake_word", "wake_word": "小美小美", "pre_roll_samples": 96000},
+    )
+    assert rejected.status_code == 422

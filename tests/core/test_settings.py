@@ -56,7 +56,9 @@ def test_settings_default_values():
     assert settings.NACOS_SERVICE_NAME == "agent-service-toolkit"
     assert [voice.id for voice in settings.VOICE_REALTIME_VOICES] == ["Cherry"]
     assert settings.VOICE_WAKE_WORD == "小美小美"
-    assert settings.VOICE_WAKE_PRE_ROLL_MS == 2200
+    assert settings.VOICE_WAKE_PRE_ROLL_MS == 4000
+    assert settings.VOICE_WAKE_KWS_SCORE == 1.5
+    assert settings.VOICE_WAKE_KWS_THRESHOLD == 0.25
 
 
 @pytest.mark.parametrize("keyword", ["小美", "小美小美", "小美，小美", "小美， 小美。"])

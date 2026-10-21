@@ -50,7 +50,7 @@ class VoiceSessionInput(BaseModel):
     activation: Literal["tap", "wake_word"] = "tap"
     wake_word: str | None = Field(default=None, min_length=1, max_length=40)
     wake_engine: str | None = Field(default=None, min_length=1, max_length=100)
-    pre_roll_samples: int = Field(default=0, ge=0, le=48000)
+    pre_roll_samples: int = Field(default=0, ge=0, le=96000)
 
     @model_validator(mode="after")
     def validate_activation(self) -> "VoiceSessionInput":
