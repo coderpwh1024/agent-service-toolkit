@@ -9,6 +9,7 @@ import pytest
 from schema.video import (
     ProviderResult,
     VideoCreate,
+    VideoEdit,
     VideoListQuery,
     VideoRecord,
     VideoStatus,
@@ -110,6 +111,73 @@ def service():
         "https://cdn.example/video.mp4",
     )
     return VideoService(repo, provider, storage, 0)
+
+
+@pytest.mark.asyncio
+async def test_edit_is_new_idempotent_task_with_original_preserved(service):
+    source = record(
+        status="SUCCEEDED",
+        storage_status="STORED",
+        qiniu_video_url="https://cdn.example/original.mp4",
+        qiniu_object_key="original.mp4",
+    )
+    service.repo.records[source.id] = source
+    first = await service.edit(12, "edit-key", 1, "改为水墨风格", audio_setting="origin")
+    second = await service.edit(12, "edit-key", 1, "改为水墨风格", audio_setting="origin")
+    assert first.id == second.id and first.id != source.id
+    service.provider.create.assert_awaited_once()
+    body = service.provider.create.await_args.args[0]
+    assert isinstance(body, VideoEdit)
+    assert body.source_record_id == 1 and body.watermark is False
+    assert body.audio_setting == "origin"
+    assert service.repo.records[1] == source
+    assert (
+        VideoRecord.model_validate(
+            service.repo.records[first.id].model_dump(mode="json")
+        ).request_payload
+        == body
+    )
+    service.provider.query.return_value = ProviderResult.model_validate(
+        {
+            "output": {
+                "task_id": "task-123",
+                "task_status": "SUCCEEDED",
+                "video_url": "https://test.aliyuncs.com/edit.mp4",
+            }
+        }
+    )
+    ready = await service.query(first.id, 12)
+    assert ready.storage_status == "STORED"
+    service.storage.archive.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("condition", ["other_user", "unfinished", "ratio", "invalid_resolution"])
+async def test_edit_rejects_invalid_source_or_parameters_before_reservation(service, condition):
+    source = record(
+        status="SUCCEEDED",
+        storage_status="STORED",
+        qiniu_video_url="https://cdn.example/original.mp4",
+        qiniu_object_key="original.mp4",
+    )
+    if condition == "other_user":
+        source.user_id = 13
+    elif condition == "unfinished":
+        source.status = "RUNNING"
+        source.storage_status = "NOT_READY"
+    elif condition == "ratio":
+        source.request_payload = source.request_payload.model_copy(update={"ratio": "1:3"})
+    service.repo.records[1] = source
+    with pytest.raises((LookupError, ValueError)):
+        await service.edit(
+            12,
+            "edit-key",
+            1,
+            "水墨风格",
+            resolution="480P" if condition == "invalid_resolution" else "1080P",
+        )
+    assert len(service.repo.records) == 1
+    service.provider.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio

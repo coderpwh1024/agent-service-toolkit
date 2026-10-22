@@ -8,6 +8,7 @@ import logging
 from schema.video import (
     ProviderResult,
     VideoCreate,
+    VideoEdit,
     VideoListQuery,
     VideoRecord,
     VideoStatus,
@@ -34,6 +35,10 @@ class VideoBusyError(RuntimeError):
     pass
 
 
+class VideoEditInputError(ValueError):
+    pass
+
+
 def public_task(record: VideoRecord) -> VideoTask:
     return VideoTask.model_validate(record.model_dump())
 
@@ -52,8 +57,49 @@ class VideoService:
         self.service_account_id = service_account_id
 
     async def create(self, user_id: int, key: str, body: VideoCreate) -> VideoTask:
+        return await self._submit(user_id, key, body)
+
+    async def edit(
+        self,
+        user_id: int,
+        key: str,
+        source_record_id: int,
+        prompt: str,
+        *,
+        resolution: str = "1080P",
+        audio_setting: str = "auto",
+        seed: int | None = None,
+    ) -> VideoTask:
+        source = await self.repo.get(source_record_id, user_id)
+        if source is None:
+            raise LookupError("未找到当前用户的视频，请核对本地视频编号")
+        if (
+            source.status != VideoStatus.SUCCEEDED
+            or source.storage_status != VideoStorageStatus.STORED
+            or not source.qiniu_video_url
+        ):
+            raise VideoEditInputError("原视频尚未生成并完成转存，请先查询进度，完成后再编辑")
+        numerator, denominator = source.request_payload.ratio.split(":")
+        if not 0.4 <= int(numerator) / int(denominator) <= 2.5:
+            raise VideoEditInputError("原视频宽高比超出编辑模型支持的 1:2.5 至 2.5:1 范围")
+        body = VideoEdit.model_validate(
+            {
+                "source_record_id": source_record_id,
+                "source_url": source.qiniu_video_url,
+                "prompt": prompt,
+                "resolution": resolution,
+                "audio_setting": audio_setting,
+                "seed": seed,
+                "duration": source.request_payload.duration,
+                "ratio": source.request_payload.ratio,
+                "watermark": False,
+            }
+        )
+        return await self._submit(user_id, key, body)
+
+    async def _submit(self, user_id: int, key: str, body: VideoCreate | VideoEdit) -> VideoTask:
         request_hash = hashlib.sha256(
-            json.dumps(body.model_dump(), sort_keys=True, ensure_ascii=False).encode()
+            json.dumps(body.model_dump(mode="json"), sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
         logger.info(
             "视频生成入参：用户ID=%s 请求摘要=%s 模型=%s 时长=%s",

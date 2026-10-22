@@ -6,7 +6,7 @@
 
 ## 启用服务
 
-`chatbot` 和 `mem0-chatbot` 也支持[视频语音控制](Video_API.md#通过语音生成和查询)。启用原有视频与语音配置后，可以说“生成一个五秒海边日落的视频”“刚才的视频好了吗”或“查询第 123 号视频”。继续使用本页现有的语音会话、音频和播放协议；视频结果通过现有 `agent.custom` 事件返回，`data.type` 为 `video.task`，包含任务状态和转存成功后的七牛链接。客户端需读取该事件展示视频；语音只播报编号和真实状态。
+启用 Nacos 管理的[视频 Skill](Video_API.md#nacos-视频-skill) 后，`chatbot` 和 `mem0-chatbot` 支持语音生成视频、查询详情、分页列表、统计数量和编辑本人已转存的视频。通过结构化意图识别触发，不使用视频关键词正则。结果经通用 `agent.custom` 返回，`data.type` 为 `video.task`、`video.list` 或 `video.count`；音频、播放和会话协议保持不变。现有三个视频 HTTP 接口继续保留。
 
 语音配置统一维护在 Nacos 的 `agent-service-toolkit.yaml` 中，至少配置：
 

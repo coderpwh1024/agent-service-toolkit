@@ -21,7 +21,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.skills import EmailSkill
+from core.skills import EmailSkill, SkillDefinition
 from schema.models import (
     AlibabaModelName,
     AllModelEnum,
@@ -302,6 +302,19 @@ class Settings(BaseSettings):
 
     VIDEO_ENABLED: bool = False
     VIDEO_API_BASE_URL: str = "https://dashscope.aliyuncs.com/api/v1"
+    VIDEO_SKILL_ENABLED: bool = False
+    VIDEO_SKILL_VERSION: str | None = Field(default=None, min_length=1)
+    VIDEO_SKILL_LABEL: str = Field(default="latest", min_length=1)
+    VIDEO_SKILL_TIMEOUT_SECONDS: float = Field(default=20, ge=1, le=120)
+    _video_skill: SkillDefinition | None = PrivateAttr(default=None)
+
+    @property
+    def video_skill(self) -> SkillDefinition | None:
+        return self._video_skill
+
+    @video_skill.setter
+    def video_skill(self, value: SkillDefinition | None) -> None:
+        self._video_skill = value
 
     def require_video_configuration(self) -> None:
         required = (

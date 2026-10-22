@@ -13,7 +13,7 @@ from psycopg.sql import SQL
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
-from schema.video import VideoCreate, VideoListQuery, VideoRecord, VideoTask
+from schema.video import VideoCreate, VideoEdit, VideoListQuery, VideoRecord, VideoTask
 
 _LIST_COLUMNS = SQL("""
     id, user_id, task_id, status, storage_status, aliyun_video_url,
@@ -68,7 +68,7 @@ class VideoRepository:
                     await conn.execute("SELECT pg_advisory_unlock(%s)", (lock_id,))
 
     async def reserve(
-        self, user_id: int, key: str, request_hash: str, body: VideoCreate
+        self, user_id: int, key: str, request_hash: str, body: VideoCreate | VideoEdit
     ) -> tuple[VideoRecord, bool]:
         async with self.pool.connection() as conn:
             row = await (
@@ -81,7 +81,14 @@ class VideoRepository:
                         ON CONFLICT (user_id, idempotency_key) WHERE is_delete = 0 DO NOTHING
                         RETURNING {}
                     """).format(_COLUMNS),
-                    (user_id, key, request_hash, Jsonb(body.model_dump()), user_id, user_id),
+                    (
+                        user_id,
+                        key,
+                        request_hash,
+                        Jsonb(body.model_dump(mode="json")),
+                        user_id,
+                        user_id,
+                    ),
                 )
             ).fetchone()
             if row:

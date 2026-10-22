@@ -6,8 +6,8 @@ from langgraph.config import get_stream_writer
 from langgraph.func import entrypoint
 
 from agents.email_commands import handle_email_command
-from agents.video_commands import handle_video_command
 from core import get_model, settings
+from skills.video import handle_video_skill
 
 
 @entrypoint()
@@ -47,8 +47,13 @@ async def chatbot(
                     "video_dialogue": video_dialogue,
                 },
             )
-        response, video_dialogue = await handle_video_command(
-            human, video_dialogue, model, config, writer=get_stream_writer()
+        response, video_dialogue = await handle_video_skill(
+            human,
+            video_dialogue,
+            model,
+            config,
+            history=messages[:-1],
+            writer=get_stream_writer(),
         )
         if response is not None:
             return entrypoint.final(

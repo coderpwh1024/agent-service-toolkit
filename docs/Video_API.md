@@ -85,12 +85,12 @@ curl -X POST "$AGENT_URL/videos" \
     "resolution": "720P",
     "ratio": "16:9",
     "duration": 5,
-    "watermark": true,
+    "watermark": false,
     "seed": 42
   }'
 ```
 
-支持 `happyhorse-1.1-t2v` 和 `happyhorse-1.0-t2v`；分辨率支持 480P/720P/1080P，1.0 不接受 480P。时长为 3–15 秒整数；seed 可省略，范围 0–2147483647。宽高比、提示词长度等按 schema 验证。默认 1.1、1080P、16:9、5 秒、保留水印。
+支持 `happyhorse-1.1-t2v` 和 `happyhorse-1.0-t2v`；分辨率支持 480P/720P/1080P，1.0 不接受 480P。时长为 3–15 秒整数；seed 可省略，范围 0–2147483647。宽高比、提示词长度等按 schema 验证。默认 1.1、1080P、16:9、5 秒、`watermark=false`（不添加水印）。已有记录保留原参数；显式传入的水印参数仍按请求执行。
 
 成功接收后 `data.id` 是查询使用的本地记录 ID，`data.task_id` 是阿里云任务 ID。响应同时提供 `status`、`storage_status`、两个独立 URL 字段和安全错误分类；不暴露幂等键、用户提示词、供应商完整响应或鉴权信息。HTTP 202 表示已处理异步提交请求，业务是否已被上游接受应检查 `data.status`。
 
@@ -128,7 +128,7 @@ curl "$AGENT_URL/videos?page=1&page_size=20&status=SUCCEEDED&storage_status=STOR
 
 有结果时 `items` 中每条数据沿用原有 `VideoTask` 结构，包含本地 ID、阿里云任务 ID、生成状态、转存状态、两个独立视频 URL 和创建、更新时间，不返回提示词和幂等键。列表固定按 `create_time DESC, id DESC` 排序，创建时间相同的记录再按 ID 倒序。`total` 为符合当前用户和状态条件的总条数，`total_pages` 为向上取整的总页数；请求超过最后一页时仍返回 200、空 `items` 和实际总条数。
 
-列表只读取数据库，不触发阿里云查询、七牛转存或修改记录。最新状态由现有单条查询接口和定时同步回写；需要立即刷新某个任务时继续调用 `GET /videos/{record_id}`。总数和分页数据使用同一只读事务快照，避免单次响应内因并发更新造成统计不一致。此接口无需新增或修改数据库字段，原有生成、单条查询和语音控制保持原行为。
+列表只读取数据库，不触发阿里云查询、七牛转存或修改记录。最新状态由现有单条查询接口和定时同步回写；需要立即刷新某个任务时继续调用 `GET /videos/{record_id}`。总数和分页数据使用同一只读事务快照，避免单次响应内因并发更新造成统计不一致。此接口无需新增或修改数据库字段，原有生成和单条查询接口保持原行为。
 
 ## 查询和自动回写
 
@@ -169,44 +169,95 @@ uv run pyrefly check
 
 PostgreSQL 目标已包含 `tests/smoke/test_video_postgres.py`，在独立测试 schema 中检查真实唯一约束、状态约束、审计字段、跨连接锁、分页轮询公平性及逻辑删除。它不会提交真实生成任务，也不会调用七牛。实际阿里云生成和七牛转存需要匹配地域的有效凭据，会产生费用，应在部署环境做一次真实验证。
 
-## 通过语音生成和查询
+## Nacos 视频 Skill
 
-保持 `POST /videos`、`GET /videos/{record_id}` 的路径、参数、出参，以及原有 19 字段表结构不变。在现有 `chatbot` 和 `mem0-chatbot` 中新增视频指令处理，直接复用同一个生命周期管理的 `VideoService`；语音本身无需额外 HTTP 接口或数据库字段。分页列表另由本页介绍的 `GET /videos` 提供。
+`manage-user-videos` 为独立运行时技能，源码位于 [SKILL.md](../skills/manage-user-videos/SKILL.md)，受控实现位于 `src/skills/video.py`。它使用现有 `VideoService`，保留三个 HTTP 接口、既有表结构、任务同步和七牛转存流程。HTTP 创建请求默认水印改为 `false`；显式参数仍受现有接口支持。
 
-启用现有 `VOICE_ENABLED`、`VIDEO_ENABLED` 配置并重启服务，客户端继续使用原来的语音会话、音频帧和用户令牌。模型需要支持结构化输出；登录用户 ID 必须符合现有视频 API 的正 BIGINT 约定。视频服务未启用、身份不匹配或意图识别失败时，语音会明确说明，没有创建视频任务。
+在当前 Nacos 应用配置中合并以下内容，保留其他配置：
 
-| 可以说的话 | 执行结果 |
+```yaml
+video:
+  enabled: true
+skills:
+  video:
+    enabled: true
+    version: "1.0.0"
+    label: latest
+    timeout_seconds: 20
+```
+
+映射为 `VIDEO_SKILL_ENABLED`、`VIDEO_SKILL_VERSION`、`VIDEO_SKILL_LABEL` 和 `VIDEO_SKILL_TIMEOUT_SECONDS`。默认禁用，独立于视频 HTTP 服务。指定版本优先，否则通过标签下载。启用时必须从当前 Namespace 的 Nacos Skill 管理中心下载有效包，不能回退到本地文件。配置和技能在启动时加载，修改后重启服务。语音还需现有 `VOICE_ENABLED` 和 ASR/TTS 配置。
+
+### 发布与校验
+
+CLI 的连接地址和 Namespace 必须与应用一致；密码留在受保护的 CLI Profile 或既有引导配置，不写入命令行或技能包。
+
+```sh
+nacos-cli skill-upload skills/manage-user-videos
+nacos-cli skill-describe manage-user-videos --output json
+nacos-cli skill-review manage-user-videos --version 1.0.0
+nacos-cli skill-describe manage-user-videos --output json
+```
+
+待目标版本通过异步评审后发布；如果已经在线则跳过发布。后续更新使用新版本，不覆盖已发布版本。
+
+```sh
+nacos-cli skill-release manage-user-videos --version 1.0.0
+nacos-cli skill-get manage-user-videos --version 1.0.0 -o /path/to/skill-review
+```
+
+最终核对目标版本为 `online`，并对比下载后的 `SKILL.md` 摘要与仓库文件一致。仅上传草稿不代表已经可被运行时加载。
+
+### 对话流程与能力
+
+`chatbot` 和 `mem0-chatbot` 在邮件、记忆指令处理后调用视频 Skill；语音转写与文字共用入口。没有视频关键词正则门槛，启用后每轮通过受控的结构化识别决定是否处理，普通对话返回 `none` 后沿用原聊天流程。识别调用带 `skip_stream`，结构化 JSON 不进入播报。
+
+技能接收当前输入、最近十二条对话（总计最多 12000 字符）、本人最近任务引用、最近列表编号以及十分钟有效的草稿。动态输入和远程技能均为参考数据，不能覆盖授权规则。仅本轮明确生成、编辑或补充待提交需求才允许提交；历史、记忆和助手建议不能独立授权。不会自动检索影视素材、原声或长期记忆。
+
+| 可以说的话 | 执行行为 |
 | --- | --- |
-| “帮我生成一个五秒海边日落的视频” | 解析内容和参数，通过已有生成服务提交，播报本地视频编号 |
-| “帮我生成一个十秒的视频” | 缺少内容时先追问；再说“海边日落”后提交，保留十秒要求 |
-| “刚才的视频好了吗” | 查询当前对话最近一次视频任务，并沿用原来的查询回写与七牛转存 |
-| “查询第 123 号视频” | 以当前登录用户身份查询本地记录 123，不接受其他用户身份 |
-| “查询我最近的视频” | 从数据库读取本人最新的有效任务，再调用现有查询服务 |
-| “取消视频生成” | 仅可清除尚未提交的草稿；已提交任务明确告知不支持撤回 |
+| “生成五秒海边日落的视频” | 创建无水印视频任务，返回本地编号 |
+| “生成十秒视频” → “海边日落” | 收集内容，保留十秒要求后提交 |
+| “按上面描述生成三十秒” → “改成十五秒” | 解释时长限制，保留场景，用户修正后提交 |
+| “刚才的视频好了吗”“查询编号三” | 查询本人单条任务并回写状态 |
+| “我有哪些视频”“列出已生成的视频” | 查询本人分页列表，成功条件为 `SUCCEEDED` |
+| “下一页”“查询第二条” | 保留上一页过滤条件，或从最近真实列表选记录 |
+| “我现在有几个视频” | 查询数据库总数，不从聊天推断 |
+| “把编号三改成水墨画风，保留原声” | 对已完成并转存的视频新建编辑任务 |
+| “取消” | 只取消未提交草稿，不撤回已有任务 |
 
-聊天检查点只新增可选的 `video_dialogue` 上下文，旧检查点无需迁移。它保存绑定用户、最近一次本地记录 ID、未提交的原始需求和草稿有效期。草稿有效期为 10 分钟；最近任务引用可跨普通对话继续使用。重新连接时使用同一个线程 ID 可恢复该引用；换线程后可以说“查询我最近的视频”从数据库定位。普通聊天、邮件和长期记忆指令沿用原有处理逻辑。
+语音列表先播报至多五条，完整当前页通过事件返回。列表序号是当前页从一开始的顺序，不等于记录 ID。空列表、零总数、超出末页和错误编号均明确说明。分页排序、状态枚举和用户隔离沿用现有服务；不支持按日期或主题过滤，不忽略这些条件后查询全部。
 
-语音转写得到的稳定消息 ID（现有 `voice-input-{turn_id}`）与绑定用户、线程组合，生成内部幂等键。重复 ASR 事件仍由原来的输入去重机制拦截，相同消息重放复用同一视频幂等键。主动再次说一遍生成要求会产生新语音输入，属于新请求；想了解原任务请说“查询刚才的视频”。插话或网络中断可能停止当前处理，已提交的生成任务仍以数据库记录为准，不会因播放停止自动撤回或重新创建。
+### 编辑边界与持久化
 
-回复只使用视频服务返回的真实状态，不编造进度百分比，不把排队、生成成功和七牛转存成功混在一起。转存失败会播报“视频已生成，但转存七牛云失败，后台会继续重试”；提交结果不确定会提醒核实原任务，避免重复生成。
+编辑使用 [HappyHorse 视频编辑 API](https://help.aliyun.com/zh/model-studio/happyhorse-video-edit-api-reference) 的 `happyhorse-1.0-video-edit`，支持文字指令下的风格变换和局部替换。来源限定为本人已生成且转存至七牛的视频，URL 由服务查表获得，不采用模型或用户提供的任意素材地址。暂不支持参考图、外部视频、精确裁剪、拼接、字幕、声纹克隆或改变源视频时长与比例。
 
-视频结果通过现有 `agent.custom` 事件返回，事件结构不变，`data` 内容为：
+输出支持 720P/1080P，默认 1080P；`audio_setting=auto` 由模型控制，`origin` 保留原声。来源为项目生成的 3–15 秒视频，宽高比需在 1:2.5 至 2.5:1；素材格式、大小、尺寸和帧率仍由供应商检查，不保证所有编辑均成功。新视频显式 `watermark=false`，不承诺移除源画面已有标识。
+
+编辑新建任务，不覆盖源记录。现有 JSONB `request_payload` 保存编辑模型、源记录编号、源七牛 URL、编辑要求和参数，业务表不新增列。解析兼容旧的文生视频载荷；查询、列表、幂等、轮询和转存共用原流程。旧记录中的水印值不回填或改写。
+
+### 状态、失败和客户端事件
+
+技能只播报实际返回的任务状态。排队或生成中不能说已完成；生成成功和转存成功分别表达；提交不确定、超时、插话或断线后先查询原任务，不自动重新提交。缺少场景、编号或编辑要求时追问；三十秒等超范围参数解释原因并保留草稿，不静默缩短时长。未返回供应商具体失败原因时明确说明原因未知，不猜测审核或额度问题。
+
+语音稳定消息 ID 与认证用户、线程生成内部幂等键，相同输入重放复用同一任务，重复 ASR 仍由现有输入去重拦截。用户主动重说属于新请求。身份不可用、服务失败和找不到本人记录分别给出登录、稍后查询或核对编号的提示。
+
+结果沿用通用 `agent.custom` 通道，`data.type` 为 `video.task`、`video.list` 或 `video.count`：
 
 ```json
 {
-  "type": "agent.custom",
-  "response_id": "existing-response-id",
-  "data": {
-    "type": "video.task",
-    "video": {
-      "record_id": 123,
-      "status": "SUCCEEDED",
-      "storage_status": "STORED",
-      "qiniu_video_url": "https://cdn.example.com/videos/happyhorse/task-id.mp4",
-      "error_code": null
-    }
-  }
+  "type": "video.list",
+  "items": [
+    {"record_id": 123, "status": "SUCCEEDED", "storage_status": "STORED", "qiniu_video_url": "https://cdn.example/video.mp4", "error_code": null}
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 1,
+  "query": {"page": 1, "page_size": 20, "status": null, "storage_status": null}
 }
 ```
 
-客户端读取 `data.type=video.task` 后展示状态和视频链接；只有 `storage_status=STORED` 时展示可用视频。后端只播报编号和状态，不把完整 URL 送去 TTS，也不在事件中返回阿里云临时签名链接。HTTP 聊天结果和聊天记录的既有 `response_metadata.video` 也带有相同结果摘要。语音链路不会自动打开视频播放器，播放由客户端收到链接后处理。
+单条结果继续使用 `{"type":"video.task","video":{...}}`，`response_metadata.video` 保留相同单条摘要。数量事件包含 `total` 与过滤条件。列表、数量事件是通用通道的新增载荷，不改变语音事件顺序或音频协议。客户端根据事件展示七牛链接和分页控件，语音不朗读 URL，也不自动启动播放器。
+
+日志用中文记录技能摘要、输入字数、操作、状态及安全错误类型，不打印完整场景、对话、凭据或签名 URL。识别模型仍具有误判可能；单元和模拟音频测试不能替代部署后对实际 ASR、模型权限和素材质量的验收。

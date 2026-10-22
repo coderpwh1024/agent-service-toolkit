@@ -11,7 +11,7 @@ from psycopg.sql import SQL, Identifier
 from psycopg.types.json import Jsonb
 
 from memory.postgres import get_postgres_connection_string
-from schema.video import VideoCreate, VideoListQuery, VideoStatus
+from schema.video import VideoCreate, VideoEdit, VideoListQuery, VideoStatus
 from video.repository import VideoRepository
 
 
@@ -52,6 +52,15 @@ async def test_video_repository_constraints_and_reconnect():
         reloaded = await other.get(record.id, 12)
         assert reloaded is not None and reloaded.task_id == "upstream-task"
         assert reloaded.request_payload == body
+        legacy = reloaded.request_payload.model_dump()
+        legacy["watermark"] = True
+        async with repo.pool.connection() as conn:
+            await conn.execute(
+                """UPDATE video_generation_tasks SET request_payload = %s,
+                update_by = 0, update_time = CURRENT_TIMESTAMP WHERE id = %s""",
+                (Jsonb(legacy), record.id),
+            )
+        assert (await other.get(record.id, 12)).request_payload.watermark is True
         for index in range(11):
             await repo.reserve(12, f"next-{index}", "b" * 64, body)
         async with repo.pool.connection() as conn:
@@ -92,6 +101,15 @@ async def test_video_repository_constraints_and_reconnect():
         replacement, created = await repo.reserve(12, "same", "c" * 64, body)
         assert created and replacement.id != record.id
         assert await other.latest_id(12) == replacement.id
+        edit = VideoEdit(
+            source_record_id=replacement.id,
+            source_url="https://cdn.example/test.mp4",
+            prompt="水墨画风",
+            duration=5,
+            ratio="16:9",
+        )
+        edited, created = await repo.reserve(12, "edit-key", "e" * 64, edit)
+        assert created and (await other.get(edited.id, 12)).request_payload == edit
         other_record, _ = await repo.reserve(13, "other-user", "d" * 64, body)
         assert await repo.latest_id(13) == other_record.id
         async with repo.pool.connection() as conn:

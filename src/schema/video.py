@@ -33,7 +33,7 @@ class VideoCreate(BaseModel):
     resolution: Literal["480P", "720P", "1080P"] = "1080P"
     ratio: Literal["16:9", "9:16", "1:1", "4:3", "3:4", "4:5", "5:4", "9:21", "21:9"] = "16:9"
     duration: int = Field(default=5, ge=3, le=15, strict=True)
-    watermark: bool = True
+    watermark: bool = False
     seed: int | None = Field(default=None, ge=0, le=2147483647, strict=True)
 
     @field_validator("prompt")
@@ -57,6 +57,38 @@ class VideoCreate(BaseModel):
             "model": self.model,
             "input": {"prompt": self.prompt},
             "parameters": self.model_dump(exclude={"model", "prompt"}, exclude_none=True),
+        }
+
+
+class VideoEdit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: Literal["happyhorse-1.0-video-edit"] = "happyhorse-1.0-video-edit"
+    source_record_id: int = Field(gt=0, le=9223372036854775807)
+    source_url: HttpUrl
+    prompt: str = Field(min_length=1, max_length=5000)
+    resolution: Literal["720P", "1080P"] = "1080P"
+    audio_setting: Literal["auto", "origin"] = "auto"
+    watermark: bool = False
+    seed: int | None = Field(default=None, ge=0, le=2147483647, strict=True)
+    duration: int = Field(ge=3, le=15, strict=True)
+    ratio: str
+
+    @field_validator("prompt")
+    @classmethod
+    def validate_prompt(cls, value: str) -> str:
+        return VideoCreate.validate_prompt(value)
+
+    def provider_payload(self) -> dict[str, object]:
+        return {
+            "model": self.model,
+            "input": {
+                "prompt": self.prompt,
+                "media": [{"type": "video", "url": str(self.source_url)}],
+            },
+            "parameters": self.model_dump(
+                include={"resolution", "audio_setting", "watermark", "seed"}, exclude_none=True
+            ),
         }
 
 
@@ -106,7 +138,7 @@ class VideoTaskPage(BaseModel):
 class VideoRecord(VideoTask):
     idempotency_key: str
     request_hash: str
-    request_payload: VideoCreate
+    request_payload: VideoCreate | VideoEdit
     provider_request_id: str | None
     create_by: int
     update_by: int

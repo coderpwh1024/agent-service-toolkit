@@ -4,7 +4,7 @@ from zipfile import ZipFile
 
 import pytest
 
-from core.skills import EMAIL_SKILL_NAME, read_email_skill
+from core.skills import EMAIL_SKILL_NAME, VIDEO_SKILL_NAME, read_email_skill, read_skill
 
 
 def archive(files: dict[str, str]) -> bytes:
@@ -45,3 +45,16 @@ def test_invalid_or_unsafe_skill_is_rejected(files):
 def test_invalid_zip_is_rejected():
     with pytest.raises(ValueError):
         read_email_skill(b"not a zip")
+
+
+def test_video_skill_loads_and_rejects_wrong_capability():
+    content = Path(f"skills/{VIDEO_SKILL_NAME}/SKILL.md").read_text()
+    for path in ["SKILL.md", f"{VIDEO_SKILL_NAME}/SKILL.md"]:
+        skill = read_skill(archive({path: content}), VIDEO_SKILL_NAME)
+        assert skill.name == VIDEO_SKILL_NAME
+        assert "watermark=false" in skill.instructions
+        assert "编辑" in skill.description
+    with pytest.raises(ValueError):
+        read_email_skill(archive({"SKILL.md": content}))
+    with pytest.raises(ValueError):
+        read_skill(archive({"../SKILL.md": content}), VIDEO_SKILL_NAME)

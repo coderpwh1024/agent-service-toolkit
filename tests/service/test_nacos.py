@@ -66,6 +66,55 @@ def test_email_skill_settings_map_from_nacos():
 
 
 @pytest.mark.asyncio
+async def test_video_skill_downloads_pinned_version_and_fails_closed(ai_client):
+    from io import BytesIO
+    from pathlib import Path
+    from zipfile import ZipFile
+
+    config = make_settings(
+        NACOS_ENABLED=True,
+        VIDEO_ENABLED=True,
+        VIDEO_SKILL_ENABLED=True,
+        VIDEO_SKILL_VERSION="1.0.0",
+    )
+    integration = nacos.NacosIntegration(config)
+    integration.ai_client = ai_client
+    buffer = BytesIO()
+    with ZipFile(buffer, "w") as package:
+        package.writestr("SKILL.md", Path("skills/manage-user-videos/SKILL.md").read_text())
+    ai_client.download_skill_zip.return_value = buffer.getvalue()
+    await integration.load_remote_skills()
+    assert config.video_skill.name == "manage-user-videos"
+    param = ai_client.download_skill_zip.await_args.args[0]
+    assert param.version == "1.0.0" and param.label is None
+    ai_client.download_skill_zip.return_value = b"invalid"
+    with pytest.raises(ValueError):
+        await integration.load_remote_skills()
+    assert config.video_skill is None
+
+
+def test_video_skill_settings_map_from_nacos():
+    config = make_settings()
+    nacos.apply_remote_settings(
+        config,
+        "skills:\n  video:\n    enabled: true\n    version: '1.0.0'\n    label: stable\n    timeout_seconds: 15\n",
+    )
+    assert config.VIDEO_SKILL_ENABLED and config.VIDEO_SKILL_VERSION == "1.0.0"
+    assert config.VIDEO_SKILL_LABEL == "stable" and config.VIDEO_SKILL_TIMEOUT_SECONDS == 15
+
+
+@pytest.mark.asyncio
+async def test_video_skill_requires_nacos_and_video_service():
+    config = make_settings(VIDEO_SKILL_ENABLED=True, VIDEO_ENABLED=True, NACOS_ENABLED=False)
+    with pytest.raises(ValueError, match="Nacos"):
+        await nacos.NacosIntegration(config).load_remote_config()
+    config.NACOS_ENABLED = True
+    config.VIDEO_ENABLED = False
+    with pytest.raises(ValueError, match="视频服务"):
+        await nacos.NacosIntegration(config).load_remote_skills()
+
+
+@pytest.mark.asyncio
 async def test_prompt_sdk_loads_all_published_templates(ai_client, mem0_prompts, tmp_path) -> None:
     config = make_settings(
         NACOS_ENABLED=True,

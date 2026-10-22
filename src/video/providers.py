@@ -9,7 +9,7 @@ from pydantic import ValidationError
 from qiniu import Auth, BucketManager
 
 from core.settings import Settings
-from schema.video import ProviderResult, VideoCreate
+from schema.video import ProviderResult, VideoCreate, VideoEdit
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ class HappyHorseClient:
             raise ValueError("视频生成需要 DASHSCOPE_API_KEY")
         self.headers = {"Authorization": f"Bearer {config.DASHSCOPE_API_KEY.get_secret_value()}"}
 
-    async def create(self, body: VideoCreate) -> ProviderResult:
+    async def create(self, body: VideoCreate | VideoEdit) -> ProviderResult:
         logger.info(
             "阿里云视频创建入参：模型=%s 分辨率=%s 时长=%s 提示词字数=%s",
             body.model,

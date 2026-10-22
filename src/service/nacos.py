@@ -20,7 +20,7 @@ from v2.nacos.ai.model.ai_param import DownloadSkillParam, GetPromptParam
 from v2.nacos.ai.nacos_ai_service import NacosAIService
 
 from core.settings import Settings
-from core.skills import EMAIL_SKILL_NAME, read_email_skill
+from core.skills import EMAIL_SKILL_NAME, VIDEO_SKILL_NAME, read_email_skill, read_skill
 from schema.prompts import Mem0Prompts
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,12 @@ _NESTED_SETTINGS: dict[str, Any] = {
         "api_base_url": "VIDEO_API_BASE_URL",
     },
     "skills": {
+        "video": {
+            "enabled": "VIDEO_SKILL_ENABLED",
+            "version": "VIDEO_SKILL_VERSION",
+            "label": "VIDEO_SKILL_LABEL",
+            "timeout_seconds": "VIDEO_SKILL_TIMEOUT_SECONDS",
+        },
         "email": {
             "enabled": "EMAIL_SKILL_ENABLED",
             "version": "EMAIL_SKILL_VERSION",
@@ -432,6 +438,8 @@ class NacosIntegration:
 
     async def load_remote_config(self) -> None:
         if not self.config.NACOS_ENABLED:
+            if self.config.VIDEO_SKILL_ENABLED:
+                raise ValueError("视频技能需要启用 Nacos Skill 管理")
             return
         if not self.config.NACOS_CONFIG_DATA_ID:
             if self.config.NACOS_STORAGE_CONFIG_REQUIRED:
@@ -468,6 +476,28 @@ class NacosIntegration:
 
     async def load_remote_skills(self) -> None:
         self.config.email_skill = None
+        self.config.video_skill = None
+        if self.config.VIDEO_SKILL_ENABLED:
+            if not self.config.NACOS_ENABLED or not self.config.VIDEO_ENABLED:
+                raise ValueError("视频技能需要启用 Nacos 和视频服务")
+            if self.ai_client is None:
+                self.ai_client = await NacosAIService.create_ai_service(self._client_config())
+            archive = await self.ai_client.download_skill_zip(
+                DownloadSkillParam(
+                    skill_name=VIDEO_SKILL_NAME,
+                    version=self.config.VIDEO_SKILL_VERSION,
+                    label=None
+                    if self.config.VIDEO_SKILL_VERSION
+                    else self.config.VIDEO_SKILL_LABEL,
+                )
+            )
+            video_skill = read_skill(archive, VIDEO_SKILL_NAME)
+            self.config.video_skill = video_skill
+            logger.info(
+                "视频技能已加载：名称=%s 摘要=%s",
+                VIDEO_SKILL_NAME,
+                video_skill.digest[:12],
+            )
         if not self.config.EMAIL_SKILL_ENABLED:
             return
         if not self.config.NACOS_ENABLED:

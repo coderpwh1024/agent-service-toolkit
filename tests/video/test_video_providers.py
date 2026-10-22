@@ -5,7 +5,7 @@ import httpx
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from schema.video import VideoCreate
+from schema.video import VideoCreate, VideoEdit
 from video.providers import (
     HappyHorseClient,
     QiniuVideoStorage,
@@ -41,7 +41,7 @@ async def test_create_and_query_follow_official_wire_contract():
                     "resolution": "1080P",
                     "ratio": "16:9",
                     "duration": 5,
-                    "watermark": True,
+                    "watermark": False,
                 },
             }
         else:
@@ -54,6 +54,38 @@ async def test_create_and_query_follow_official_wire_contract():
         provider = HappyHorseClient(client, config())
         await provider.create(VideoCreate(prompt="horse"))
         await provider.query("task-123")
+
+
+@pytest.mark.asyncio
+async def test_edit_follows_official_wire_contract_without_metadata_leakage():
+    import json
+
+    body = VideoEdit(
+        source_record_id=123,
+        source_url="https://cdn.example/video.mp4",
+        prompt="水墨风格",
+        audio_setting="origin",
+        duration=10,
+        ratio="16:9",
+    )
+
+    def handler(request):
+        assert request.headers["X-DashScope-Async"] == "enable"
+        assert json.loads(request.content) == {
+            "model": "happyhorse-1.0-video-edit",
+            "input": {
+                "prompt": "水墨风格",
+                "media": [{"type": "video", "url": "https://cdn.example/video.mp4"}],
+            },
+            "parameters": {"resolution": "1080P", "audio_setting": "origin", "watermark": False},
+        }
+        return httpx.Response(
+            200, json={"output": {"task_id": "edit-123", "task_status": "PENDING"}}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        result = await HappyHorseClient(client, config()).create(body)
+        assert result.output.task_id == "edit-123"
 
 
 @pytest.mark.asyncio

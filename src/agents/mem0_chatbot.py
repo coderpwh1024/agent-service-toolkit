@@ -18,10 +18,10 @@ from pydantic import ValidationError
 
 from agents.email_commands import handle_email_command
 from agents.memory_commands import handle_memory_command
-from agents.video_commands import handle_video_command
 from core import get_model, settings
 from memory.mem0_service import get_mem0_service
 from schema.memory_commands import MemoryDialogue
+from skills.video import handle_video_skill
 
 logger = logging.getLogger(__name__)
 CHAT_MESSAGE_LIMIT = 20
@@ -159,13 +159,14 @@ async def mem0_chatbot(
                     "video_dialogue": video_dialogue,
                 },
             )
-        video_response, video_dialogue = await handle_video_command(
+        video_response, video_dialogue = await handle_video_skill(
             next(
                 message for message in reversed(new_messages) if isinstance(message, HumanMessage)
             ),
             video_dialogue,
             model,
             config,
+            history=messages[:-1],
             writer=get_stream_writer(),
         )
         if video_response is not None:
