@@ -49,6 +49,10 @@ _MAIL_FIELDS = {
     "username": "SMTP_USERNAME",
 }
 _NESTED_SETTINGS: dict[str, Any] = {
+    "video": {
+        "enabled": "VIDEO_ENABLED",
+        "api_base_url": "VIDEO_API_BASE_URL",
+    },
     "skills": {
         "email": {
             "enabled": "EMAIL_SKILL_ENABLED",

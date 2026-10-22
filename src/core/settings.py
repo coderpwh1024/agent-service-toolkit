@@ -4,6 +4,7 @@ from json import loads
 from pathlib import Path
 from tempfile import gettempdir
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dotenv import dotenv_values, find_dotenv
@@ -298,6 +299,48 @@ class Settings(BaseSettings):
     QINIU_PUBLIC_BASE_URL: str | None = None
     QINIU_UPLOAD_TOKEN_TTL_SECONDS: int = Field(default=3600, ge=60, le=86400)
     QINIU_AVATAR_MAX_BYTES: int = Field(default=5 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
+
+    VIDEO_ENABLED: bool = False
+    VIDEO_API_BASE_URL: str = "https://dashscope.aliyuncs.com/api/v1"
+
+    def require_video_configuration(self) -> None:
+        required = (
+            "AUTH_SECRET",
+            "APP_TOKEN_SECRET",
+            "DASHSCOPE_API_KEY",
+            "QINIU_ACCESS_KEY",
+            "QINIU_SECRET_KEY",
+            "QINIU_BUCKET_NAME",
+            "QINIU_PUBLIC_BASE_URL",
+        )
+        missing = [name for name in required if not getattr(self, name)]
+        if missing:
+            raise ValueError("视频功能缺少配置：" + ", ".join(missing))
+        if self.APP_TOKEN_SECRET is None or len(self.APP_TOKEN_SECRET.get_secret_value()) < 32:
+            raise ValueError("视频功能要求 APP_TOKEN_SECRET 至少包含 32 个字符")
+        endpoint = urlsplit(self.VIDEO_API_BASE_URL)
+        if (
+            endpoint.scheme != "https"
+            or not endpoint.hostname
+            or not endpoint.hostname.endswith(".aliyuncs.com")
+            or endpoint.username
+            or endpoint.password
+            or endpoint.query
+            or endpoint.fragment
+            or endpoint.path.rstrip("/") != "/api/v1"
+            or endpoint.port not in (None, 443)
+        ):
+            raise ValueError("VIDEO_API_BASE_URL 必须是阿里云 HTTPS /api/v1 地址")
+        public_url = urlsplit(self.QINIU_PUBLIC_BASE_URL or "")
+        if (
+            public_url.scheme not in {"https", "http"}
+            or not public_url.hostname
+            or public_url.username
+            or public_url.password
+            or public_url.query
+            or public_url.fragment
+        ):
+            raise ValueError("QINIU_PUBLIC_BASE_URL 必须是不含签名参数的公开访问域名")
 
     # Nacos 3.x service discovery and startup configuration.
     NACOS_ENABLED: bool = False

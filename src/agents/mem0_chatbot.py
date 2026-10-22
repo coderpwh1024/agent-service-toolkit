@@ -12,11 +12,13 @@ from langchain_core.messages import (
     SystemMessage,
 )
 from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_stream_writer
 from langgraph.func import entrypoint
 from pydantic import ValidationError
 
 from agents.email_commands import handle_email_command
 from agents.memory_commands import handle_memory_command
+from agents.video_commands import handle_video_command
 from core import get_model, settings
 from memory.mem0_service import get_mem0_service
 from schema.memory_commands import MemoryDialogue
@@ -29,6 +31,7 @@ class Mem0ChatState(TypedDict):
     messages: list[BaseMessage]
     memory_dialogue: NotRequired[dict[str, Any]]
     email_dialogue: NotRequired[dict[str, Any] | None]
+    video_dialogue: NotRequired[dict[str, Any] | None]
 
 
 def _chat_prompt(messages: list[BaseMessage], facts: list[str], status: str) -> list[BaseMessage]:
@@ -102,6 +105,7 @@ async def mem0_chatbot(
         and message.content.strip()
     ]
     messages = (previous["messages"] if previous else []) + new_messages
+    video_dialogue = previous.get("video_dialogue") if previous else None
     memory = get_mem0_service()
     dialogue = MemoryDialogue(user_id=user_id)
     saved_dialogue = previous.get("memory_dialogue") if previous else None
@@ -135,6 +139,7 @@ async def mem0_chatbot(
                     "messages": messages + [email_response],
                     "memory_dialogue": dialogue.model_dump(mode="json"),
                     "email_dialogue": email_dialogue,
+                    "video_dialogue": video_dialogue,
                 },
             )
         command_response = await handle_memory_command(
@@ -151,6 +156,25 @@ async def mem0_chatbot(
                 save={
                     "messages": messages + [command_response],
                     "memory_dialogue": dialogue.model_dump(mode="json"),
+                    "video_dialogue": video_dialogue,
+                },
+            )
+        video_response, video_dialogue = await handle_video_command(
+            next(
+                message for message in reversed(new_messages) if isinstance(message, HumanMessage)
+            ),
+            video_dialogue,
+            model,
+            config,
+            writer=get_stream_writer(),
+        )
+        if video_response is not None:
+            return entrypoint.final(
+                value={"messages": [video_response]},
+                save={
+                    "messages": messages + [video_response],
+                    "memory_dialogue": dialogue.model_dump(mode="json"),
+                    "video_dialogue": video_dialogue,
                 },
             )
     status = "disabled" if memory is None else "available"
@@ -184,5 +208,6 @@ async def mem0_chatbot(
         save={
             "messages": messages + [response],
             "memory_dialogue": dialogue.model_dump(mode="json"),
+            "video_dialogue": video_dialogue,
         },
     )

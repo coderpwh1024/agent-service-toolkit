@@ -53,6 +53,12 @@ services:
       APP_TOKEN_TTL_SECONDS: ${APP_TOKEN_TTL_SECONDS:-1296000}
       EMAIL_AUTH_ENABLED: ${EMAIL_AUTH_ENABLED:-false}
       AUTH_SERVICE_ACCOUNT_ID: ${AUTH_SERVICE_ACCOUNT_ID:-0}
+      VIDEO_ENABLED: ${VIDEO_ENABLED:-false}
+      VIDEO_API_BASE_URL: ${VIDEO_API_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}
+      QINIU_ACCESS_KEY: ${QINIU_ACCESS_KEY:-}
+      QINIU_SECRET_KEY: ${QINIU_SECRET_KEY:-}
+      QINIU_BUCKET_NAME: ${QINIU_BUCKET_NAME:-}
+      QINIU_PUBLIC_BASE_URL: ${QINIU_PUBLIC_BASE_URL:-}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
       VOICE_ENABLED: ${VOICE_ENABLED:-false}
       VOICE_REALTIME_URL: ${VOICE_REALTIME_URL:-wss://dashscope.aliyuncs.com/api-ws/v1/realtime}
@@ -136,6 +142,9 @@ services:
         - path: src/voice/
           action: sync+restart
           target: /app/voice/
+        - path: src/video/
+          action: sync+restart
+          target: /app/video/
         - path: src/rag/
           action: sync+restart
           target: /app/rag/

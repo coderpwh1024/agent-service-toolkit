@@ -17,6 +17,7 @@ COPY src/schema/ ./schema/
 COPY src/service/ ./service/
 COPY src/skills/ ./skills/
 COPY src/voice/ ./voice/
+COPY src/video/ ./video/
 COPY src/rag/ ./rag/
 COPY config/ ./config/
 COPY src/run_service.py .

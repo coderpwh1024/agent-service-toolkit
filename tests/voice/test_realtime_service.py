@@ -1736,3 +1736,117 @@ def test_wake_preroll_can_cover_a_slow_double_call(voice_env, monkeypatch):
         json={"activation": "wake_word", "wake_word": "小美小美", "pre_roll_samples": 96000},
     )
     assert rejected.status_code == 422
+
+
+@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
+@pytest.mark.parametrize("storage_status", ["STORED", "FAILED"])
+def test_audio_controls_video_creation_and_followup_query(
+    voice_env, monkeypatch, agent_name, storage_status
+):
+    import importlib
+
+    from schema.video import VideoTask
+    from service import voice as voice_routes
+    from video import runtime
+
+    module = importlib.import_module(f"agents.{agent_name}")
+    client, repo, agents, headers = voice_env
+
+    class VideoSpeech(FakeSpeech):
+        def __init__(self, config):
+            super().__init__(config)
+            self.input_count = 0
+
+        async def append_audio(self, ws, pcm):
+            self.input_count += 1
+            transcript = (
+                "生成一个五秒海边日落的视频" if self.input_count == 1 else "刚才的视频好了吗"
+            )
+            for _ in range(2):
+                await self.events.put(
+                    {
+                        "type": "conversation.item.input_audio_transcription.completed",
+                        "item_id": f"video-audio-{self.input_count}",
+                        "transcript": transcript,
+                    }
+                )
+
+    class VideoModel(FakeListChatModel):
+        def with_structured_output(self, schema, **kwargs):
+            return self | RunnableLambda(
+                lambda message: schema.model_validate_json(message.content)
+            )
+
+    pending = VideoTask(
+        id=123,
+        user_id=7,
+        task_id="task-123",
+        status="PENDING",
+        storage_status="NOT_READY",
+        aliyun_video_url=None,
+        qiniu_video_url=None,
+        qiniu_object_key=None,
+        error_code=None,
+        create_time=datetime.now(UTC),
+        update_time=datetime.now(UTC),
+    )
+    stored = storage_status == "STORED"
+    ready = VideoTask.model_validate(
+        {
+            **pending.model_dump(),
+            "status": "SUCCEEDED",
+            "storage_status": storage_status,
+            "qiniu_video_url": "https://cdn.example/video.mp4" if stored else None,
+            "error_code": None if stored else "ARCHIVE_FAILED",
+        }
+    )
+    service = Mock(create=AsyncMock(return_value=pending), query=AsyncMock(return_value=ready))
+    monkeypatch.setattr(runtime, "_service", service)
+    monkeypatch.setattr(settings, "VIDEO_ENABLED", True)
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", VideoSpeech)
+    model = VideoModel(
+        responses=[
+            json.dumps(
+                {"action": "create", "generation": {"prompt": "海边日落", "duration": 5}},
+                ensure_ascii=False,
+            ),
+            json.dumps({"action": "query"}),
+        ]
+    )
+    monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
+    if agent_name == "mem0_chatbot":
+        monkeypatch.setattr(module, "get_mem0_service", lambda: None)
+    graph = getattr(module, agent_name).copy()
+    graph.checkpointer = MemorySaver()
+    agent_id = agent_name.replace("_", "-")
+    agents[agent_id] = graph
+    auth = headers("7")
+    session = create(client, auth, agent_id=agent_id)
+    with connect(client, session, auth) as ws:
+        connection = configure(ws)["connection_id"]
+        for sequence in range(2):
+            ws.send_bytes(
+                encode_audio(b"\0\0" * 320, connection, str(ZERO_UUID), 0, sequence, kind=1)
+            )
+            seen = read_until(ws, "response.done")
+            spoken = "".join(item["text"] for item in seen if item["type"] == "text.delta")
+            assert "123" in spoken and '"action"' not in spoken
+            assert any(item["type"] == "audio" for item in seen)
+            assert sum(item["type"] == "transcript.final" for item in seen) == 1
+            result = next(item["data"] for item in seen if item["type"] == "agent.custom")
+            assert result["type"] == "video.task"
+            assert result["video"]["record_id"] == 123
+            if sequence == 0:
+                assert "排队" in spoken
+            else:
+                assert ("已生成并转存" if stored else "转存七牛云失败") in spoken
+                assert result["video"]["qiniu_video_url"] == ready.qiniu_video_url
+                assert "https://" not in spoken
+            event(ws, "playback.finished", response_id=seen[-1]["response_id"])
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    service.create.assert_awaited_once()
+    assert service.create.await_args.args[0] == 7
+    assert service.create.await_args.args[1].startswith("voice-video-")
+    service.query.assert_awaited_once_with(123, 7)
+    assert len(repo.records) == 2

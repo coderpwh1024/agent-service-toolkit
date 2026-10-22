@@ -77,6 +77,8 @@ from service.utils import (
     langchain_to_chat_message,
     messages_from_checkpoint,
 )
+from service.video import router as video_router
+from service.video import video_lifespan
 from service.voice import router as voice_router
 from service.voice import voice_lifespan
 from voice.persistence import VoiceRepository
@@ -150,6 +152,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 email_auth_lifespan(app),
                 email_skill_lifespan(app),
                 voice_lifespan(app),
+                video_lifespan(app),
             ):
                 await nacos.register_service()
                 app.state.nacos = nacos
@@ -170,6 +173,7 @@ router = APIRouter(dependencies=[Depends(verify_bearer)])
 router.include_router(agui_router)
 router.include_router(memories_router)
 router.include_router(email_skill_router)
+router.include_router(video_router)
 
 
 def _uses_protocol_response(path: str) -> bool:
