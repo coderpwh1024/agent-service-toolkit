@@ -115,6 +115,102 @@ async def test_generation_uses_no_watermark_and_replay_key(video_skill):
 
 
 @pytest.mark.asyncio
+async def test_metadata_draft_is_retained_and_published_for_create_and_detail(video_skill):
+    service, _, _ = video_skill
+    metadata = {"title": "海边日落", "cover_url": "https://cdn.example/cover.jpg"}
+    _, saved = await invoke(
+        video_skill,
+        "标题用海边日落，用我提供的封面，生成三十秒",
+        {
+            "action": "create",
+            "authorized": True,
+            "generation": {"prompt": "海边", "duration": 30, **metadata},
+        },
+    )
+    service.create.assert_not_awaited()
+    assert saved["draft_generation"]["title"] == metadata["title"]
+    service.create.return_value = task(**metadata)
+    service.query.return_value = task(**metadata)
+    events = []
+    response, saved = await invoke(
+        video_skill,
+        "改成十五秒",
+        {"action": "create", "authorized": True, "generation": {"duration": 15}},
+        saved,
+        writer=events.append,
+    )
+    body = service.create.await_args.args[2]
+    assert body.title == metadata["title"] and str(body.cover_url) == metadata["cover_url"]
+    assert response.response_metadata["video"]["title"] == metadata["title"]
+    assert response.response_metadata["video"]["cover_url"] == metadata["cover_url"]
+    assert events[0].content[0]["video"]["cover_url"] == metadata["cover_url"]
+    response, _ = await invoke(video_skill, "查询刚才的视频", {"action": "detail"}, saved)
+    assert response.response_metadata["video"]["title"] == metadata["title"]
+    assert response.response_metadata["video"]["cover_url"] == metadata["cover_url"]
+    assert metadata["cover_url"] not in response.content
+
+
+@pytest.mark.asyncio
+async def test_list_event_returns_metadata_and_legacy_nulls(video_skill):
+    service, _, _ = video_skill
+    service.list_tasks.return_value = VideoTaskPage(
+        items=[task(title="海边", cover_url="https://cdn.example/cover.jpg"), task(124)],
+        total=2,
+        page=1,
+        page_size=20,
+        total_pages=1,
+    )
+    events = []
+    response, _ = await invoke(video_skill, "列出视频", {"action": "list"}, writer=events.append)
+    items = events[0].content[0]["items"]
+    assert items[0]["title"] == "海边" and items[0]["cover_url"] == "https://cdn.example/cover.jpg"
+    assert items[1]["title"] is None and items[1]["cover_url"] is None
+    assert "https://" not in response.content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "metadata, expected",
+    [({"title": " "}, "标题"), ({"cover_url": "ftp://cdn.example/c.jpg"}, "封面")],
+)
+async def test_invalid_metadata_keeps_draft_and_does_not_submit(video_skill, metadata, expected):
+    service, _, _ = video_skill
+    response, saved = await invoke(
+        video_skill,
+        "按这个标题和封面生成视频",
+        {
+            "action": "create",
+            "authorized": True,
+            "record_id": 123,
+            "generation": {"prompt": "海边", **metadata},
+        },
+    )
+    assert response.response_metadata["video_status"] == "invalid" and expected in response.content
+    assert saved["draft_generation"][next(iter(metadata))] == next(iter(metadata.values()))
+    service.create.assert_not_awaited()
+    service.edit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_edit_passes_explicit_metadata_to_new_task(video_skill):
+    service, _, _ = video_skill
+    metadata = {"title": "水墨海边", "cover_url": "https://cdn.example/ink.jpg"}
+    service.edit.return_value = task(124, **metadata)
+    response, _ = await invoke(
+        video_skill,
+        "将编号三改成水墨风格，用这个标题和封面",
+        {
+            "action": "edit",
+            "authorized": True,
+            "record_id": 3,
+            "editing": {"prompt": "水墨风格", **metadata},
+        },
+    )
+    assert service.edit.await_args.kwargs == {"prompt": "水墨风格", **metadata}
+    assert response.response_metadata["video"]["title"] == metadata["title"]
+
+
+@pytest.mark.asyncio
 async def test_rejected_duration_retains_scene_and_accepts_correction(video_skill):
     service, _, structured = video_skill
     response, saved = await invoke(

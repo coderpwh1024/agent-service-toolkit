@@ -27,7 +27,11 @@ async def test_video_repository_constraints_and_reconnect():
     try:
         await repo.open()
         await other.open()
-        body = VideoCreate(prompt="烟雾测试，不调用真实模型")
+        body = VideoCreate(
+            prompt="烟雾测试，不调用真实模型",
+            title="海边日落",
+            cover_url="https://cdn.example/cover.jpg",
+        )
         results = await asyncio.gather(
             *(repo.reserve(12, "same", "a" * 64, body) for _ in range(12))
         )
@@ -37,6 +41,7 @@ async def test_video_repository_constraints_and_reconnect():
         assert await repo.latest_id(12) == record.id
         assert await repo.latest_id(13) is None
         assert record.create_by == record.update_by == 12
+        assert record.title == body.title and record.cover_url == str(body.cover_url)
         assert await other.get(record.id, 13) is None
         async with repo.guard("test-task") as first:
             async with other.guard("test-task") as second:
@@ -52,7 +57,11 @@ async def test_video_repository_constraints_and_reconnect():
         reloaded = await other.get(record.id, 12)
         assert reloaded is not None and reloaded.task_id == "upstream-task"
         assert reloaded.request_payload == body
-        legacy = reloaded.request_payload.model_dump()
+        assert reloaded.title == body.title and reloaded.cover_url == str(body.cover_url)
+        items, total = await other.list_tasks(12, VideoListQuery())
+        assert total == 1 and items[0].title == body.title
+        assert items[0].cover_url == str(body.cover_url)
+        legacy = reloaded.request_payload.model_dump(mode="json")
         legacy["watermark"] = True
         async with repo.pool.connection() as conn:
             await conn.execute(
@@ -107,9 +116,12 @@ async def test_video_repository_constraints_and_reconnect():
             prompt="水墨画风",
             duration=5,
             ratio="16:9",
+            title="水墨画风",
+            cover_url="https://cdn.example/ink.jpg",
         )
         edited, created = await repo.reserve(12, "edit-key", "e" * 64, edit)
         assert created and (await other.get(edited.id, 12)).request_payload == edit
+        assert edited.title == edit.title and edited.cover_url == str(edit.cover_url)
         other_record, _ = await repo.reserve(13, "other-user", "d" * 64, body)
         assert await repo.latest_id(13) == other_record.id
         async with repo.pool.connection() as conn:
@@ -121,6 +133,62 @@ async def test_video_repository_constraints_and_reconnect():
         assert await repo.latest_id(13) is None
     finally:
         await other.close()
+        await repo.close()
+        async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+            await conn.execute(SQL("DROP SCHEMA {} CASCADE").format(Identifier(schema)))
+
+
+@pytest.mark.docker
+@pytest.mark.asyncio
+async def test_video_metadata_upgrade_preserves_legacy_rows_and_is_repeatable():
+    schema = "video_smoke_" + uuid4().hex
+    conninfo = get_postgres_connection_string()
+    async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+        await conn.execute(SQL("CREATE SCHEMA {}").format(Identifier(schema)))
+    repo = VideoRepository(make_conninfo(conninfo, options=f"-csearch_path={schema}"))
+    try:
+        await repo.open()
+        body = VideoCreate(prompt="旧任务")
+        legacy, _ = await repo.reserve(12, "legacy-key", "a" * 64, body)
+        async with repo.pool.connection() as conn:
+            await conn.execute(
+                "ALTER TABLE video_generation_tasks DROP COLUMN title, DROP COLUMN cover_url"
+            )
+            await conn.execute(
+                """UPDATE video_generation_tasks SET request_payload = %s,
+                update_by = 12, update_time = CURRENT_TIMESTAMP WHERE id = %s""",
+                (Jsonb(body.model_dump(mode="json", exclude={"title", "cover_url"})), legacy.id),
+            )
+        await repo.close()
+        for _ in range(2):
+            repo = VideoRepository(make_conninfo(conninfo, options=f"-csearch_path={schema}"))
+            await repo.open()
+            reloaded = await repo.get(legacy.id, 12)
+            assert reloaded is not None
+            assert reloaded.title is None and reloaded.cover_url is None
+            assert reloaded.request_hash == legacy.request_hash
+            assert reloaded.request_payload == body
+            assert reloaded.create_time == legacy.create_time
+            await repo.close()
+        repo = VideoRepository(make_conninfo(conninfo, options=f"-csearch_path={schema}"))
+        await repo.open()
+        metadata = VideoCreate(prompt="新任务", title="海边", cover_url="https://cdn.example/c.jpg")
+        created, _ = await repo.reserve(12, "new-key", "b" * 64, metadata)
+        assert created.title == metadata.title and created.cover_url == str(metadata.cover_url)
+        async with repo.pool.connection() as conn:
+            for field, value in (
+                ("title", "字" * 201),
+                ("cover_url", "https://cdn.example/" + "a" * 2048),
+            ):
+                with pytest.raises(psycopg.errors.StringDataRightTruncation):
+                    await conn.execute(
+                        SQL("""UPDATE video_generation_tasks SET {} = %s,
+                        update_by = 12, update_time = CURRENT_TIMESTAMP WHERE id = %s""").format(
+                            Identifier(field)
+                        ),
+                        (value, created.id),
+                    )
+    finally:
         await repo.close()
         async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
             await conn.execute(SQL("DROP SCHEMA {} CASCADE").format(Identifier(schema)))

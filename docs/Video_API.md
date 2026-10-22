@@ -6,12 +6,16 @@
 
 ## PostgreSQL 表设计
 
-DDL 位于 [create_video_generation_tasks.sql](../src/video/sql/create_video_generation_tasks.sql)。启动启用的视频模块时，在 PostgreSQL 中幂等创建新表和索引；不修改或删除现有表。并发启动的建表操作通过事务级 advisory lock 串行化。部署账号需要建表、索引和注释权限；也可由管理员提前执行此 DDL。
+DDL 位于 [create_video_generation_tasks.sql](../src/video/sql/create_video_generation_tasks.sql)。启动启用的视频模块时，在 PostgreSQL 中幂等创建新表和索引，并通过 `ADD COLUMN IF NOT EXISTS` 为已有表补充 `title`、`cover_url`。并发启动的建表操作通过事务级 advisory lock 串行化。部署账号需要建表、修改表、索引和注释权限；也可由管理员提前执行此 DDL。
+
+本次升级只新增可空列，历史记录保留 `NULL`，不回填或改写标题、封面、请求载荷和审计字段。可在旧服务仍运行时先执行 DDL，再部署新服务；重复执行安全。执行前可查询 `information_schema.columns` 核对已有列；手动执行时使用事务并设置适当的 `lock_timeout`。尚未提交的 DDL 可回滚；已提交后回退应用版本时保留新增列，不删除已保存元数据。新字段缺省或显式为 `null` 时沿用旧请求摘要，保证旧幂等键重试兼容。
 
 | 字段 | PostgreSQL 类型 | 含义 |
 | --- | --- | --- |
 | `id` | BIGINT IDENTITY PRIMARY KEY | 本地业务记录 ID |
 | `user_id` | BIGINT NOT NULL | 所属用户，绑定应用令牌中的数字用户 ID |
+| `title` | VARCHAR(200) NULL | 用户指定的视频展示标题，未提供和历史记录为空 |
+| `cover_url` | VARCHAR(2048) NULL | 用户指定的 HTTP/HTTPS 封面地址，仅存引用，不抓取 |
 | `idempotency_key` | VARCHAR(128) NOT NULL | 用户范围内的幂等键 |
 | `request_hash` | VARCHAR(64) NOT NULL | 规范化入参的 SHA256 摘要 |
 | `request_payload` | JSONB NOT NULL | 校验后的完整生成参数；包含敏感提示词 |
@@ -81,6 +85,8 @@ curl -X POST "$AGENT_URL/videos" \
   -H 'Content-Type: application/json' \
   -d '{
     "prompt": "夕阳下，一匹马沿海边缓慢奔跑，镜头平稳跟随",
+    "title": "海边日落",
+    "cover_url": "https://cdn.example.com/covers/sunset.jpg",
     "model": "happyhorse-1.1-t2v",
     "resolution": "720P",
     "ratio": "16:9",
@@ -92,7 +98,9 @@ curl -X POST "$AGENT_URL/videos" \
 
 支持 `happyhorse-1.1-t2v` 和 `happyhorse-1.0-t2v`；分辨率支持 480P/720P/1080P，1.0 不接受 480P。时长为 3–15 秒整数；seed 可省略，范围 0–2147483647。宽高比、提示词长度等按 schema 验证。默认 1.1、1080P、16:9、5 秒、`watermark=false`（不添加水印）。已有记录保留原参数；显式传入的水印参数仍按请求执行。
 
-成功接收后 `data.id` 是查询使用的本地记录 ID，`data.task_id` 是阿里云任务 ID。响应同时提供 `status`、`storage_status`、两个独立 URL 字段和安全错误分类；不暴露幂等键、用户提示词、供应商完整响应或鉴权信息。HTTP 202 表示已处理异步提交请求，业务是否已被上游接受应检查 `data.status`。
+`title` 与 `cover_url` 均可省略或为 `null`。标题最多 200 字符，去除首尾空白保存，空字符串或纯空白返回 422；封面须为不超过 2048 字符的有效 HTTP/HTTPS URL，非法地址返回 422。二者作为本地元数据保存到独立列及请求载荷，参与请求幂等校验，不传给 HappyHorse，不自动生成标题、截取首帧、下载封面或验证远端图片是否存在。同幂等键修改标题或封面返回 409，应使用新键创建独立任务。
+
+成功接收后 `data.id` 是查询使用的本地记录 ID，`data.task_id` 是阿里云任务 ID。响应同时提供 `title`、`cover_url`、`status`、`storage_status`、两个独立视频 URL 字段和安全错误分类；不暴露幂等键、用户提示词、供应商完整响应或鉴权信息。HTTP 202 表示已处理异步提交请求，业务是否已被上游接受应检查 `data.status`。
 
 ## 分页查询视频列表
 
@@ -126,9 +134,9 @@ curl "$AGENT_URL/videos?page=1&page_size=20&status=SUCCEEDED&storage_status=STOR
 }
 ```
 
-有结果时 `items` 中每条数据沿用原有 `VideoTask` 结构，包含本地 ID、阿里云任务 ID、生成状态、转存状态、两个独立视频 URL 和创建、更新时间，不返回提示词和幂等键。列表固定按 `create_time DESC, id DESC` 排序，创建时间相同的记录再按 ID 倒序。`total` 为符合当前用户和状态条件的总条数，`total_pages` 为向上取整的总页数；请求超过最后一页时仍返回 200、空 `items` 和实际总条数。
+有结果时 `items` 中每条数据沿用 `VideoTask` 结构，包含本地 ID、标题 `title`、封面 `cover_url`、阿里云任务 ID、生成状态、转存状态、两个独立视频 URL 和创建、更新时间，不返回提示词和幂等键。列表固定按 `create_time DESC, id DESC` 排序，创建时间相同的记录再按 ID 倒序。`total` 为符合当前用户和状态条件的总条数，`total_pages` 为向上取整的总页数；请求超过最后一页时仍返回 200、空 `items` 和实际总条数。
 
-列表只读取数据库，不触发阿里云查询、七牛转存或修改记录。最新状态由现有单条查询接口和定时同步回写；需要立即刷新某个任务时继续调用 `GET /videos/{record_id}`。总数和分页数据使用同一只读事务快照，避免单次响应内因并发更新造成统计不一致。此接口无需新增或修改数据库字段，原有生成和单条查询接口保持原行为。
+列表只读取数据库，不触发阿里云查询、七牛转存或修改记录。最新状态由现有单条查询接口和定时同步回写；需要立即刷新某个任务时继续调用 `GET /videos/{record_id}`。总数和分页数据使用同一只读事务快照，避免单次响应内因并发更新造成统计不一致。未提供标题、封面的历史记录以 `null` 返回这两个字段；新增元数据不改变分页筛选条件。
 
 ## 查询和自动回写
 
@@ -171,7 +179,7 @@ PostgreSQL 目标已包含 `tests/smoke/test_video_postgres.py`，在独立测�
 
 ## Nacos 视频 Skill
 
-`manage-user-videos` 为独立运行时技能，源码位于 [SKILL.md](../skills/manage-user-videos/SKILL.md)，受控实现位于 `src/skills/video.py`。它使用现有 `VideoService`，保留三个 HTTP 接口、既有表结构、任务同步和七牛转存流程。HTTP 创建请求默认水印改为 `false`；显式参数仍受现有接口支持。
+`manage-user-videos` 为独立运行时技能，源码位于 [SKILL.md](../skills/manage-user-videos/SKILL.md)，受控实现位于 `src/skills/video.py`。它使用现有 `VideoService`，保留三个 HTTP 接口、任务同步和七牛转存流程，并支持可选标题和封面。HTTP 创建请求默认水印改为 `false`；显式参数仍受现有接口支持。
 
 在当前 Nacos 应用配置中合并以下内容，保留其他配置：
 
@@ -181,7 +189,7 @@ video:
 skills:
   video:
     enabled: true
-    version: "1.0.0"
+    version: "1.1.0"
     label: latest
     timeout_seconds: 20
 ```
@@ -195,15 +203,15 @@ CLI 的连接地址和 Namespace 必须与应用一致；密码留在受保护�
 ```sh
 nacos-cli skill-upload skills/manage-user-videos
 nacos-cli skill-describe manage-user-videos --output json
-nacos-cli skill-review manage-user-videos --version 1.0.0
+nacos-cli skill-review manage-user-videos --version 1.1.0
 nacos-cli skill-describe manage-user-videos --output json
 ```
 
 待目标版本通过异步评审后发布；如果已经在线则跳过发布。后续更新使用新版本，不覆盖已发布版本。
 
 ```sh
-nacos-cli skill-release manage-user-videos --version 1.0.0
-nacos-cli skill-get manage-user-videos --version 1.0.0 -o /path/to/skill-review
+nacos-cli skill-release manage-user-videos --version 1.1.0
+nacos-cli skill-get manage-user-videos --version 1.1.0 -o /path/to/skill-review
 ```
 
 最终核对目标版本为 `online`，并对比下载后的 `SKILL.md` 摘要与仓库文件一致。仅上传草稿不代表已经可被运行时加载。
@@ -216,6 +224,7 @@ nacos-cli skill-get manage-user-videos --version 1.0.0 -o /path/to/skill-review
 
 | 可以说的话 | 执行行为 |
 | --- | --- |
+| “生成海边日落视频，标题叫海边日落，封面用我提供的链接” | 提取明确指定的 `title`、`cover_url`，缺省留空，不自行编造 |
 | “生成五秒海边日落的视频” | 创建无水印视频任务，返回本地编号 |
 | “生成十秒视频” → “海边日落” | 收集内容，保留十秒要求后提交 |
 | “按上面描述生成三十秒” → “改成十五秒” | 解释时长限制，保留场景，用户修正后提交 |
@@ -234,7 +243,7 @@ nacos-cli skill-get manage-user-videos --version 1.0.0 -o /path/to/skill-review
 
 输出支持 720P/1080P，默认 1080P；`audio_setting=auto` 由模型控制，`origin` 保留原声。来源为项目生成的 3–15 秒视频，宽高比需在 1:2.5 至 2.5:1；素材格式、大小、尺寸和帧率仍由供应商检查，不保证所有编辑均成功。新视频显式 `watermark=false`，不承诺移除源画面已有标识。
 
-编辑新建任务，不覆盖源记录。现有 JSONB `request_payload` 保存编辑模型、源记录编号、源七牛 URL、编辑要求和参数，业务表不新增列。解析兼容旧的文生视频载荷；查询、列表、幂等、轮询和转存共用原流程。旧记录中的水印值不回填或改写。
+编辑新建任务，不覆盖源记录。现有 JSONB `request_payload` 保存编辑模型、源记录编号、源七牛 URL、编辑要求和参数，可选标题和封面另存独立列，也保留在请求载荷中；未指定时留空，不复制来源封面，不修改原记录。解析兼容旧的文生视频载荷；查询、列表、幂等、轮询和转存共用原流程。旧记录中的水印值不回填或改写。
 
 ### 状态、失败和客户端事件
 
@@ -248,7 +257,7 @@ nacos-cli skill-get manage-user-videos --version 1.0.0 -o /path/to/skill-review
 {
   "type": "video.list",
   "items": [
-    {"record_id": 123, "status": "SUCCEEDED", "storage_status": "STORED", "qiniu_video_url": "https://cdn.example/video.mp4", "error_code": null}
+    {"record_id": 123, "title": "海边日落", "cover_url": "https://cdn.example/cover.jpg", "status": "SUCCEEDED", "storage_status": "STORED", "qiniu_video_url": "https://cdn.example/video.mp4", "error_code": null}
   ],
   "total": 1,
   "page": 1,
@@ -258,6 +267,6 @@ nacos-cli skill-get manage-user-videos --version 1.0.0 -o /path/to/skill-review
 }
 ```
 
-单条结果继续使用 `{"type":"video.task","video":{...}}`，`response_metadata.video` 保留相同单条摘要。数量事件包含 `total` 与过滤条件。列表、数量事件是通用通道的新增载荷，不改变语音事件顺序或音频协议。客户端根据事件展示七牛链接和分页控件，语音不朗读 URL，也不自动启动播放器。
+单条结果继续使用 `{"type":"video.task","video":{...}}`，`response_metadata.video` 保留相同单条摘要。数量事件包含 `total` 与过滤条件。列表、数量事件是通用通道的新增载荷，不改变语音事件顺序或音频协议。客户端根据事件展示标题、封面、七牛链接和分页控件，语音不朗读 URL，也不自动启动播放器。
 
 日志用中文记录技能摘要、输入字数、操作、状态及安全错误类型，不打印完整场景、对话、凭据或签名 URL。识别模型仍具有误判可能；单元和模拟音频测试不能替代部署后对实际 ASR、模型权限和素材质量的验收。

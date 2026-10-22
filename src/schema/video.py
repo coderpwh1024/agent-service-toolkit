@@ -25,7 +25,21 @@ class VideoStorageStatus(StrEnum):
     FAILED = "FAILED"
 
 
-class VideoCreate(BaseModel):
+class VideoMetadata(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    cover_url: HttpUrl | None = Field(default=None, max_length=2048)
+
+    @field_validator("title")
+    @classmethod
+    def validate_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValueError("视频标题不能为空")
+        return value.strip()
+
+
+class VideoCreate(VideoMetadata):
     model_config = ConfigDict(extra="forbid")
 
     prompt: str = Field(min_length=1, max_length=5000)
@@ -56,11 +70,13 @@ class VideoCreate(BaseModel):
         return {
             "model": self.model,
             "input": {"prompt": self.prompt},
-            "parameters": self.model_dump(exclude={"model", "prompt"}, exclude_none=True),
+            "parameters": self.model_dump(
+                exclude={"model", "prompt", "title", "cover_url"}, exclude_none=True
+            ),
         }
 
 
-class VideoEdit(BaseModel):
+class VideoEdit(VideoMetadata):
     model_config = ConfigDict(extra="forbid")
 
     model: Literal["happyhorse-1.0-video-edit"] = "happyhorse-1.0-video-edit"
@@ -107,6 +123,8 @@ class ProviderResult(BaseModel):
 class VideoTask(BaseModel):
     id: int
     user_id: int
+    title: str | None = None
+    cover_url: str | None = None
     task_id: str | None
     status: VideoStatus
     storage_status: VideoStorageStatus

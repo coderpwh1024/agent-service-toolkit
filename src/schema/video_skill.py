@@ -11,6 +11,8 @@ class VideoGenerationDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     prompt: str | None = Field(default=None, max_length=6000)
+    title: str | None = None
+    cover_url: str | None = None
     model: str | None = None
     resolution: str | None = None
     ratio: str | None = None
@@ -22,6 +24,8 @@ class VideoEditDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     prompt: str | None = Field(default=None, max_length=6000)
+    title: str | None = None
+    cover_url: str | None = None
     resolution: str | None = None
     audio_setting: str | None = None
     seed: int | None = Field(default=None, strict=True)

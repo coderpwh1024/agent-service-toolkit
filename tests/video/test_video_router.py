@@ -95,10 +95,54 @@ def test_video_routes_are_registered_in_service():
     assert schema["paths"]["/videos/{record_id}"]["get"]["operationId"] == "query_video"
 
 
+@pytest.mark.parametrize(
+    "metadata", [{}, {"title": "海边日落", "cover_url": "https://cdn.example/cover.jpg"}]
+)
+def test_create_and_detail_return_metadata(client, metadata):
+    test_client, service = client
+    task = VideoTask(
+        id=123,
+        user_id=12,
+        task_id="task-123",
+        status="PENDING",
+        storage_status="NOT_READY",
+        aliyun_video_url=None,
+        qiniu_video_url=None,
+        qiniu_object_key=None,
+        error_code=None,
+        create_time=datetime.now(UTC),
+        update_time=datetime.now(UTC),
+        **metadata,
+    )
+    service.create.return_value = task
+    service.query.return_value = task
+    created = test_client.post("/videos", json={"prompt": "海边", **metadata}, headers=headers())
+    detail = test_client.get("/videos/123", headers=headers())
+    assert created.status_code == 202 and detail.status_code == 200
+    for response in (created, detail):
+        assert response.json()["data"]["title"] == metadata.get("title")
+        assert response.json()["data"]["cover_url"] == metadata.get("cover_url")
+    body = service.create.await_args.args[2]
+    assert body.title == metadata.get("title")
+    assert (str(body.cover_url) if body.cover_url else None) == metadata.get("cover_url")
+
+
+@pytest.mark.parametrize(
+    "metadata", [{"title": " "}, {"title": "字" * 201}, {"cover_url": "javascript:alert(1)"}]
+)
+def test_create_rejects_invalid_metadata_before_submission(client, metadata):
+    test_client, service = client
+    response = test_client.post("/videos", json={"prompt": "海边", **metadata}, headers=headers())
+    assert response.status_code == 422
+    service.create.assert_not_awaited()
+
+
 def test_list_videos_returns_page_and_binds_current_user(client):
     test_client, service = client
     task = VideoTask(
         id=123,
+        title="海边日落",
+        cover_url="https://cdn.example/cover.jpg",
         user_id=12,
         task_id="task-123",
         status="SUCCEEDED",
@@ -132,6 +176,8 @@ def test_list_videos_returns_page_and_binds_current_user(client):
     assert result["total"] == 3 and result["total_pages"] == 2
     assert result["page"] == 2 and result["page_size"] == 2
     assert result["items"][0]["id"] == 123
+    assert result["items"][0]["title"] == "海边日落"
+    assert result["items"][0]["cover_url"] == "https://cdn.example/cover.jpg"
     assert result["items"][0]["qiniu_video_url"] == "https://cdn.example/video.mp4"
     assert "request_payload" not in result["items"][0]
     service.list_tasks.assert_awaited_once_with(

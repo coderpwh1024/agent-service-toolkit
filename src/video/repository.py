@@ -16,12 +16,12 @@ from psycopg_pool import AsyncConnectionPool
 from schema.video import VideoCreate, VideoEdit, VideoListQuery, VideoRecord, VideoTask
 
 _LIST_COLUMNS = SQL("""
-    id, user_id, task_id, status, storage_status, aliyun_video_url,
+    id, user_id, title, cover_url, task_id, status, storage_status, aliyun_video_url,
     qiniu_video_url, qiniu_object_key, error_code, create_time, update_time
 """)
 
 _COLUMNS = SQL("""
-    id, user_id, idempotency_key, request_hash, request_payload, task_id, status,
+    id, user_id, title, cover_url, idempotency_key, request_hash, request_payload, task_id, status,
     storage_status, aliyun_video_url, qiniu_video_url, qiniu_object_key,
     provider_request_id, error_code, next_poll_time, create_by, update_by,
     create_time, update_time, is_delete
@@ -75,14 +75,18 @@ class VideoRepository:
                 await conn.execute(
                     SQL("""
                         INSERT INTO video_generation_tasks (
-                            user_id, idempotency_key, request_hash, request_payload,
+                            user_id, title, cover_url, idempotency_key, request_hash, request_payload,
                             create_by, update_by, next_poll_time
-                        ) VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP + INTERVAL '5 minutes')
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP + INTERVAL '5 minutes'
+                        )
                         ON CONFLICT (user_id, idempotency_key) WHERE is_delete = 0 DO NOTHING
                         RETURNING {}
                     """).format(_COLUMNS),
                     (
                         user_id,
+                        body.title,
+                        str(body.cover_url) if body.cover_url is not None else None,
                         key,
                         request_hash,
                         Jsonb(body.model_dump(mode="json")),

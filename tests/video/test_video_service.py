@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -74,6 +76,8 @@ class MemoryRepository:
             idempotency_key=key,
             request_hash=request_hash,
             request_payload=body,
+            title=body.title,
+            cover_url=str(body.cover_url) if body.cover_url is not None else None,
             task_id=None,
             status="SUBMITTING",
         )
@@ -152,7 +156,9 @@ async def test_edit_is_new_idempotent_task_with_original_preserved(service):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("condition", ["other_user", "unfinished", "ratio", "invalid_resolution"])
+@pytest.mark.parametrize(
+    "condition", ["other_user", "unfinished", "ratio", "invalid_resolution", "title", "cover_url"]
+)
 async def test_edit_rejects_invalid_source_or_parameters_before_reservation(service, condition):
     source = record(
         status="SUCCEEDED",
@@ -175,6 +181,8 @@ async def test_edit_rejects_invalid_source_or_parameters_before_reservation(serv
             1,
             "水墨风格",
             resolution="480P" if condition == "invalid_resolution" else "1080P",
+            title=" " if condition == "title" else None,
+            cover_url="ftp://cdn.example/c.jpg" if condition == "cover_url" else None,
         )
     assert len(service.repo.records) == 1
     service.provider.create.assert_not_awaited()
@@ -189,6 +197,76 @@ async def test_concurrent_repeated_submission_and_parameter_conflict(service):
     with pytest.raises(VideoConflictError):
         await service.create(12, "same", VideoCreate(prompt="其他参数"))
     assert service.provider.create.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_metadata_survives_submission_query_and_conflicts_on_change(service):
+    body = VideoCreate(
+        prompt="海边日落", title="海边日落", cover_url="https://cdn.example/cover.jpg"
+    )
+    result = await service.create(12, "metadata", body)
+    assert result.title == body.title and result.cover_url == str(body.cover_url)
+    service.provider.query.return_value = ProviderResult.model_validate(
+        {"output": {"task_id": "task-123", "task_status": "RUNNING"}}
+    )
+    refreshed = await service.query(result.id, 12)
+    assert refreshed.title == result.title and refreshed.cover_url == result.cover_url
+    for changes in ({"title": "新标题"}, {"cover_url": "https://cdn.example/other.jpg"}):
+        with pytest.raises(VideoConflictError):
+            await service.create(12, "metadata", VideoCreate(**(body.model_dump() | changes)))
+    service.provider.create.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("editing", [False, True])
+async def test_legacy_hash_allows_replay_with_omitted_or_null_metadata(service, editing):
+    body = (
+        VideoEdit(
+            source_record_id=9,
+            source_url="https://cdn.example/source.mp4",
+            prompt="水墨风格",
+            duration=5,
+            ratio="16:9",
+        )
+        if editing
+        else VideoCreate(prompt="旧请求", seed=42)
+    )
+    legacy_payload = body.model_dump(mode="json", exclude={"title", "cover_url"})
+    legacy_hash = hashlib.sha256(
+        json.dumps(legacy_payload, sort_keys=True, ensure_ascii=False).encode()
+    ).hexdigest()
+    original, _ = await service.repo.reserve(12, "legacy", legacy_hash, body)
+    result = await service._submit(12, "legacy", type(body)(**legacy_payload))
+    assert result.id == original.id
+    assert result.title is None and result.cover_url is None
+    explicit_null = type(body)(**legacy_payload, title=None, cover_url=None)
+    assert (await service._submit(12, "legacy", explicit_null)).id == original.id
+    service.provider.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_edit_metadata_belongs_to_new_task_without_copying_source_cover(service):
+    source = record(
+        title="原视频",
+        cover_url="https://cdn.example/original.jpg",
+        status="SUCCEEDED",
+        storage_status="STORED",
+        qiniu_video_url="https://cdn.example/original.mp4",
+        qiniu_object_key="original.mp4",
+    )
+    service.repo.records[1] = source
+    result = await service.edit(
+        12,
+        "edit-metadata",
+        1,
+        "水墨风格",
+        title="水墨海边",
+        cover_url="https://cdn.example/ink.jpg",
+    )
+    assert result.title == "水墨海边" and result.cover_url == "https://cdn.example/ink.jpg"
+    assert service.repo.records[1] == source
+    without_metadata = await service.edit(12, "edit-no-metadata", 1, "水墨风格")
+    assert without_metadata.title is None and without_metadata.cover_url is None
 
 
 @pytest.mark.asyncio

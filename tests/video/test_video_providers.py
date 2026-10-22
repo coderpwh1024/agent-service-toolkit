@@ -52,7 +52,9 @@ async def test_create_and_query_follow_official_wire_contract():
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         provider = HappyHorseClient(client, config())
-        await provider.create(VideoCreate(prompt="horse"))
+        await provider.create(
+            VideoCreate(prompt="horse", title="海边", cover_url="https://cdn.example/cover.jpg")
+        )
         await provider.query("task-123")
 
 
@@ -67,6 +69,8 @@ async def test_edit_follows_official_wire_contract_without_metadata_leakage():
         audio_setting="origin",
         duration=10,
         ratio="16:9",
+        title="水墨海边",
+        cover_url="https://cdn.example/ink.jpg",
     )
 
     def handler(request):
@@ -86,6 +90,38 @@ async def test_edit_follows_official_wire_contract_without_metadata_leakage():
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         result = await HappyHorseClient(client, config()).create(body)
         assert result.output.task_id == "edit-123"
+
+
+@pytest.mark.parametrize("model", [VideoCreate, VideoEdit])
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"title": ""},
+        {"title": " \t\n"},
+        {"title": "字" * 201},
+        {"cover_url": ""},
+        {"cover_url": "not-a-url"},
+        {"cover_url": "ftp://cdn.example/cover.jpg"},
+        {"cover_url": "https://cdn.example/" + "a" * 2048},
+    ],
+)
+def test_video_metadata_validation(model, metadata):
+    params = {"prompt": "海边"}
+    if model is VideoEdit:
+        params.update(
+            source_record_id=1, source_url="https://cdn.example/v.mp4", duration=5, ratio="16:9"
+        )
+    with pytest.raises(ValidationError):
+        model.model_validate(params | metadata)
+
+
+def test_video_metadata_is_optional_and_normalizes_title():
+    assert VideoCreate(prompt="海边").title is None
+    assert VideoCreate(prompt="海边", title=None, cover_url=None).cover_url is None
+    body = VideoCreate(prompt="海边", title=" 海边日落 ", cover_url="http://cdn.example/c.jpg")
+    assert body.title == "海边日落"
+    assert str(body.cover_url) == "http://cdn.example/c.jpg"
+    assert VideoCreate(prompt="海边", title="字" * 200).title == "字" * 200
 
 
 @pytest.mark.asyncio

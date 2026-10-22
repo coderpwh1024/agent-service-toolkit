@@ -69,6 +69,8 @@ class VideoService:
         resolution: str = "1080P",
         audio_setting: str = "auto",
         seed: int | None = None,
+        title: str | None = None,
+        cover_url: str | None = None,
     ) -> VideoTask:
         source = await self.repo.get(source_record_id, user_id)
         if source is None:
@@ -93,13 +95,19 @@ class VideoService:
                 "duration": source.request_payload.duration,
                 "ratio": source.request_payload.ratio,
                 "watermark": False,
+                "title": title,
+                "cover_url": cover_url,
             }
         )
         return await self._submit(user_id, key, body)
 
     async def _submit(self, user_id: int, key: str, body: VideoCreate | VideoEdit) -> VideoTask:
+        payload = body.model_dump(mode="json")
+        for field in ("title", "cover_url"):
+            if payload[field] is None:
+                del payload[field]
         request_hash = hashlib.sha256(
-            json.dumps(body.model_dump(mode="json"), sort_keys=True, ensure_ascii=False).encode()
+            json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
         logger.info(
             "视频生成入参：用户ID=%s 请求摘要=%s 模型=%s 时长=%s",
