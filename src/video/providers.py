@@ -126,10 +126,32 @@ class QiniuVideoStorage:
         logger.info("七牛云视频转存出参：任务ID=%s 对象键=%s 转存成功=true", task_id, object_key)
         return object_key, url
 
-    def _archive(self, source_url: str, object_key: str) -> None:
+    async def archive_cover(self, task_id: str, video_object_key: str) -> tuple[str, str]:
+        object_key = f"videos/happyhorse/{task_id}.jpg"
+        source_url = f"{self.base_url}/{quote(video_object_key, safe='/')}?vframe/jpg/offset/1"
+        logger.info("七牛云视频封面转存入参：任务ID=%s 对象键=%s", task_id, object_key)
+        try:
+            await asyncio.to_thread(self._archive, source_url, object_key, "image/jpeg")
+        except VideoStorageError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "七牛云视频封面转存异常：任务ID=%s 异常类型=%s", task_id, type(exc).__name__
+            )
+            raise VideoStorageError("七牛云视频封面转存失败") from None
+        url = f"{self.base_url}/{quote(object_key, safe='/')}"
+        logger.info("七牛云视频封面转存出参：任务ID=%s 转存成功=true", task_id)
+        return object_key, url
+
+    def _archive(self, source_url: str, object_key: str, expected_mime: str | None = None) -> None:
         result, response = self.manager.stat(self.bucket, object_key)
         if response.status_code == 200:
-            if not isinstance(result, dict) or not result.get("hash") or not result.get("fsize"):
+            if (
+                not isinstance(result, dict)
+                or not result.get("hash")
+                or not result.get("fsize")
+                or (expected_mime and result.get("mimeType") != expected_mime)
+            ):
                 raise VideoStorageError("七牛云已有对象校验失败")
             return
         if response.status_code != 612:
@@ -141,5 +163,6 @@ class QiniuVideoStorage:
             or result.get("key") != object_key
             or not result.get("hash")
             or not result.get("fsize")
+            or (expected_mime and result.get("mimeType") != expected_mime)
         ):
             raise VideoStorageError("七牛云未确认视频转存成功")

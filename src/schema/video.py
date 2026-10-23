@@ -26,8 +26,17 @@ class VideoStorageStatus(StrEnum):
 
 
 class VideoMetadata(BaseModel):
-    title: str | None = Field(default=None, min_length=1, max_length=200)
-    cover_url: HttpUrl | None = Field(default=None, max_length=2048)
+    title: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        description="可选展示标题；未指定时从生成描述首句提取，最多 80 字符",
+    )
+    cover_url: HttpUrl | None = Field(
+        default=None,
+        max_length=2048,
+        description="兼容可选的暂存封面；完成后替换为生成视频实际截帧的七牛永久地址",
+    )
 
     @field_validator("title")
     @classmethod
@@ -123,8 +132,10 @@ class ProviderResult(BaseModel):
 class VideoTask(BaseModel):
     id: int
     user_id: int
-    title: str | None = None
-    cover_url: str | None = None
+    title: str | None = Field(default=None, description="用户指定或从生成描述提取的视频标题")
+    cover_url: str | None = Field(
+        default=None, description="视频和封面转存完成后为独立 JPEG 图片的七牛永久地址"
+    )
     task_id: str | None
     status: VideoStatus
     storage_status: VideoStorageStatus
@@ -154,6 +165,7 @@ class VideoTaskPage(BaseModel):
 
 
 class VideoRecord(VideoTask):
+    qiniu_cover_object_key: str | None = None
     idempotency_key: str
     request_hash: str
     request_payload: VideoCreate | VideoEdit

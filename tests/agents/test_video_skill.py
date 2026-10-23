@@ -115,6 +115,62 @@ async def test_generation_uses_no_watermark_and_replay_key(video_skill):
 
 
 @pytest.mark.asyncio
+async def test_skill_returns_backend_derived_metadata_without_requiring_user_metadata(video_skill):
+    service, _, _ = video_skill
+    service.create.return_value = task(
+        title="海边日落",
+        cover_url="https://cdn.example/videos/happyhorse/task-123.jpg",
+        status="SUCCEEDED",
+        storage_status="STORED",
+    )
+    response, _ = await invoke(
+        video_skill,
+        "生成海边日落视频",
+        {"action": "create", "authorized": True, "generation": {"prompt": "海边日落。镜头跟随"}},
+    )
+    body = service.create.await_args.args[2]
+    assert body.title is None and body.cover_url is None
+    assert response.response_metadata["video"]["title"] == "海边日落"
+    assert response.response_metadata["video"]["cover_url"].endswith("task-123.jpg")
+    assert "封面" in response.content
+
+
+@pytest.mark.asyncio
+async def test_cover_failure_explains_incomplete_assets_without_regeneration(video_skill):
+    service, _, _ = video_skill
+    service.query.return_value = task(
+        title="海边日落",
+        status="SUCCEEDED",
+        storage_status="FAILED",
+        qiniu_video_url="https://cdn.example/v.mp4",
+        error_code="COVER_ARCHIVE_FAILED",
+    )
+    response, _ = await invoke(
+        video_skill,
+        "编号123的视频好了吗",
+        {"action": "detail", "record_id": 123},
+    )
+    assert "封面" in response.content and "重试" in response.content
+    assert response.response_metadata["video"]["cover_url"] is None
+    service.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_legacy_list_with_missing_metadata_does_not_claim_complete_cover(video_skill):
+    service, _, _ = video_skill
+    service.list_tasks.return_value = VideoTaskPage(
+        items=[task(status="SUCCEEDED", storage_status="STORED")],
+        total=1,
+        page=1,
+        page_size=20,
+        total_pages=1,
+    )
+    response, _ = await invoke(video_skill, "列出我的视频", {"action": "list"})
+    assert "补齐" in response.content and "查询详情" in response.content
+    service.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_metadata_draft_is_retained_and_published_for_create_and_detail(video_skill):
     service, _, _ = video_skill
     metadata = {"title": "海边日落", "cover_url": "https://cdn.example/cover.jpg"}

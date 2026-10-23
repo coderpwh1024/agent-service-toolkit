@@ -18,6 +18,7 @@ from schema.video import (
     VideoStorageStatus,
     VideoTask,
 )
+from video.metadata import derive_video_title
 from video.providers import VideoProviderError, VideoStorageError
 from video.service import VideoConflictError, VideoService
 
@@ -76,7 +77,7 @@ class MemoryRepository:
             idempotency_key=key,
             request_hash=request_hash,
             request_payload=body,
-            title=body.title,
+            title=body.title or derive_video_title(body.prompt),
             cover_url=str(body.cover_url) if body.cover_url is not None else None,
             task_id=None,
             status="SUBMITTING",
@@ -113,6 +114,10 @@ def service():
     storage.archive.return_value = (
         "videos/happyhorse/task-123.mp4",
         "https://cdn.example/video.mp4",
+    )
+    storage.archive_cover.return_value = (
+        "videos/happyhorse/task-123.jpg",
+        "https://cdn.example/cover.jpg",
     )
     return VideoService(repo, provider, storage, 0)
 
@@ -238,7 +243,7 @@ async def test_legacy_hash_allows_replay_with_omitted_or_null_metadata(service, 
     original, _ = await service.repo.reserve(12, "legacy", legacy_hash, body)
     result = await service._submit(12, "legacy", type(body)(**legacy_payload))
     assert result.id == original.id
-    assert result.title is None and result.cover_url is None
+    assert result.title == derive_video_title(body.prompt) and result.cover_url is None
     explicit_null = type(body)(**legacy_payload, title=None, cover_url=None)
     assert (await service._submit(12, "legacy", explicit_null)).id == original.id
     service.provider.create.assert_not_awaited()
@@ -266,7 +271,7 @@ async def test_edit_metadata_belongs_to_new_task_without_copying_source_cover(se
     assert result.title == "水墨海边" and result.cover_url == "https://cdn.example/ink.jpg"
     assert service.repo.records[1] == source
     without_metadata = await service.edit(12, "edit-no-metadata", 1, "水墨风格")
-    assert without_metadata.title is None and without_metadata.cover_url is None
+    assert without_metadata.title == "水墨风格" and without_metadata.cover_url is None
 
 
 @pytest.mark.asyncio
@@ -311,8 +316,130 @@ async def test_query_persists_source_before_archival_and_is_idempotent(service):
     result = await service.query(1, 12)
     assert result.qiniu_video_url == "https://cdn.example/video.mp4"
     assert result.storage_status == VideoStorageStatus.STORED
+    assert result.title and result.cover_url == "https://cdn.example/cover.jpg"
+    service.storage.archive_cover.assert_awaited_once_with("task-123", "object")
     await service.query(1, 12)
     assert service.provider.query.await_count == service.storage.archive.await_count == 1
+
+
+@pytest.mark.parametrize(
+    "prompt, expected",
+    [
+        ("海边日落。镜头缓缓推进", "海边日落"),
+        ("\n\n 海边  日落\n下一镜头", "海边 日落"),
+        ("。森林！", "森林"),
+        ("Beach at sunset. Camera follows a horse.", "Beach at sunset"),
+        ("风景" * 100, "风景" * 40),
+    ],
+)
+def test_title_comes_from_description_and_stays_bounded(prompt, expected):
+    assert derive_video_title(prompt) == expected
+
+
+@pytest.mark.asyncio
+async def test_cover_failure_keeps_archived_video_and_retries_only_cover(service):
+    service.repo.records[1] = record(
+        status="SUCCEEDED",
+        storage_status="PENDING",
+        aliyun_video_url="https://oss.aliyuncs.com/v.mp4",
+    )
+    service.storage.archive_cover.side_effect = VideoStorageError("cover failure")
+    result = await service.query(1, 12)
+    assert result.status == "SUCCEEDED" and result.storage_status == "FAILED"
+    assert result.error_code == "COVER_ARCHIVE_FAILED" and result.cover_url is None
+    assert result.title and result.qiniu_video_url
+    service.storage.archive_cover.side_effect = None
+    await service.sync_once()
+    persisted = service.repo.records[1]
+    assert persisted.storage_status == "STORED" and persisted.error_code is None
+    assert persisted.title and persisted.cover_url and persisted.qiniu_cover_object_key
+    service.storage.archive.assert_awaited_once()
+    service.provider.create.assert_not_awaited()
+    service.provider.query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_cover_cancellation_keeps_video_for_resume_without_regeneration(service):
+    service.repo.records[1] = record(
+        status="SUCCEEDED",
+        storage_status="PENDING",
+        aliyun_video_url="https://oss.aliyuncs.com/v.mp4",
+    )
+    service.storage.archive_cover.side_effect = asyncio.CancelledError()
+    with pytest.raises(asyncio.CancelledError):
+        await service.query(1, 12)
+    pending = service.repo.records[1]
+    assert pending.qiniu_video_url and pending.storage_status == "PENDING"
+    assert pending.title and pending.cover_url is None
+    service.storage.archive_cover.side_effect = None
+    resumed = await service.query(1, 12)
+    assert resumed.storage_status == "STORED" and resumed.title and resumed.cover_url
+    service.storage.archive.assert_awaited_once()
+    service.provider.create.assert_not_awaited()
+    service.provider.query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_immediate_success_is_returned_with_title_and_permanent_cover(service):
+    service.provider.create.return_value = ProviderResult.model_validate(
+        {
+            "output": {
+                "task_id": "task-123",
+                "task_status": "SUCCEEDED",
+                "video_url": "https://oss.aliyuncs.com/v.mp4",
+            }
+        }
+    )
+    result = await service.create(12, "immediate", VideoCreate(prompt="海边日落。镜头推进"))
+    assert result.title == "海边日落" and result.cover_url == "https://cdn.example/cover.jpg"
+    assert result.storage_status == "STORED"
+    service.provider.query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_query_repairs_legacy_stored_video_without_using_expired_provider_url(service):
+    service.repo.records[1] = record(
+        status="SUCCEEDED",
+        storage_status="STORED",
+        title=None,
+        cover_url="https://untrusted.example/supplied.jpg",
+        qiniu_cover_object_key=None,
+        qiniu_video_url="https://cdn.example/video.mp4",
+        qiniu_object_key="videos/original.mp4",
+        aliyun_video_url=None,
+    )
+    result = await service.query(1, 12)
+    assert result.title == "私人提示词" and result.cover_url == "https://cdn.example/cover.jpg"
+    assert result.storage_status == "STORED"
+    await service.query(1, 12)
+    service.storage.archive_cover.assert_awaited_once_with("task-123", "videos/original.mp4")
+    service.storage.archive.assert_not_awaited()
+    service.provider.query.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_completed_query_preserves_custom_title_and_original_request_hash(service):
+    body = VideoCreate(
+        prompt="描述首句。后续镜头", title="自定义标题", cover_url="https://outside.example/c.jpg"
+    )
+    result = await service.create(12, "ready", body)
+    original_payload = service.repo.records[result.id].request_payload.model_dump()
+    original_hash = service.repo.records[result.id].request_hash
+    service.provider.query.return_value = ProviderResult.model_validate(
+        {
+            "output": {
+                "task_id": "task-123",
+                "task_status": "SUCCEEDED",
+                "video_url": "https://oss.aliyuncs.com/v.mp4",
+            }
+        }
+    )
+    result = await service.query(result.id, 12)
+    assert result.title == "自定义标题" and result.cover_url == "https://cdn.example/cover.jpg"
+    assert service.repo.records[result.id].request_payload.model_dump() == original_payload
+    assert service.repo.records[result.id].request_hash == original_hash
+    assert (await service.create(12, "ready", body)).id == result.id
+    service.provider.create.assert_awaited_once()
 
 
 @pytest.mark.asyncio

@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS video_generation_tasks (
     aliyun_video_url TEXT,
     qiniu_video_url TEXT,
     qiniu_object_key TEXT,
+    qiniu_cover_object_key TEXT,
     provider_request_id TEXT,
     error_code TEXT,
     next_poll_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -37,6 +38,7 @@ CREATE TABLE IF NOT EXISTS video_generation_tasks (
 );
 ALTER TABLE video_generation_tasks ADD COLUMN IF NOT EXISTS title VARCHAR(200);
 ALTER TABLE video_generation_tasks ADD COLUMN IF NOT EXISTS cover_url VARCHAR(2048);
+ALTER TABLE video_generation_tasks ADD COLUMN IF NOT EXISTS qiniu_cover_object_key TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_video_generation_tasks_user_id_idempotency_key
     ON video_generation_tasks (user_id, idempotency_key) WHERE is_delete = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS uk_video_generation_tasks_task_id
@@ -47,11 +49,15 @@ CREATE INDEX IF NOT EXISTS idx_video_generation_tasks_next_poll_time_id
         status IN ('SUBMITTING', 'PENDING', 'RUNNING') OR
         (status = 'SUCCEEDED' AND storage_status <> 'STORED')
     );
+CREATE INDEX IF NOT EXISTS idx_video_generation_tasks_metadata_next_poll_time_id
+    ON video_generation_tasks (next_poll_time, id)
+    WHERE is_delete = 0 AND status = 'SUCCEEDED' AND storage_status = 'STORED'
+        AND (title IS NULL OR cover_url IS NULL OR qiniu_cover_object_key IS NULL);
 COMMENT ON TABLE video_generation_tasks IS 'HappyHorse 视频生成及七牛永久转存任务；保留幂等记录，业务删除使用逻辑删除';
 COMMENT ON COLUMN video_generation_tasks.id IS '自增业务主键，与阿里云任务 ID 分离';
 COMMENT ON COLUMN video_generation_tasks.user_id IS '所属应用用户 BIGINT ID，与认证令牌绑定';
-COMMENT ON COLUMN video_generation_tasks.title IS '用户指定的视频展示标题，最多 200 字符；未提供及历史记录为空';
-COMMENT ON COLUMN video_generation_tasks.cover_url IS '用户指定的 HTTP/HTTPS 封面 URL，最多 2048 字符；仅保存引用，不抓取图片';
+COMMENT ON COLUMN video_generation_tasks.title IS '视频展示标题，优先使用用户指定值，否则从生成描述首句提取最多 80 字符';
+COMMENT ON COLUMN video_generation_tasks.cover_url IS '完成后为七牛云永久 JPEG 封面地址；从生成视频第 1 秒截帧后独立转存，处理前可为空';
 COMMENT ON COLUMN video_generation_tasks.idempotency_key IS '用户范围内的幂等键；同键不同参数拒绝提交';
 COMMENT ON COLUMN video_generation_tasks.request_hash IS '规范化请求的 SHA256 摘要';
 COMMENT ON COLUMN video_generation_tasks.request_payload IS '经校验的生成参数，含用户提示词，属于受保护业务数据';
@@ -61,6 +67,7 @@ COMMENT ON COLUMN video_generation_tasks.storage_status IS '转存枚举：NOT_R
 COMMENT ON COLUMN video_generation_tasks.aliyun_video_url IS '阿里云临时视频 URL，通常有效 24 小时，含签名的敏感数据';
 COMMENT ON COLUMN video_generation_tasks.qiniu_video_url IS '七牛云持久视频 URL；仅确认转存成功后写入';
 COMMENT ON COLUMN video_generation_tasks.qiniu_object_key IS '七牛云固定对象键 videos/happyhorse/{task_id}.mp4，用于幂等转存';
+COMMENT ON COLUMN video_generation_tasks.qiniu_cover_object_key IS '七牛云已确认保存的封面对象键 videos/happyhorse/{task_id}.jpg；未确认时为空，可重试';
 COMMENT ON COLUMN video_generation_tasks.provider_request_id IS '供应商请求追踪 ID';
 COMMENT ON COLUMN video_generation_tasks.error_code IS '安全错误分类，不保存供应商原始错误正文';
 COMMENT ON COLUMN video_generation_tasks.next_poll_time IS '下一次可同步时间；每次尝试后推迟 5 分钟，避免失败任务饿死后续任务';

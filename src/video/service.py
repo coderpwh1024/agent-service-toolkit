@@ -16,6 +16,7 @@ from schema.video import (
     VideoTask,
     VideoTaskPage,
 )
+from video.metadata import derive_video_title
 from video.providers import (
     HappyHorseClient,
     QiniuVideoStorage,
@@ -135,6 +136,8 @@ class VideoService:
                 else:
                     self._apply(record, result)
                 record = await self.repo.save(record, user_id)
+                if record.status == VideoStatus.SUCCEEDED:
+                    record = await self._refresh(record, user_id)
         return self._output(record)
 
     async def query(self, record_id: int, user_id: int) -> VideoTask:
@@ -194,7 +197,13 @@ class VideoService:
             record.storage_status = VideoStorageStatus.PENDING
 
     async def _refresh(self, record: VideoRecord, actor: int) -> VideoRecord:
-        if record.storage_status == VideoStorageStatus.STORED:
+        if (
+            record.storage_status == VideoStorageStatus.STORED
+            and record.title
+            and record.title.strip()
+            and record.cover_url
+            and record.qiniu_cover_object_key
+        ):
             return record
         if record.status == VideoStatus.SUBMITTING:
             # A lost submission response cannot be retried safely without provider idempotency.
@@ -205,7 +214,9 @@ class VideoService:
             return record
         if not record.task_id:
             return record
-        if record.status != VideoStatus.SUCCEEDED or not record.aliyun_video_url:
+        if record.status != VideoStatus.SUCCEEDED or not (
+            record.aliyun_video_url or (record.qiniu_video_url and record.qiniu_object_key)
+        ):
             try:
                 result = await self.provider.query(record.task_id)
             except VideoProviderError:
@@ -214,23 +225,51 @@ class VideoService:
             self._apply(record, result)
             record = await self.repo.save(record, actor)
         if record.status == VideoStatus.SUCCEEDED and record.task_id:
+            return await self._complete_assets(record, actor)
+        return record
+
+    async def _complete_assets(self, record: VideoRecord, actor: int) -> VideoRecord:
+        task_id = record.task_id
+        if not task_id:
+            return record
+        if not record.title or not record.title.strip():
+            record.title = derive_video_title(record.request_payload.prompt)
+        if not record.qiniu_video_url or not record.qiniu_object_key:
             if not record.aliyun_video_url:
                 record.error_code = "VIDEO_URL_MISSING"
+                return await self.repo.save(record, actor)
             else:
                 try:
-                    object_key, url = await self.storage.archive(
-                        record.task_id, record.aliyun_video_url
-                    )
+                    object_key, url = await self.storage.archive(task_id, record.aliyun_video_url)
                 except VideoStorageError:
                     record.storage_status = VideoStorageStatus.FAILED
                     record.error_code = "ARCHIVE_FAILED"
+                    return await self.repo.save(record, actor)
                 else:
                     record.qiniu_object_key = object_key
                     record.qiniu_video_url = url
-                    record.storage_status = VideoStorageStatus.STORED
-                    record.error_code = None
+        if not record.qiniu_cover_object_key or not record.cover_url:
+            video_object_key = record.qiniu_object_key
+            if not video_object_key:
+                raise ValueError("视频转存缺少对象键")
+            record.storage_status = VideoStorageStatus.PENDING
+            record.cover_url = None
             record = await self.repo.save(record, actor)
-        return record
+            try:
+                cover_key, cover_url = await self.storage.archive_cover(task_id, video_object_key)
+            except VideoStorageError:
+                record.storage_status = VideoStorageStatus.FAILED
+                record.error_code = "COVER_ARCHIVE_FAILED"
+            else:
+                record.qiniu_cover_object_key = cover_key
+                record.cover_url = cover_url
+                record.storage_status = VideoStorageStatus.STORED
+                record.error_code = None
+            record = await self.repo.save(record, actor)
+            return record
+        record.storage_status = VideoStorageStatus.STORED
+        record.error_code = None
+        return await self.repo.save(record, actor)
 
     async def sync_once(self) -> None:
         async with self.repo.guard("video-scheduler") as acquired:

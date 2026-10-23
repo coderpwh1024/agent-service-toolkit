@@ -14,6 +14,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from schema.video import VideoCreate, VideoEdit, VideoListQuery, VideoRecord, VideoTask
+from video.metadata import derive_video_title
 
 _LIST_COLUMNS = SQL("""
     id, user_id, title, cover_url, task_id, status, storage_status, aliyun_video_url,
@@ -22,7 +23,7 @@ _LIST_COLUMNS = SQL("""
 
 _COLUMNS = SQL("""
     id, user_id, title, cover_url, idempotency_key, request_hash, request_payload, task_id, status,
-    storage_status, aliyun_video_url, qiniu_video_url, qiniu_object_key,
+    storage_status, aliyun_video_url, qiniu_video_url, qiniu_object_key, qiniu_cover_object_key,
     provider_request_id, error_code, next_poll_time, create_by, update_by,
     create_time, update_time, is_delete
 """)
@@ -85,7 +86,7 @@ class VideoRepository:
                     """).format(_COLUMNS),
                     (
                         user_id,
-                        body.title,
+                        body.title or derive_video_title(body.prompt),
                         str(body.cover_url) if body.cover_url is not None else None,
                         key,
                         request_hash,
@@ -172,6 +173,7 @@ class VideoRepository:
                 await conn.execute(
                     SQL("""
                         UPDATE video_generation_tasks SET
+                            title = %s, cover_url = %s, qiniu_cover_object_key = %s,
                             task_id = %s, status = %s, storage_status = %s,
                             aliyun_video_url = %s, qiniu_video_url = %s, qiniu_object_key = %s,
                             provider_request_id = %s, error_code = %s,
@@ -180,6 +182,9 @@ class VideoRepository:
                         WHERE id = %s AND user_id = %s AND is_delete = 0 RETURNING {}
                     """).format(_COLUMNS),
                     (
+                        record.title,
+                        record.cover_url,
+                        record.qiniu_cover_object_key,
                         record.task_id,
                         record.status,
                         record.storage_status,
@@ -206,7 +211,10 @@ class VideoRepository:
                         SELECT {} FROM video_generation_tasks
                         WHERE is_delete = 0 AND next_poll_time <= CURRENT_TIMESTAMP AND (
                             status IN ('SUBMITTING', 'PENDING', 'RUNNING') OR
-                            (status = 'SUCCEEDED' AND storage_status <> 'STORED')
+                            (status = 'SUCCEEDED' AND (
+                                storage_status <> 'STORED' OR title IS NULL OR
+                                cover_url IS NULL OR qiniu_cover_object_key IS NULL
+                            ))
                         ) ORDER BY next_poll_time, id LIMIT 10
                     """).format(_COLUMNS)
                 )

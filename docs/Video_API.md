@@ -6,16 +6,16 @@
 
 ## PostgreSQL 表设计
 
-DDL 位于 [create_video_generation_tasks.sql](../src/video/sql/create_video_generation_tasks.sql)。启动启用的视频模块时，在 PostgreSQL 中幂等创建新表和索引，并通过 `ADD COLUMN IF NOT EXISTS` 为已有表补充 `title`、`cover_url`。并发启动的建表操作通过事务级 advisory lock 串行化。部署账号需要建表、修改表、索引和注释权限；也可由管理员提前执行此 DDL。
+DDL 位于 [create_video_generation_tasks.sql](../src/video/sql/create_video_generation_tasks.sql)。启动启用的视频模块时，在 PostgreSQL 中幂等创建新表和索引，并通过 `ADD COLUMN IF NOT EXISTS` 为已有表补充 `title`、`cover_url` 和内部字段 `qiniu_cover_object_key`。并发启动的建表操作通过事务级 advisory lock 串行化。部署账号需要建表、修改表、索引和注释权限；也可由管理员提前执行此 DDL。
 
-本次升级只新增可空列，历史记录保留 `NULL`，不回填或改写标题、封面、请求载荷和审计字段。可在旧服务仍运行时先执行 DDL，再部署新服务；重复执行安全。执行前可查询 `information_schema.columns` 核对已有列；手动执行时使用事务并设置适当的 `lock_timeout`。尚未提交的 DDL 可回滚；已提交后回退应用版本时保留新增列，不删除已保存元数据。新字段缺省或显式为 `null` 时沿用旧请求摘要，保证旧幂等键重试兼容。
+本次 DDL 只新增可空列，不批量修改历史业务数据。运行时在查询和定时同步中为缺少元数据的已生成任务补齐标题及七牛封面，并同步更新审计字段；原始请求载荷和摘要保持不变。可在旧服务仍运行时先执行 DDL，再部署新服务；重复执行安全。执行前可查询 `information_schema.columns` 核对已有列；手动执行时使用事务并设置适当的 `lock_timeout`。尚未提交的 DDL 可回滚；已提交后回退应用版本时保留新增列，不删除已保存元数据。新字段缺省或显式为 `null` 时沿用旧请求摘要，保证旧幂等键重试兼容。
 
 | 字段 | PostgreSQL 类型 | 含义 |
 | --- | --- | --- |
 | `id` | BIGINT IDENTITY PRIMARY KEY | 本地业务记录 ID |
 | `user_id` | BIGINT NOT NULL | 所属用户，绑定应用令牌中的数字用户 ID |
-| `title` | VARCHAR(200) NULL | 用户指定的视频展示标题，未提供和历史记录为空 |
-| `cover_url` | VARCHAR(2048) NULL | 用户指定的 HTTP/HTTPS 封面地址，仅存引用，不抓取 |
+| `title` | VARCHAR(200) NULL | 用户指定标题；未提供时提取生成描述的首句，规范空白后最多 80 字符 |
+| `cover_url` | VARCHAR(2048) NULL | 完成后为七牛独立 JPEG 封面永久地址，未完成时可为空 |
 | `idempotency_key` | VARCHAR(128) NOT NULL | 用户范围内的幂等键 |
 | `request_hash` | VARCHAR(64) NOT NULL | 规范化入参的 SHA256 摘要 |
 | `request_payload` | JSONB NOT NULL | 校验后的完整生成参数；包含敏感提示词 |
@@ -25,6 +25,7 @@ DDL 位于 [create_video_generation_tasks.sql](../src/video/sql/create_video_gen
 | `aliyun_video_url` | TEXT NULL | 阿里云临时视频链接，含签名，不记入日志 |
 | `qiniu_video_url` | TEXT NULL | 七牛云持久链接，确认转存成功后写入 |
 | `qiniu_object_key` | TEXT NULL | 固定对象键 `videos/happyhorse/{task_id}.mp4` |
+| `qiniu_cover_object_key` | TEXT NULL | 已确认的七牛封面对象键 `videos/happyhorse/{task_id}.jpg`，仅供内部重试判断，不公开返回 |
 | `provider_request_id` | TEXT NULL | 阿里云请求追踪 ID |
 | `error_code` | TEXT NULL | 安全错误分类，不保存原始错误正文 |
 | `next_poll_time` | TIMESTAMPTZ NOT NULL | 下一次可轮询时间，避免失败任务占满批次 |
@@ -37,7 +38,7 @@ DDL 位于 [create_video_generation_tasks.sql](../src/video/sql/create_video_gen
 - `(user_id, idempotency_key)` 对有效记录具有部分唯一索引，并发重复提交只保留一条记录。
 - `task_id` 的非空值全局唯一，包含逻辑删除记录，避免同一上游任务归属多个业务记录。
 - 待同步记录按 `(next_poll_time, id)` 建部分索引，查询、更新均限定 `is_delete = 0`。
-- `STORED` 状态必须同时具备生成成功状态、七牛对象键和七牛 URL。
+- 数据库原有 `STORED` 约束要求生成成功状态、视频对象键和七牛视频 URL。新服务进一步要求非空标题、封面对象键及封面永久 URL，确认全部完成后才写入 `STORED`。旧约束不改名或强制回填，以兼容存量任务。
 - 不增加用户外键：现有认证也支持可信后端签发的数字用户令牌，视频模块可以独立于邮箱注册模块启用；所有权由服务认证和 SQL 用户条件约束。审计用户 ID 直接沿用现有 BIGINT 用户约定。
 
 生成枚举：`SUBMITTING`（本地已预留）、`SUBMISSION_UNKNOWN`（提交结果待核实）、`PENDING`、`RUNNING`、`SUCCEEDED`、`FAILED`、`CANCELED`、`UNKNOWN`（上游任务不存在或已过期）。转存枚举独立为 `NOT_READY`、`PENDING`、`STORED`、`FAILED`；因此生成成功但转存失败仍保留 `SUCCEEDED`，不会重新生成视频。
@@ -98,7 +99,7 @@ curl -X POST "$AGENT_URL/videos" \
 
 支持 `happyhorse-1.1-t2v` 和 `happyhorse-1.0-t2v`；分辨率支持 480P/720P/1080P，1.0 不接受 480P。时长为 3–15 秒整数；seed 可省略，范围 0–2147483647。宽高比、提示词长度等按 schema 验证。默认 1.1、1080P、16:9、5 秒、`watermark=false`（不添加水印）。已有记录保留原参数；显式传入的水印参数仍按请求执行。
 
-`title` 与 `cover_url` 均可省略或为 `null`。标题最多 200 字符，去除首尾空白保存，空字符串或纯空白返回 422；封面须为不超过 2048 字符的有效 HTTP/HTTPS URL，非法地址返回 422。二者作为本地元数据保存到独立列及请求载荷，参与请求幂等校验，不传给 HappyHorse，不自动生成标题、截取首帧、下载封面或验证远端图片是否存在。同幂等键修改标题或封面返回 409，应使用新键创建独立任务。
+`title` 与 `cover_url` 均可省略或为 `null`。标题最多 200 字符，去除首尾空白保存，空字符串或纯空白返回 422；封面须为不超过 2048 字符的有效 HTTP/HTTPS URL，非法地址返回 422。显式传入值保存在原始请求载荷并参与幂等校验，不传给 HappyHorse。未指定标题时，服务从生成描述的首个非空句子提取标题，规范空白并截取最多 80 字符，不额外调用语言模型。`cover_url` 入参继续兼容，但只作为生成完成前的暂存元数据；最终会被服务从实际生成视频提取并转存的七牛封面替换，不抓取任意用户输入的 URL。自动补齐的元数据只更新结果列，不改写请求载荷或幂等摘要。同幂等键修改标题或封面返回 409，应使用新键创建独立任务。
 
 成功接收后 `data.id` 是查询使用的本地记录 ID，`data.task_id` 是阿里云任务 ID。响应同时提供 `title`、`cover_url`、`status`、`storage_status`、两个独立视频 URL 字段和安全错误分类；不暴露幂等键、用户提示词、供应商完整响应或鉴权信息。HTTP 202 表示已处理异步提交请求，业务是否已被上游接受应检查 `data.status`。
 
@@ -136,7 +137,7 @@ curl "$AGENT_URL/videos?page=1&page_size=20&status=SUCCEEDED&storage_status=STOR
 
 有结果时 `items` 中每条数据沿用 `VideoTask` 结构，包含本地 ID、标题 `title`、封面 `cover_url`、阿里云任务 ID、生成状态、转存状态、两个独立视频 URL 和创建、更新时间，不返回提示词和幂等键。列表固定按 `create_time DESC, id DESC` 排序，创建时间相同的记录再按 ID 倒序。`total` 为符合当前用户和状态条件的总条数，`total_pages` 为向上取整的总页数；请求超过最后一页时仍返回 200、空 `items` 和实际总条数。
 
-列表只读取数据库，不触发阿里云查询、七牛转存或修改记录。最新状态由现有单条查询接口和定时同步回写；需要立即刷新某个任务时继续调用 `GET /videos/{record_id}`。总数和分页数据使用同一只读事务快照，避免单次响应内因并发更新造成统计不一致。未提供标题、封面的历史记录以 `null` 返回这两个字段；新增元数据不改变分页筛选条件。
+列表只读取数据库，不触发阿里云查询、七牛转存或修改记录。最新状态由现有单条查询接口和定时同步回写；需要立即刷新某个任务时继续调用 `GET /videos/{record_id}`。总数和分页数据使用同一只读事务快照，避免单次响应内因并发更新造成统计不一致。尚未修复的历史记录仍可能以 `null` 返回缺失字段；查询详情或后台同步会补齐，不在列表中发起外部调用。分页筛选条件保持不变。
 
 ## 查询和自动回写
 
@@ -147,9 +148,13 @@ curl "$AGENT_URL/videos/123" \
 
 `GET /videos/{record_id}` 只允许查询本人记录。不存在、逻辑删除或他人记录统一返回 404。任务正在被另一个查询或定时同步处理时返回 409，可稍后重查。
 
-对于排队或生成中的任务，服务按数据库保存的 `task_id` 请求阿里云查询接口，回写任务状态及临时 URL。拿到成功 URL 后，先保存源地址，再调用七牛抓取；七牛确认对象存在后，写入对象键、七牛 URL 和 `STORED`。已转存完成或上游已终止的记录直接返回数据库结果。查询上游失败时保留原生成状态，保存 `QUERY_FAILED`，供后续重试。
+对于排队或生成中的任务，服务按数据库保存的 `task_id` 请求阿里云查询接口，回写任务状态及临时 URL。拿到成功 URL 后，先保存源地址，再调用七牛抓取；七牛确认视频对象存在后，先写入视频对象键与七牛视频 URL，再提取并保存封面。只有非空标题、视频和封面永久地址都确认就绪才写入 `STORED`。元数据完整的已转存任务、或上游已终止的任务直接返回数据库结果。查询上游失败时保留原生成状态，保存 `QUERY_FAILED`，供后续重试。
 
-后台任务启动后立即检查一次，此后按 300 秒周期运行；每批最多 10 条，按最早到期记录优先。同步排队、生成中、提交中断以及生成成功但未完成转存的任务。每次尝试将下次处理时间推迟 5 分钟，避免前 10 条失败任务持续阻塞队列。调度领导者、批处理和单任务分别使用 PostgreSQL session advisory lock，多个 worker 只有一个定时领导者，查询与定时任务不会同时转存同一记录。锁不持有数据库事务，外部 HTTP 请求不会延长数据库事务。关闭服务时取消后台任务并关闭客户端和连接池；重启后从数据库恢复。
+封面使用七牛官方 [vframe 视频单帧缩略图](https://developer.qiniu.com/dora/api/video-frame-thumbnails-vframe)：从已转存视频第 1 秒截取 JPEG，再通过七牛 [fetch 接口](https://developer.qiniu.com/kodo/api/fetch)将图片保存为独立对象 `videos/happyhorse/{task_id}.jpg`。这不是仅拼接截图参数的临时链接，服务会确认目标对象非空且 MIME 为 `image/jpeg` 后写入封面地址。无需额外部署 FFmpeg，不下载完整视频到应用；七牛账号和域名需支持同步视频截图，截图按七牛规则计费。
+
+封面失败保留已存视频，写入 `COVER_ARCHIVE_FAILED` 和转存 `FAILED`，下一次查询或同步只重试封面。对已转存但缺少标题或封面确认标记的旧任务，同样从七牛视频补齐，不依赖已过期的阿里云链接；完整任务不重复截图。七牛封面已写入但数据库更新中断时，用固定对象键的 `stat` 恢复。补齐操作保留原创建信息，显式更新 `update_by` 与 `update_time`。
+
+后台任务启动后立即检查一次，此后按 300 秒周期运行；每批最多 10 条，按最早到期记录优先。同步排队、生成中、提交中断、生成成功但未完成转存，以及已存视频但缺少标题或封面确认标记的任务；缺失元数据的已转存任务有单独的部分索引。每次尝试将下次处理时间推迟 5 分钟，避免前 10 条失败任务持续阻塞队列。调度领导者、批处理和单任务分别使用 PostgreSQL session advisory lock，多个 worker 只有一个定时领导者，查询与定时任务不会同时转存同一记录。锁不持有数据库事务，外部 HTTP 请求不会延长数据库事务。关闭服务时取消后台任务并关闭客户端和连接池；重启后从数据库恢复。
 
 七牛抓取采用现有同步 SDK，通过 `asyncio.to_thread` 执行。应用不阻塞事件循环，也不下载整个视频到进程内存。已成功抓取但数据库更新中断时，下次同步先 `stat` 固定对象键，确认存在后补写数据库；重复查询不会创建随机副本。服务器中断不会丢失已有任务 ID 或成功源地址。超出有效期才恢复服务的任务可能得到 `UNKNOWN`；若源链接已过期且七牛无副本，则转存可能无法恢复，需人工处理。
 
@@ -161,7 +166,7 @@ curl "$AGENT_URL/videos/123" \
 
 待核实记录需要运维在阿里云控制台确认是否已创建任务：先读取并核对本地记录、用户、请求时间和参数，再在受控事务中绑定经过确认的任务 ID、恢复 `PENDING` 并同步审计字段。不要把未经核实的其他用户任务 ID 写入记录。只有确认上游没有创建任务后，业务方才能有意识地用新幂等键发起新任务。原记录应保留供审计；普通失败记录也不会自动重新计费生成。
 
-错误分类包括 `SUBMISSION_UNCERTAIN`、`SUBMISSION_REJECTED`、`QUERY_FAILED`、`GENERATION_FAILED`、`GENERATION_CANCELED`、`GENERATION_UNKNOWN`、`VIDEO_URL_MISSING` 和 `ARCHIVE_FAILED`。生成与转存状态分别判断，只有 `storage_status=STORED` 才表示七牛持久链接可用。转存失败会继续按固定对象键重试，不触发重新生成。
+错误分类包括 `SUBMISSION_UNCERTAIN`、`SUBMISSION_REJECTED`、`QUERY_FAILED`、`GENERATION_FAILED`、`GENERATION_CANCELED`、`GENERATION_UNKNOWN`、`VIDEO_URL_MISSING`、`ARCHIVE_FAILED` 和 `COVER_ARCHIVE_FAILED`。生成与转存状态分别判断，新完成任务只有 `storage_status=STORED` 才表示标题、七牛视频和七牛封面全部就绪；`SUCCEEDED` 仍只表示上游视频生成成功，封面处理失败不能声称整体完成。转存失败会继续按固定对象键重试，不触发重新生成。
 
 日志使用中文参数化消息，包含记录 ID、任务 ID、状态、生成参数摘要及是否返回 URL。原始提示词、幂等键、密钥、Authorization 和签名 URL 不打印；错误记录安全分类及异常类型。`LOG_LEVEL=INFO` 可查看正常入参、出参日志。
 
@@ -189,7 +194,7 @@ video:
 skills:
   video:
     enabled: true
-    version: "1.1.0"
+    version: "1.2.0"
     label: latest
     timeout_seconds: 20
 ```
@@ -203,15 +208,15 @@ CLI 的连接地址和 Namespace 必须与应用一致；密码留在受保护�
 ```sh
 nacos-cli skill-upload skills/manage-user-videos
 nacos-cli skill-describe manage-user-videos --output json
-nacos-cli skill-review manage-user-videos --version 1.1.0
+nacos-cli skill-review manage-user-videos --version 1.2.0
 nacos-cli skill-describe manage-user-videos --output json
 ```
 
 待目标版本通过异步评审后发布；如果已经在线则跳过发布。后续更新使用新版本，不覆盖已发布版本。
 
 ```sh
-nacos-cli skill-release manage-user-videos --version 1.1.0
-nacos-cli skill-get manage-user-videos --version 1.1.0 -o /path/to/skill-review
+nacos-cli skill-release manage-user-videos --version 1.2.0
+nacos-cli skill-get manage-user-videos --version 1.2.0 -o /path/to/skill-review
 ```
 
 最终核对目标版本为 `online`，并对比下载后的 `SKILL.md` 摘要与仓库文件一致。仅上传草稿不代表已经可被运行时加载。
@@ -224,7 +229,7 @@ nacos-cli skill-get manage-user-videos --version 1.1.0 -o /path/to/skill-review
 
 | 可以说的话 | 执行行为 |
 | --- | --- |
-| “生成海边日落视频，标题叫海边日落，封面用我提供的链接” | 提取明确指定的 `title`、`cover_url`，缺省留空，不自行编造 |
+| “生成海边日落视频，标题叫海边日落” | 保留指定标题；未指定时由后端从描述提取标题，生成完成后自动截帧并保存七牛封面 |
 | “生成五秒海边日落的视频” | 创建无水印视频任务，返回本地编号 |
 | “生成十秒视频” → “海边日落” | 收集内容，保留十秒要求后提交 |
 | “按上面描述生成三十秒” → “改成十五秒” | 解释时长限制，保留场景，用户修正后提交 |
@@ -243,7 +248,7 @@ nacos-cli skill-get manage-user-videos --version 1.1.0 -o /path/to/skill-review
 
 输出支持 720P/1080P，默认 1080P；`audio_setting=auto` 由模型控制，`origin` 保留原声。来源为项目生成的 3–15 秒视频，宽高比需在 1:2.5 至 2.5:1；素材格式、大小、尺寸和帧率仍由供应商检查，不保证所有编辑均成功。新视频显式 `watermark=false`，不承诺移除源画面已有标识。
 
-编辑新建任务，不覆盖源记录。现有 JSONB `request_payload` 保存编辑模型、源记录编号、源七牛 URL、编辑要求和参数，可选标题和封面另存独立列，也保留在请求载荷中；未指定时留空，不复制来源封面，不修改原记录。解析兼容旧的文生视频载荷；查询、列表、幂等、轮询和转存共用原流程。旧记录中的水印值不回填或改写。
+编辑新建任务，不覆盖源记录。现有 JSONB `request_payload` 保存编辑模型、源记录编号、源七牛 URL、编辑要求和参数，可选标题和封面另存独立列，也保留在请求载荷中；未指定标题时从编辑描述提取；新视频完成后提取新封面，不复制来源封面，不修改原记录。解析兼容旧的文生视频载荷；查询、列表、幂等、轮询和转存共用原流程。旧记录中的水印值不回填或改写。
 
 ### 状态、失败和客户端事件
 

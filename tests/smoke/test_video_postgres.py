@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, datetime
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import psycopg
@@ -11,8 +12,93 @@ from psycopg.sql import SQL, Identifier
 from psycopg.types.json import Jsonb
 
 from memory.postgres import get_postgres_connection_string
-from schema.video import VideoCreate, VideoEdit, VideoListQuery, VideoStatus
+from schema.video import ProviderResult, VideoCreate, VideoEdit, VideoListQuery, VideoStatus
+from video.providers import VideoStorageError
 from video.repository import VideoRepository
+from video.service import VideoService
+
+
+@pytest.mark.docker
+@pytest.mark.asyncio
+async def test_video_completion_persists_assets_and_recovers_missing_cover():
+    schema = "video_smoke_" + uuid4().hex
+    conninfo = get_postgres_connection_string()
+    async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+        await conn.execute(SQL("CREATE SCHEMA {}").format(Identifier(schema)))
+    repo = VideoRepository(make_conninfo(conninfo, options=f"-csearch_path={schema}"))
+    try:
+        await repo.open()
+        provider = AsyncMock()
+        provider.create.return_value = ProviderResult.model_validate(
+            {"output": {"task_id": "smoke-task", "task_status": "PENDING"}}
+        )
+        provider.query.return_value = ProviderResult.model_validate(
+            {
+                "output": {
+                    "task_id": "smoke-task",
+                    "task_status": "SUCCEEDED",
+                    "video_url": "https://oss.aliyuncs.com/smoke.mp4",
+                }
+            }
+        )
+        storage = AsyncMock()
+        storage.archive.return_value = (
+            "videos/happyhorse/smoke-task.mp4",
+            "https://cdn.example/smoke.mp4",
+        )
+        storage.archive_cover.side_effect = VideoStorageError("cover failure")
+        service = VideoService(repo, provider, storage, 0)
+        body = VideoCreate(
+            prompt="海边日落。镜头跟随", cover_url="https://outside.example/input.jpg"
+        )
+        created = await service.create(12, "cover-smoke", body)
+        assert created.title == "海边日落"
+        await service.query(created.id, 12)
+        failed = await repo.get(created.id, 12)
+        assert failed is not None and failed.error_code == "COVER_ARCHIVE_FAILED"
+        assert failed.qiniu_video_url and failed.cover_url is None
+        assert failed.qiniu_cover_object_key is None
+        assert failed.request_payload == body
+        original_hash = failed.request_hash
+        failed.storage_status = "STORED"
+        failed.title = None
+        await repo.save(failed, 0)
+        async with repo.pool.connection() as conn:
+            await conn.execute(
+                """UPDATE video_generation_tasks SET next_poll_time = CURRENT_TIMESTAMP,
+                update_by = 0, update_time = CURRENT_TIMESTAMP WHERE id = %s""",
+                (created.id,),
+            )
+        assert [item.id for item in await repo.due()] == [created.id]
+        storage.archive_cover.side_effect = None
+        storage.archive_cover.return_value = (
+            "videos/happyhorse/smoke-task.jpg",
+            "https://cdn.example/smoke.jpg",
+        )
+        repaired = await service.query(created.id, 12)
+        assert (
+            repaired.title == "海边日落" and repaired.cover_url == "https://cdn.example/smoke.jpg"
+        )
+        assert repaired.storage_status == "STORED" and repaired.error_code is None
+        reloaded = await repo.get(created.id, 12)
+        assert reloaded.qiniu_cover_object_key == "videos/happyhorse/smoke-task.jpg"
+        assert reloaded.request_hash == original_hash and reloaded.request_payload == body
+        assert reloaded.create_by == 12 and reloaded.update_by == 12
+        assert await repo.due() == []
+        items, total = await repo.list_tasks(12, VideoListQuery())
+        assert (
+            total == 1
+            and items[0].title == repaired.title
+            and items[0].cover_url == repaired.cover_url
+        )
+        assert (await service.create(12, "cover-smoke", body)).id == created.id
+        storage.archive.assert_awaited_once()
+        provider.query.assert_awaited_once()
+        provider.create.assert_awaited_once()
+    finally:
+        await repo.close()
+        async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+            await conn.execute(SQL("DROP SCHEMA {} CASCADE").format(Identifier(schema)))
 
 
 @pytest.mark.docker
@@ -152,7 +238,8 @@ async def test_video_metadata_upgrade_preserves_legacy_rows_and_is_repeatable():
         legacy, _ = await repo.reserve(12, "legacy-key", "a" * 64, body)
         async with repo.pool.connection() as conn:
             await conn.execute(
-                "ALTER TABLE video_generation_tasks DROP COLUMN title, DROP COLUMN cover_url"
+                """ALTER TABLE video_generation_tasks DROP COLUMN title, DROP COLUMN cover_url,
+                DROP COLUMN qiniu_cover_object_key"""
             )
             await conn.execute(
                 """UPDATE video_generation_tasks SET request_payload = %s,
@@ -166,6 +253,7 @@ async def test_video_metadata_upgrade_preserves_legacy_rows_and_is_repeatable():
             reloaded = await repo.get(legacy.id, 12)
             assert reloaded is not None
             assert reloaded.title is None and reloaded.cover_url is None
+            assert reloaded.qiniu_cover_object_key is None
             assert reloaded.request_hash == legacy.request_hash
             assert reloaded.request_payload == body
             assert reloaded.create_time == legacy.create_time

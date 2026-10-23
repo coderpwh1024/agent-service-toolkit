@@ -186,6 +186,68 @@ async def test_qiniu_fixed_key_recovers_success_after_database_write_loss():
 
 
 @pytest.mark.asyncio
+async def test_cover_is_a_separate_archived_jpeg_and_recovers_after_database_write_loss():
+    storage = QiniuVideoStorage(config())
+    storage.manager = Mock()
+    saved = {
+        "key": "videos/happyhorse/task-123.jpg",
+        "hash": "cover-hash",
+        "fsize": 1024,
+        "mimeType": "image/jpeg",
+    }
+    storage.manager.stat.side_effect = [
+        (None, SimpleNamespace(status_code=612)),
+        (saved, SimpleNamespace(status_code=200)),
+    ]
+    storage.manager.fetch.return_value = (saved, SimpleNamespace(status_code=200))
+    first = await storage.archive_cover("task-123", "videos/happyhorse/task-123.mp4")
+    second = await storage.archive_cover("task-123", "videos/happyhorse/task-123.mp4")
+    assert (
+        first
+        == second
+        == ("videos/happyhorse/task-123.jpg", "https://cdn.example/videos/happyhorse/task-123.jpg")
+    )
+    storage.manager.fetch.assert_called_once_with(
+        "https://cdn.example/videos/happyhorse/task-123.mp4?vframe/jpg/offset/1",
+        "videos",
+        "videos/happyhorse/task-123.jpg",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("mime_type", ["text/html", "video/mp4", None])
+async def test_cover_does_not_return_a_url_for_non_image_objects(existing, mime_type):
+    storage = QiniuVideoStorage(config())
+    storage.manager = Mock()
+    result = {
+        "key": "videos/happyhorse/task-123.jpg",
+        "hash": "hash",
+        "fsize": 100,
+        "mimeType": mime_type,
+    }
+    storage.manager.stat.return_value = (
+        (result, SimpleNamespace(status_code=200))
+        if existing
+        else (None, SimpleNamespace(status_code=612))
+    )
+    storage.manager.fetch.return_value = (result, SimpleNamespace(status_code=200))
+    with pytest.raises(VideoStorageError):
+        await storage.archive_cover("task-123", "videos/happyhorse/task-123.mp4")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [403, 500])
+async def test_cover_lookup_error_is_retryable_and_does_not_fetch(status):
+    storage = QiniuVideoStorage(config())
+    storage.manager = Mock()
+    storage.manager.stat.return_value = (None, SimpleNamespace(status_code=status))
+    with pytest.raises(VideoStorageError):
+        await storage.archive_cover("task-123", "videos/happyhorse/task-123.mp4")
+    storage.manager.fetch.assert_not_called()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "source", ["http://127.0.0.1/v", "https://evil.test/v", "https://aliyuncs.com.evil.test/v"]
 )
