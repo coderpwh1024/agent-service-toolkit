@@ -10,7 +10,7 @@ from schema.video import VideoListQuery
 class VideoGenerationDraft(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    prompt: str | None = Field(default=None, max_length=6000)
+    prompt: str | None = Field(default=None, max_length=20000)
     title: str | None = None
     cover_url: str | None = None
     model: str | None = None
@@ -18,6 +18,10 @@ class VideoGenerationDraft(BaseModel):
     ratio: str | None = None
     duration: int | None = Field(default=None, strict=True)
     seed: int | None = Field(default=None, strict=True)
+    first_frame_url: str | None = None
+    last_frame_url: str | None = None
+    audio: bool | None = Field(default=None, strict=True)
+    prompt_extend: bool | None = Field(default=None, strict=True)
 
 
 class VideoEditDraft(BaseModel):
@@ -29,6 +33,10 @@ class VideoEditDraft(BaseModel):
     resolution: str | None = None
     audio_setting: str | None = None
     seed: int | None = Field(default=None, strict=True)
+
+
+class VideoSkillQuery(VideoListQuery):
+    page_size: int = Field(default=5, ge=1, le=100)
 
 
 class VideoSkillIntent(BaseModel):
@@ -44,7 +52,7 @@ class VideoSkillIntent(BaseModel):
     record_id: int | None = Field(default=None, gt=0, le=9223372036854775807, strict=True)
     selection: int | None = Field(default=None, gt=0, strict=True)
     latest: bool = False
-    query: VideoListQuery | None = None
+    query: VideoSkillQuery | None = None
     next_page: bool = False
     reason: (
         Literal[

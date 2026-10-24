@@ -89,6 +89,85 @@ async def invoke(video_skill, text, intent, saved=None, **kwargs):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("model", [None, "wan3.0-video", "wan3.0-video-prime"])
+async def test_wan3_skill_preserves_frame_inputs_and_native_parameters(video_skill, model) -> None:
+    service, _, _ = video_skill
+    generation = {
+        "first_frame_url": "https://images.example/start.jpg",
+        "last_frame_url": "https://images.example/end.jpg",
+        "duration": 30,
+        "ratio": "adaptive",
+        "audio": False,
+        "prompt_extend": False,
+        "seed": -1,
+    }
+    if model is not None:
+        generation["model"] = model
+    response, saved = await invoke(
+        video_skill,
+        "根据这两张图片生成首尾帧视频",
+        {
+            "action": "create",
+            "authorized": True,
+            "generation": generation,
+        },
+    )
+    assert response.response_metadata["video_status"] == "result"
+    body = service.create.await_args.args[2]
+    assert body.model == (model or "wan3.0-video") and body.duration == 30
+    assert body.audio is False and body.prompt_extend is False
+    assert str(body.first_frame_url) == generation["first_frame_url"]
+    assert str(body.last_frame_url) == generation["last_frame_url"]
+    assert saved["draft_generation"] is None
+
+
+@pytest.mark.asyncio
+async def test_wan3_missing_first_frame_stays_draft_until_corrected(video_skill) -> None:
+    service, _, _ = video_skill
+    response, saved = await invoke(
+        video_skill,
+        "使用万相按尾帧生成",
+        {
+            "action": "create",
+            "authorized": True,
+            "generation": {
+                "model": "wan3.0-video",
+                "prompt": "海边",
+                "last_frame_url": "https://images.example/end.jpg",
+            },
+        },
+    )
+    assert response.response_metadata["video_status"] == "invalid"
+    service.create.assert_not_awaited()
+    response, _ = await invoke(
+        video_skill,
+        "这是首帧图片",
+        {
+            "action": "create",
+            "authorized": True,
+            "generation": {"first_frame_url": "https://images.example/start.jpg"},
+        },
+        saved,
+    )
+    assert response.response_metadata["video_status"] == "result"
+    assert str(service.create.await_args.args[2].last_frame_url) == "https://images.example/end.jpg"
+
+
+@pytest.mark.asyncio
+async def test_wan3_list_model_is_preserved_on_next_page(video_skill) -> None:
+    service, _, _ = video_skill
+    _, saved = await invoke(
+        video_skill,
+        "查万相高速版视频",
+        {"action": "list", "query": {"model": "wan3.0-video-prime"}},
+    )
+    assert service.list_tasks.await_args.args[1].model == "wan3.0-video-prime"
+    await invoke(video_skill, "下一页", {"action": "list", "next_page": True}, saved)
+    query = service.list_tasks.await_args.args[1]
+    assert query.model == "wan3.0-video-prime" and query.page == 2
+
+
+@pytest.mark.asyncio
 async def test_generation_uses_no_watermark_and_replay_key(video_skill):
     service, _, structured = video_skill
     intent = {
@@ -354,6 +433,122 @@ async def test_list_count_next_page_and_ordinal_use_database(video_skill):
     response, _ = await invoke(video_skill, "有几个视频", {"action": "count"}, saved)
     assert "42" in response.content
     assert service.list_tasks.await_args.args[1].page_size == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["list", "detail"])
+async def test_keyword_search_returns_candidates_instead_of_previous_task(video_skill, action):
+    service, _, _ = video_skill
+    service.list_tasks.return_value = VideoTaskPage(
+        items=[task(125, title="海边海鸥"), task(123, title="日落海鸥")],
+        total=8,
+        page=1,
+        page_size=5,
+        total_pages=2,
+    )
+    saved = VideoSkillDialogue(user_id="7", last_record_id=999).model_dump()
+    events = []
+    response, saved = await invoke(
+        video_skill,
+        "找海边有海鸥的视频",
+        {"action": action, "query": {"q": "海边 海鸥", "status": "SUCCEEDED"}},
+        saved,
+        writer=events.append,
+    )
+    query = service.list_tasks.await_args.args[1]
+    assert query.q == "海边 海鸥" and query.page_size == 5 and query.status == "SUCCEEDED"
+    assert "海边海鸥" in response.content and "下一页" in response.content
+    assert events[0].content[0]["type"] == "video.list"
+    assert events[0].content[0]["total"] == 8
+    assert saved["listed_ids"] == [125, 123]
+    service.query.assert_not_awaited()
+    await invoke(video_skill, "下一页", {"action": "list", "next_page": True}, saved)
+    query = service.list_tasks.await_args.args[1]
+    assert query.q == "海边 海鸥" and query.page == 2 and query.page_size == 5
+    assert query.status == "SUCCEEDED"
+    await invoke(video_skill, "第二个", {"action": "detail", "selection": 2}, saved)
+    service.query.assert_awaited_once_with(123, 7)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "limit, latest, expected", [(None, False, 5), (2, False, 2), (None, True, 1)]
+)
+async def test_search_result_limit_and_latest_are_applied(video_skill, limit, latest, expected):
+    service, _, _ = video_skill
+    query = {"q": "海边"}
+    if limit is not None:
+        query["page_size"] = limit
+    await invoke(
+        video_skill,
+        "找海边的视频",
+        {"action": "list", "query": query, "latest": latest},
+    )
+    used = service.list_tasks.await_args.args[1]
+    assert used.q == "海边" and used.page_size == expected and used.page == 1
+    service.repo.latest_id.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_keyword_count_and_empty_search_do_not_fall_back(video_skill):
+    service, _, _ = video_skill
+    service.list_tasks.return_value = VideoTaskPage(
+        items=[], total=0, page=1, page_size=5, total_pages=0
+    )
+    saved = VideoSkillDialogue(user_id="7", last_record_id=999, listed_ids=[123]).model_dump()
+    response, saved = await invoke(
+        video_skill, "找森林视频", {"action": "detail", "query": {"q": "森林"}}, saved
+    )
+    assert "没有视频记录" in response.content and saved["listed_ids"] == []
+    service.query.assert_not_awaited()
+    response, _ = await invoke(
+        video_skill, "有几个森林视频", {"action": "count", "query": {"q": "森林"}}, saved
+    )
+    assert "0 个" in response.content
+    query = service.list_tasks.await_args.args[1]
+    assert query.q == "森林" and query.page_size == 1
+
+
+@pytest.mark.asyncio
+async def test_edit_by_description_requires_selection_before_submission(video_skill):
+    service, _, _ = video_skill
+    saved = VideoSkillDialogue(user_id="7", last_record_id=999).model_dump()
+    response, saved = await invoke(
+        video_skill,
+        "把海边视频改为水墨风格",
+        {
+            "action": "edit",
+            "authorized": True,
+            "query": {"q": "海边"},
+            "editing": {"prompt": "水墨风格"},
+        },
+        saved,
+    )
+    assert "尚未提交编辑" in response.content
+    service.edit.assert_not_awaited()
+    service.query.assert_not_awaited()
+    assert saved["draft_editing"]["prompt"] == "水墨风格"
+    await invoke(
+        video_skill,
+        "编辑第二个",
+        {"action": "edit", "authorized": True, "selection": 2},
+        saved,
+    )
+    assert service.edit.await_args.args[2] == 123
+
+
+@pytest.mark.asyncio
+async def test_search_service_failure_does_not_submit_or_return_old_task(video_skill):
+    service, _, _ = video_skill
+    service.list_tasks.side_effect = RuntimeError("search unavailable")
+    saved = VideoSkillDialogue(user_id="7", last_record_id=999).model_dump()
+    response, _ = await invoke(
+        video_skill, "找海边视频", {"action": "list", "query": {"q": "海边"}}, saved
+    )
+    assert response.response_metadata["video_status"] == "unavailable"
+    assert "video" not in response.response_metadata
+    service.create.assert_not_awaited()
+    service.query.assert_not_awaited()
 
 
 @pytest.mark.asyncio

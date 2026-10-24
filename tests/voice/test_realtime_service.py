@@ -1815,7 +1815,7 @@ def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
 
     client, repo, agents, headers = voice_env
     module = importlib.import_module(f"agents.{agent_name}")
-    transcripts = ["生成五秒海边视频", "我有哪些视频", "查询第二条", "把刚才视频改成水墨风格"]
+    transcripts = ["生成五秒海边视频", "找海边有海鸥的视频", "查询第二条", "把刚才视频改成水墨风格"]
 
     class VideoSpeech(FakeSpeech):
         def __init__(self, config):
@@ -1858,6 +1858,8 @@ def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
             "status": "SUCCEEDED",
             "storage_status": "STORED",
             "qiniu_video_url": "https://cdn.example/video.mp4",
+            "title": "海边海鸥",
+            "cover_url": "https://cdn.example/cover.jpg",
         }
     )
     ready = VideoTask.model_validate(ready.model_dump())
@@ -1871,7 +1873,7 @@ def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
             items=[ready.model_copy(update={"id": 124}), ready],
             total=2,
             page=1,
-            page_size=20,
+            page_size=5,
             total_pages=1,
         )
     )
@@ -1893,7 +1895,7 @@ def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
                     "authorized": True,
                     "generation": {"prompt": "海边", "duration": 5},
                 },
-                {"action": "list"},
+                {"action": "list", "query": {"q": "海边 海鸥"}},
                 {"action": "detail", "selection": 2},
                 {"action": "edit", "authorized": True, "editing": {"prompt": "水墨风格"}},
             ]
@@ -1923,12 +1925,20 @@ def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
             assert data["type"] == ("video.list" if sequence == 1 else "video.task")
             if sequence == 1:
                 assert data["total"] == 2 and "2 个" in spoken
+                assert data["query"]["q"] == "海边 海鸥"
+                assert data["page_size"] == 5
+                assert data["items"][0]["title"] == "海边海鸥"
+                assert data["items"][0]["cover_url"] == "https://cdn.example/cover.jpg"
+                assert data["items"][0]["qiniu_video_url"] == "https://cdn.example/video.mp4"
+                assert "海边海鸥" in spoken
             event(ws, "playback.finished", response_id=seen[-1]["response_id"])
         event(ws, "session.close")
         read_until(ws, "session.closed")
     service.create.assert_awaited_once()
     assert service.create.await_args.args[2].watermark is False
     service.list_tasks.assert_awaited_once()
+    assert service.list_tasks.await_args.args[1].q == "海边 海鸥"
+    assert service.list_tasks.await_args.args[1].page_size == 5
     service.query.assert_awaited_once_with(123, 7)
     service.edit.assert_awaited_once()
     assert service.edit.await_args.args[2] == 123

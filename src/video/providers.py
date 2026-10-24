@@ -1,7 +1,9 @@
-"""HappyHorse asynchronous API and Qiniu server-side video archival."""
+"""HappyHorse/Wan asynchronous API and Qiniu server-side video archival."""
 
 import asyncio
 import logging
+from pathlib import PurePosixPath
+from typing import Literal
 from urllib.parse import quote, urlsplit
 
 import httpx
@@ -50,6 +52,7 @@ class HappyHorseClient:
         logger.info("阿里云视频查询入参：任务ID=%s", task_id)
         result = await self._request("GET", f"/tasks/{quote(task_id, safe='')}")
         if result.output.task_id != task_id:
+            logger.error("阿里云视频查询结果任务不匹配：期望任务ID=%s", task_id)
             raise VideoProviderError()
         return result
 
@@ -67,10 +70,10 @@ class HappyHorseClient:
                 json=json,
             )
         except httpx.RequestError as exc:
-            logger.warning("阿里云视频调用异常：操作=%s 异常类型=%s", method, type(exc).__name__)
+            logger.error("阿里云视频调用异常：操作=%s 异常类型=%s", method, type(exc).__name__)
             raise VideoProviderError(uncertain=method == "POST") from None
         if not response.is_success:
-            logger.warning("阿里云视频调用失败：操作=%s HTTP状态=%s", method, response.status_code)
+            logger.error("阿里云视频调用失败：操作=%s HTTP状态=%s", method, response.status_code)
             raise VideoProviderError(
                 uncertain=method == "POST"
                 and (response.status_code >= 500 or response.status_code == 408)
@@ -78,7 +81,7 @@ class HappyHorseClient:
         try:
             result = ProviderResult.model_validate(response.json())
         except (ValueError, ValidationError):
-            logger.warning("阿里云视频出参格式异常：操作=%s", method)
+            logger.error("阿里云视频出参格式异常：操作=%s", method)
             raise VideoProviderError(uncertain=method == "POST") from None
         logger.info(
             "阿里云视频出参：任务ID=%s 状态=%s 已返回视频地址=%s",
@@ -102,7 +105,9 @@ class QiniuVideoStorage:
         self.bucket = config.QINIU_BUCKET_NAME
         self.base_url = (config.QINIU_PUBLIC_BASE_URL or "").rstrip("/")
 
-    async def archive(self, task_id: str, source_url: str) -> tuple[str, str]:
+    async def archive(
+        self, task_id: str, source_url: str, *, prefix: Literal["happyhorse", "wan3"] = "happyhorse"
+    ) -> tuple[str, str]:
         parsed = urlsplit(source_url)
         if (
             parsed.scheme != "https"
@@ -113,7 +118,7 @@ class QiniuVideoStorage:
             or parsed.port not in (None, 443)
         ):
             raise VideoStorageError("阿里云视频来源地址不受信任")
-        object_key = f"videos/happyhorse/{task_id}.mp4"
+        object_key = f"videos/{prefix}/{task_id}.mp4"
         logger.info("七牛云视频转存入参：任务ID=%s 对象键=%s", task_id, object_key)
         try:
             await asyncio.to_thread(self._archive, source_url, object_key)
@@ -127,7 +132,7 @@ class QiniuVideoStorage:
         return object_key, url
 
     async def archive_cover(self, task_id: str, video_object_key: str) -> tuple[str, str]:
-        object_key = f"videos/happyhorse/{task_id}.jpg"
+        object_key = str(PurePosixPath(video_object_key).with_suffix(".jpg"))
         source_url = f"{self.base_url}/{quote(video_object_key, safe='/')}?vframe/jpg/offset/1"
         logger.info("七牛云视频封面转存入参：任务ID=%s 对象键=%s", task_id, object_key)
         try:

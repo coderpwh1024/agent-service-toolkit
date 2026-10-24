@@ -14,6 +14,72 @@ from service.video import router
 from video.service import VideoBusyError, VideoConflictError
 
 
+def test_wan3_uses_existing_create_detail_and_list_routes(client) -> None:
+    test_client, service = client
+    task = VideoTask(
+        id=24,
+        user_id=12,
+        model="wan3.0-video-prime",
+        first_frame_url="https://images.example/first.jpg",
+        last_frame_url="https://images.example/last.jpg",
+        task_id="wan-task",
+        status="PENDING",
+        storage_status="NOT_READY",
+        aliyun_video_url=None,
+        qiniu_video_url=None,
+        qiniu_object_key=None,
+        error_code=None,
+        create_time=datetime.now(UTC),
+        update_time=datetime.now(UTC),
+    )
+    service.create.return_value = task
+    service.query.return_value = task
+    service.list_tasks.return_value = VideoTaskPage(
+        items=[task], total=1, page=1, page_size=20, total_pages=1
+    )
+    response = test_client.post(
+        "/videos",
+        headers=headers(),
+        json={
+            "model": task.model,
+            "prompt": "从日出过渡到日落",
+            "duration": 30,
+            "first_frame_url": task.first_frame_url,
+            "last_frame_url": task.last_frame_url,
+        },
+    )
+    assert response.status_code == 202 and response.json()["data"]["model"] == task.model
+    submitted = service.create.await_args.args[2]
+    assert submitted.duration == 30 and str(submitted.first_frame_url) == task.first_frame_url
+    detail = test_client.get("/videos/24", headers=headers())
+    assert detail.json()["data"]["last_frame_url"] == task.last_frame_url
+    listing = test_client.get("/videos?model=wan3.0-video-prime", headers=headers())
+    assert listing.status_code == 200 and listing.json()["data"]["total"] == 1
+    service.list_tasks.assert_awaited_once_with(12, VideoListQuery(model=task.model))
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "model": "wan3.0-video",
+            "prompt": "海边",
+            "last_frame_url": "https://images.example/end.jpg",
+        },
+        {"model": "wan3.0-video", "prompt": "海边", "duration": 1},
+        {
+            "model": "happyhorse-1.1-t2v",
+            "prompt": "海边",
+            "first_frame_url": "https://images.example/start.jpg",
+        },
+    ],
+)
+def test_invalid_wan3_request_never_submits(client, payload: dict[str, object]) -> None:
+    test_client, service = client
+    assert test_client.post("/videos", headers=headers(), json=payload).status_code == 422
+    service.create.assert_not_awaited()
+
+
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(settings, "AUTH_SECRET", SecretStr("trusted"))
@@ -169,6 +235,7 @@ def test_list_videos_returns_page_and_binds_current_user(client):
             "page_size": 2,
             "status": "SUCCEEDED",
             "storage_status": "STORED",
+            "q": "  海边\t日落  ",
         },
     )
     assert response.status_code == 200
@@ -182,7 +249,9 @@ def test_list_videos_returns_page_and_binds_current_user(client):
     assert "request_payload" not in result["items"][0]
     service.list_tasks.assert_awaited_once_with(
         12,
-        VideoListQuery(page=2, page_size=2, status="SUCCEEDED", storage_status="STORED"),
+        VideoListQuery(
+            page=2, page_size=2, status="SUCCEEDED", storage_status="STORED", q="海边 日落"
+        ),
     )
 
 
@@ -219,6 +288,9 @@ def test_list_videos_defaults_and_empty_result(client):
         {"page_size": 1.5},
         {"status": "INVALID"},
         {"storage_status": "INVALID"},
+        {"q": ""},
+        {"q": " \t "},
+        {"q": "字" * 201},
         {"user_id": 99},
         {"sort": "update_time"},
     ],

@@ -20,7 +20,7 @@ from schema.video import (
 )
 from video.metadata import derive_video_title
 from video.providers import VideoProviderError, VideoStorageError
-from video.service import VideoConflictError, VideoService
+from video.service import VideoConflictError, VideoEditInputError, VideoService
 
 
 def record(**changes) -> VideoRecord:
@@ -236,7 +236,17 @@ async def test_legacy_hash_allows_replay_with_omitted_or_null_metadata(service, 
         if editing
         else VideoCreate(prompt="旧请求", seed=42)
     )
-    legacy_payload = body.model_dump(mode="json", exclude={"title", "cover_url"})
+    legacy_payload = body.model_dump(
+        mode="json",
+        exclude={
+            "title",
+            "cover_url",
+            "first_frame_url",
+            "last_frame_url",
+            "audio",
+            "prompt_extend",
+        },
+    )
     legacy_hash = hashlib.sha256(
         json.dumps(legacy_payload, sort_keys=True, ensure_ascii=False).encode()
     ).hexdigest()
@@ -559,3 +569,79 @@ async def test_list_chinese_logs_only_include_summary(service, caplog):
     await service.list_tasks(12, VideoListQuery())
     assert "视频列表查询入参" in caplog.text and "视频列表查询出参" in caplog.text
     assert "private-signature" not in caplog.text and "私人提示词" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_wan3_create_replay_query_and_archive_preserve_inputs(service, caplog) -> None:
+    body = VideoCreate(
+        model="wan3.0-video",
+        prompt="私人场景",
+        duration=30,
+        ratio="adaptive",
+        audio=False,
+        first_frame_url="https://images.example/start.png?sig=private-start",
+        last_frame_url="https://images.example/end.png?sig=private-end",
+    )
+    caplog.set_level(logging.INFO, logger="video")
+    created = await service.create(12, "wan-key", body)
+    replay = await service.create(12, "wan-key", body)
+    assert replay.id == created.id
+    assert created.model == body.model and created.first_frame_url == str(body.first_frame_url)
+    service.provider.create.assert_awaited_once_with(body)
+    with pytest.raises(VideoConflictError):
+        await service.create(12, "wan-key", body.model_copy(update={"last_frame_url": None}))
+    service.provider.query.return_value = ProviderResult.model_validate(
+        {
+            "output": {
+                "task_id": "task-123",
+                "task_status": "SUCCEEDED",
+                "video_url": "https://oss.aliyuncs.com/wan.mp4",
+            }
+        }
+    )
+    completed = await service.query(created.id, 12)
+    assert completed.storage_status == "STORED"
+    assert completed.last_frame_url == str(body.last_frame_url)
+    service.storage.archive.assert_awaited_once_with(
+        "task-123", "https://oss.aliyuncs.com/wan.mp4", prefix="wan3"
+    )
+    assert service.repo.records[created.id].request_payload == body
+    assert "private-start" not in caplog.text and "private-end" not in caplog.text
+    assert "私人场景" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_wan3_image_only_has_generated_title(service) -> None:
+    body = VideoCreate(model="wan3.0-video", first_frame_url="https://images.example/start.png")
+    created = await service.create(12, "image-only", body)
+    service.provider.query.return_value = ProviderResult.model_validate(
+        {
+            "output": {
+                "task_id": "task-123",
+                "task_status": "SUCCEEDED",
+                "video_url": "https://oss.aliyuncs.com/wan.mp4",
+            }
+        }
+    )
+    completed = await service.query(created.id, 12)
+    assert completed.title == "万相图片视频" and completed.storage_status == "STORED"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "duration, ratio", [(30, "16:9"), (-1, "16:9"), (5, "adaptive"), (2, "16:9")]
+)
+async def test_wan3_incompatible_source_is_not_submitted_to_happyhorse_edit(
+    service, duration: int, ratio: str
+) -> None:
+    service.repo.records[1] = record(
+        status="SUCCEEDED",
+        storage_status="STORED",
+        qiniu_video_url="https://cdn.example/wan.mp4",
+        request_payload=VideoCreate(
+            model="wan3.0-video", prompt="海边", duration=duration, ratio=ratio
+        ),
+    )
+    with pytest.raises(VideoEditInputError, match="3 至 15 秒"):
+        await service.edit(12, "edit-wan", 1, "水墨风格")
+    service.provider.create.assert_not_awaited()

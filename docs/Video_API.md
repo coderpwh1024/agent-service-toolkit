@@ -1,6 +1,75 @@
-# HappyHorse 视频生成
+# HappyHorse 与万相 3.0 视频生成
 
 视频功能由独立的 `src/video/` 模块维护，`src/service/video.py` 负责路由和生命周期适配，提供文生视频、查询并回写数据库、七牛云持久转存和后台同步。默认关闭，不影响现有聊天、语音和头像功能。没有新增生产依赖，复用项目已有的 httpx、psycopg 和七牛 SDK。
+
+## 万相 3.0 接入与兼容设计
+
+依据[万相 3.0 官方 API 文档](https://help.aliyun.com/zh/model-studio/wan3-video-generation-api-reference)接入 `wan3.0-video`（标准版）、`wan3.0-video-prime`（高速版），支持文生视频、首帧生视频和首尾帧生视频。复用现有接口和 `video_generation_tasks` 表：两种模型同属百炼异步视频协议，提交路径、任务状态、查询、所有权、幂等和永久转存一致，拆表或新增路由会重复维护这些逻辑。通过请求中的 `model` 选择模型，默认仍为 HappyHorse 1.1；不自动因时长超限切换模型。
+
+新增独立列 `model VARCHAR(64)`、`first_frame_url VARCHAR(2048)`、`last_frame_url VARCHAR(2048)`；三者均可空以兼容历史记录。图片列是生成输入，`cover_url` 是展示封面，两者独立。完整入参仍保存在 JSONB；`audio`、`prompt_extend`、时长和 seed 等参数不新增重复列。模型参与列表过滤并建立按用户、模型和创建顺序查询的有效记录部分索引；图片无需单独索引。详情、列表和实时视频事件新增返回 `model`、`first_frame_url`、`last_frame_url`，不返回完整提示词。
+
+| 接口 | 万相行为 |
+| --- | --- |
+| `POST /videos` | 使用 `model` 和可选首尾帧图片生成，继续要求用户令牌及幂等键，返回 202 |
+| `GET /videos/{record_id}` | 按本地编号查询本人任务、刷新状态并转存，返回模型与输入图片 |
+| `GET /videos?model=wan3.0-video` | 按具体模型分页，可组合 `q`、`status`、`storage_status`；不传模型查询本人所有模型 |
+
+| 参数 | 万相 3.0 约束 |
+| --- | --- |
+| `prompt` | 最多 20000 字符；无图片时必须非空，有首帧时可省略 |
+| `first_frame_url` | 可选，HTTP(S) 图片地址，最多 2048 字符；严格作为首帧 |
+| `last_frame_url` | 可选，同上，提供时必须同时有首帧 |
+| `duration` | 2–30 秒整数，或 `-1` 智能时长；默认 5 秒 |
+| `resolution` | 480P、720P、1080P；默认 1080P |
+| `ratio` | adaptive、21:9、16:9、4:3、1:1、3:4、9:16；项目统一默认 16:9，可显式指定 adaptive |
+| `seed` | -1 或 0–2147483647 整数，可省略 |
+| `audio` | 可选布尔值，输出是否含音轨，省略采用供应商默认 true |
+| `prompt_extend` | 可选布尔值，是否改写提示词，省略采用供应商默认 true |
+| `watermark` | 默认 false，继续支持显式设置 |
+
+图片须为 JPEG/JPG/PNG（无透明通道）/BMP/WEBP、单边 240–8000 像素、宽高比不超过 8:1、单文件不超过 20MB。后端只验证 URL 和参数组合，不主动抓取用户图片，实际媒体限制及可访问性由供应商校验。当前产品不接入 Base64、OSS 临时 URL、参考图/音视频、文档/网页、万相编辑或延长；这些属于官方接口的其他模式，传入未支持的字段会返回 422，技能也会说明边界。
+
+首尾帧请求示例（只提供首帧时删除 `last_frame_url`，文生视频时删除两个图片字段）：
+
+```json
+{
+  "model": "wan3.0-video",
+  "prompt": "清晨的南瓜缓缓裂开，一只小兔子从金光中出现",
+  "first_frame_url": "https://cdn.example.com/images/pumpkin.png",
+  "last_frame_url": "https://cdn.example.com/images/rabbit.png",
+  "duration": 10,
+  "resolution": "720P",
+  "ratio": "adaptive",
+  "audio": true,
+  "prompt_extend": true,
+  "watermark": false
+}
+```
+
+适配器将图片转换为 `input.media` 的 `first_frame`、`last_frame` 对象，不放入 `parameters`，也不把 `cover_url` 当成输入图片。仅图片生成且无标题时，使用“万相图片视频”作为展示标题，成片后仍从实际视频提取封面。万相视频与封面存储在 `videos/wan3/{task_id}.mp4`、`videos/wan3/{task_id}.jpg`，HappyHorse 的对象键保持原样。已有 HappyHorse 编辑只接受已知比例且 3–15 秒的来源；万相智能时长、adaptive 比例或超过 15 秒的任务不能直接转交该编辑模型。
+
+### SQL 升级与回滚
+
+升级脚本为 [add_wan3_video_fields.sql](../src/video/sql/add_wan3_video_fields.sql)。启用视频模块时，先执行原建表脚本，再在同一事务和 advisory lock 内执行升级脚本。已有表可在发布前单独执行升级脚本；不删除数据、不回填用户内容、不重算请求摘要，缺省或为 null 的万相字段不改变旧 HappyHorse 请求摘要。旧记录的模型从 `request_payload.model` 读取，不将所有历史记录误标为 1.1。
+
+手工执行可使用已有安全连接配置：
+
+```sh
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+SELECT pg_advisory_xact_lock(824567120);
+\i src/video/sql/create_video_generation_tasks.sql
+\i src/video/sql/add_wan3_video_fields.sql
+COMMIT;
+SQL
+```
+
+执行前检查 `information_schema.columns` 中当前字段；执行后检查新增字段、两个 CHECK 约束及模型过滤索引。脚本可重复执行。未提交可回滚事务；提交后回退应用时保留新增可空列，避免丢失万相素材和记录。旧应用无法解析新的万相请求载荷，产生万相任务后应回退到支持该模型的修复版本，不直接回退为只支持 HappyHorse 的版本。DDL 会短暂锁表；大量存量数据创建索引和检查约束可能延长执行，应在合适的维护窗口部署。
+
+### 前端对接
+
+已核对相邻 `agent-voice-app` 的 `VideoDraft`、`VideoApi`、`VideoTask`、生成表单和视频事件模型。原三接口、统一响应、编号、分页和播放字段不变，已有客户端能够继续使用 HappyHorse 并显示返回的视频。新增模型不需要客户端更换路由；前端接入万相表单时，在模型选项中加入标准版和高速版，按模型切换时长、比例、seed 范围，增加独立的首帧和尾帧图片地址控件，透传 `audio`、`prompt_extend`，并解析新增响应字段。原 `cover_url` 控件仍只作为展示元数据。当前 Flutter 表单尚未实现这些选项，本次后端与技能接入可通过 HTTP 或语音/文字技能使用。
 
 接口依据 [HappyHorse 官方文生视频文档](https://docs.bailian.console.aliyun.com/zh/model-studio/happyhorse-text-to-video-api-reference)，同时核对了[阿里云帮助中心版本](https://help.aliyun.com/zh/model-studio/happyhorse-text-to-video-api-reference)。阿里云任务 ID 和成功结果 URL 均有 24 小时有效期；任务创建成功后只查询原任务，不重复提交。七牛使用 [SDK 的 fetch 抓取接口](https://developer.qiniu.com/kodo/api/fetch)把生成的视频复制到对象存储，不把视频完整缓存在应用内存中。
 
@@ -113,8 +182,21 @@ curl -X POST "$AGENT_URL/videos" \
 | `page_size` | `20` | 每页条数，范围 1–100 |
 | `status` | 不筛选 | 视频生成状态，如 `SUCCEEDED`、`RUNNING`、`PENDING`、`FAILED` |
 | `storage_status` | 不筛选 | 七牛转存状态：`NOT_READY`、`PENDING`、`STORED`、`FAILED` |
+| `model` | 不筛选 | 精确模型名，包括两个万相 3.0 模型及已有 HappyHorse 生成/编辑模型 |
+| `q` | 不筛选 | 标题或保存的生成/编辑描述关键词，1–200 字符，不区分大小写的部分匹配 |
 
-不传状态返回本人全部有效任务；查看已经生成的视频传 `status=SUCCEEDED`，查看已转存至七牛的视频可同时传 `storage_status=STORED`。两个状态参数同时提供时按 AND 筛选；允许的完整生成状态见前面的表设计。非法枚举、分页范围或未知参数返回 422。
+不传查询条件返回本人全部有效任务；查看已经生成的视频传 `status=SUCCEEDED`，查看已转存至七牛的视频可同时传 `storage_status=STORED`。两个状态参数同时提供时按 AND 筛选；允许的完整生成状态见前面的表设计。非法枚举、分页范围、空白关键词、超长关键词或未知参数返回 422。
+
+`q` 规范连续空白，按空白拆分关键词；每个关键词都必须在标题或 `request_payload.prompt` 中命中，可分别命中两个字段。例如 `q=海边 海鸥` 可匹配标题为“海边日落”、描述包含“海鸥飞过”的任务。`%`、`_` 等作为普通字符，查询使用参数绑定。标题为空的旧记录仍可通过描述命中。关键词与状态条件按 AND 组合，总数和分页采用相同过滤条件；排序仍为创建时间倒序、编号倒序。查询不返回原始提示词，也不将关键词写入日志。
+
+内容查询仅依据保存的描述，不分析成片的画面、音轨或字幕，不提供同义词或向量语义检索。无需数据库迁移或额外依赖；当前按用户过滤后匹配文本，数据量显著增长时再根据实际查询计划评估专门索引。
+
+```sh
+curl --get "$AGENT_URL/videos" \
+  -H "Authorization: Bearer $APP_ACCESS_TOKEN" \
+  --data-urlencode "q=海边 海鸥" \
+  --data-urlencode "page_size=5"
+```
 
 ```sh
 curl "$AGENT_URL/videos?page=1&page_size=20&status=SUCCEEDED&storage_status=STORED" \
@@ -194,7 +276,7 @@ video:
 skills:
   video:
     enabled: true
-    version: "1.2.0"
+    version: "1.4.0"
     label: latest
     timeout_seconds: 20
 ```
@@ -208,15 +290,15 @@ CLI 的连接地址和 Namespace 必须与应用一致；密码留在受保护�
 ```sh
 nacos-cli skill-upload skills/manage-user-videos
 nacos-cli skill-describe manage-user-videos --output json
-nacos-cli skill-review manage-user-videos --version 1.2.0
+nacos-cli skill-review manage-user-videos --version 1.4.0
 nacos-cli skill-describe manage-user-videos --output json
 ```
 
 待目标版本通过异步评审后发布；如果已经在线则跳过发布。后续更新使用新版本，不覆盖已发布版本。
 
 ```sh
-nacos-cli skill-release manage-user-videos --version 1.2.0
-nacos-cli skill-get manage-user-videos --version 1.2.0 -o /path/to/skill-review
+nacos-cli skill-release manage-user-videos --version 1.4.0
+nacos-cli skill-get manage-user-videos --version 1.4.0 -o /path/to/skill-review
 ```
 
 最终核对目标版本为 `online`，并对比下载后的 `SKILL.md` 摘要与仓库文件一致。仅上传草稿不代表已经可被运行时加载。
@@ -231,16 +313,21 @@ nacos-cli skill-get manage-user-videos --version 1.2.0 -o /path/to/skill-review
 | --- | --- |
 | “生成海边日落视频，标题叫海边日落” | 保留指定标题；未指定时由后端从描述提取标题，生成完成后自动截帧并保存七牛封面 |
 | “生成五秒海边日落的视频” | 创建无水印视频任务，返回本地编号 |
+| “用万相 3.0 生成三十秒海边视频” | 使用 `wan3.0-video` 生成，保留 30 秒要求 |
+| “用这两个图片 URL 做首尾帧视频” | 选择万相并提取首尾帧地址，缺首帧时保留草稿 |
+| “查看万相高速版的视频”“下一页” | 用 `model=wan3.0-video-prime` 查询并在翻页时保留模型条件 |
 | “生成十秒视频” → “海边日落” | 收集内容，保留十秒要求后提交 |
 | “按上面描述生成三十秒” → “改成十五秒” | 解释时长限制，保留场景，用户修正后提交 |
 | “刚才的视频好了吗”“查询编号三” | 查询本人单条任务并回写状态 |
-| “我有哪些视频”“列出已生成的视频” | 查询本人分页列表，成功条件为 `SUCCEEDED` |
+| “我有哪些视频”“列出已生成的视频” | 查询本人分页列表，默认每页 5 条，成功条件为 `SUCCEEDED` |
+| “找海边有海鸥的视频”“查标题里有日落的视频” | 从描述提取关键词查询标题和保存的内容描述，返回最近的匹配列表 |
+| “只看最近一个海边视频” | 先按关键词筛选，再返回最近 1 条，保留真实总数 |
 | “下一页”“查询第二条” | 保留上一页过滤条件，或从最近真实列表选记录 |
 | “我现在有几个视频” | 查询数据库总数，不从聊天推断 |
 | “把编号三改成水墨画风，保留原声” | 对已完成并转存的视频新建编辑任务 |
 | “取消” | 只取消未提交草稿，不撤回已有任务 |
 
-语音列表先播报至多五条，完整当前页通过事件返回。列表序号是当前页从一开始的顺序，不等于记录 ID。空列表、零总数、超出末页和错误编号均明确说明。分页排序、状态枚举和用户隔离沿用现有服务；不支持按日期或主题过滤，不忽略这些条件后查询全部。
+语音技能默认每页返回最近 5 条，可明确要求 1–100 条；HTTP 默认仍为 20 条。语音列表先播报至多五条的标题、编号和状态，完整当前页通过事件返回。列表序号是当前页从一开始的顺序，不等于记录 ID。空列表、零总数、超出末页和错误编号均明确说明。分页排序、状态枚举和用户隔离沿用现有服务；下一页保留关键词、状态和每页条数。按标题或内容查找不会退回上一条任务；空结果会清空可选序号。按描述编辑时先返回候选，用户选定后才提交。暂不支持按日期过滤或成片内容识别，不忽略这些条件后查询全部。
 
 ### 编辑边界与持久化
 
@@ -266,12 +353,12 @@ nacos-cli skill-get manage-user-videos --version 1.2.0 -o /path/to/skill-review
   ],
   "total": 1,
   "page": 1,
-  "page_size": 20,
+  "page_size": 5,
   "total_pages": 1,
-  "query": {"page": 1, "page_size": 20, "status": null, "storage_status": null}
+  "query": {"page": 1, "page_size": 5, "status": null, "storage_status": null, "q": "海边"}
 }
 ```
 
-单条结果继续使用 `{"type":"video.task","video":{...}}`，`response_metadata.video` 保留相同单条摘要。数量事件包含 `total` 与过滤条件。列表、数量事件是通用通道的新增载荷，不改变语音事件顺序或音频协议。客户端根据事件展示标题、封面、七牛链接和分页控件，语音不朗读 URL，也不自动启动播放器。
+单条结果继续使用 `{"type":"video.task","video":{...}}`，`response_metadata.video` 保留相同单条摘要。数量事件包含 `total` 与过滤条件。列表、数量事件是通用通道的新增载荷，不改变语音事件顺序或音频协议。客户端可根据事件展示标题、封面、七牛链接和分页控件，语音不朗读 URL，也不自动启动播放器。配套 Flutter App `agent-voice-app` 已接入多结果卡片和历史列表恢复。语音客户端消费 `agent.custom` 中的 `video.list`，按 `record_id` 渲染候选卡片，使用 `cover_url` 展示封面、`qiniu_video_url` 提供播放链接，以 `total` / `total_pages` 判断更多结果。标题按普通文本渲染，不能作为 HTML 或指令执行。仅生成成功且实际提供七牛视频链接时显示播放入口；生成、转存及封面失败状态分别展示，不将封面尚未完成误报为整体成功。
 
 日志用中文记录技能摘要、输入字数、操作、状态及安全错误类型，不打印完整场景、对话、凭据或签名 URL。识别模型仍具有误判可能；单元和模拟音频测试不能替代部署后对实际 ASR、模型权限和素材质量的验收。

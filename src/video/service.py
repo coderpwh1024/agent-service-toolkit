@@ -41,7 +41,20 @@ class VideoEditInputError(ValueError):
 
 
 def public_task(record: VideoRecord) -> VideoTask:
-    return VideoTask.model_validate(record.model_dump())
+    values = record.model_dump()
+    values["model"] = record.request_payload.model
+    if isinstance(record.request_payload, VideoCreate):
+        values["first_frame_url"] = (
+            str(record.request_payload.first_frame_url)
+            if record.request_payload.first_frame_url
+            else None
+        )
+        values["last_frame_url"] = (
+            str(record.request_payload.last_frame_url)
+            if record.request_payload.last_frame_url
+            else None
+        )
+    return VideoTask.model_validate(values)
 
 
 class VideoService:
@@ -82,6 +95,13 @@ class VideoService:
             or not source.qiniu_video_url
         ):
             raise VideoEditInputError("原视频尚未生成并完成转存，请先查询进度，完成后再编辑")
+        if (
+            source.request_payload.ratio == "adaptive"
+            or not 3 <= source.request_payload.duration <= 15
+        ):
+            raise VideoEditInputError(
+                "HappyHorse 编辑只支持已知比例、3 至 15 秒的原视频；智能时长或自适应比例暂不支持编辑"
+            )
         numerator, denominator = source.request_payload.ratio.split(":")
         if not 0.4 <= int(numerator) / int(denominator) <= 2.5:
             raise VideoEditInputError("原视频宽高比超出编辑模型支持的 1:2.5 至 2.5:1 范围")
@@ -104,18 +124,27 @@ class VideoService:
 
     async def _submit(self, user_id: int, key: str, body: VideoCreate | VideoEdit) -> VideoTask:
         payload = body.model_dump(mode="json")
-        for field in ("title", "cover_url"):
-            if payload[field] is None:
-                del payload[field]
+        for field in (
+            "title",
+            "cover_url",
+            "first_frame_url",
+            "last_frame_url",
+            "audio",
+            "prompt_extend",
+        ):
+            if payload.get(field) is None:
+                payload.pop(field, None)
         request_hash = hashlib.sha256(
             json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()
         ).hexdigest()
         logger.info(
-            "视频生成入参：用户ID=%s 请求摘要=%s 模型=%s 时长=%s",
+            "视频生成入参：用户ID=%s 请求摘要=%s 模型=%s 时长=%s 首帧=%s 尾帧=%s",
             user_id,
             request_hash,
             body.model,
             body.duration,
+            isinstance(body, VideoCreate) and body.first_frame_url is not None,
+            isinstance(body, VideoCreate) and body.last_frame_url is not None,
         )
         record, created = await self.repo.reserve(user_id, key, request_hash, body)
         if record.request_hash != request_hash:
@@ -127,6 +156,12 @@ class VideoService:
                 try:
                     result = await self.provider.create(body)
                 except VideoProviderError as exc:
+                    logger.error(
+                        "视频提交失败：记录ID=%s 模型=%s 结果不确定=%s",
+                        record.id,
+                        body.model,
+                        exc.uncertain,
+                    )
                     record.status = (
                         VideoStatus.SUBMISSION_UNKNOWN if exc.uncertain else VideoStatus.FAILED
                     )
@@ -156,12 +191,13 @@ class VideoService:
 
     async def list_tasks(self, user_id: int, query: VideoListQuery) -> VideoTaskPage:
         logger.info(
-            "视频列表查询入参：用户ID=%s 页码=%s 每页条数=%s 生成状态=%s 转存状态=%s",
+            "视频列表查询入参：用户ID=%s 页码=%s 每页条数=%s 生成状态=%s 转存状态=%s 模型=%s",
             user_id,
             query.page,
             query.page_size,
             query.status or "全部",
             query.storage_status or "全部",
+            query.model or "全部",
         )
         items, total = await self.repo.list_tasks(user_id, query)
         result = VideoTaskPage(
@@ -191,6 +227,14 @@ class VideoService:
             if record.status in {VideoStatus.FAILED, VideoStatus.CANCELED, VideoStatus.UNKNOWN}
             else None
         )
+        if record.error_code:
+            logger.error(
+                "视频生成未成功：记录ID=%s 模型=%s 状态=%s 请求ID=%s",
+                record.id,
+                record.request_payload.model,
+                record.status,
+                result.request_id,
+            )
         if result.output.video_url is not None:
             record.aliyun_video_url = str(result.output.video_url)
         if record.status == VideoStatus.SUCCEEDED and record.task_id:
@@ -220,6 +264,9 @@ class VideoService:
             try:
                 result = await self.provider.query(record.task_id)
             except VideoProviderError:
+                logger.error(
+                    "视频刷新失败：记录ID=%s 模型=%s", record.id, record.request_payload.model
+                )
                 record.error_code = "QUERY_FAILED"
                 return await self.repo.save(record, actor)
             self._apply(record, result)
@@ -233,15 +280,25 @@ class VideoService:
         if not task_id:
             return record
         if not record.title or not record.title.strip():
-            record.title = derive_video_title(record.request_payload.prompt)
+            record.title = derive_video_title(record.request_payload.prompt) or "万相图片视频"
         if not record.qiniu_video_url or not record.qiniu_object_key:
             if not record.aliyun_video_url:
                 record.error_code = "VIDEO_URL_MISSING"
                 return await self.repo.save(record, actor)
             else:
                 try:
-                    object_key, url = await self.storage.archive(task_id, record.aliyun_video_url)
+                    if record.request_payload.model.startswith("wan3.0-"):
+                        object_key, url = await self.storage.archive(
+                            task_id, record.aliyun_video_url, prefix="wan3"
+                        )
+                    else:
+                        object_key, url = await self.storage.archive(
+                            task_id, record.aliyun_video_url
+                        )
                 except VideoStorageError:
+                    logger.error(
+                        "视频转存失败：记录ID=%s 模型=%s", record.id, record.request_payload.model
+                    )
                     record.storage_status = VideoStorageStatus.FAILED
                     record.error_code = "ARCHIVE_FAILED"
                     return await self.repo.save(record, actor)
@@ -258,6 +315,9 @@ class VideoService:
             try:
                 cover_key, cover_url = await self.storage.archive_cover(task_id, video_object_key)
             except VideoStorageError:
+                logger.error(
+                    "视频封面转存失败：记录ID=%s 模型=%s", record.id, record.request_payload.model
+                )
                 record.storage_status = VideoStorageStatus.FAILED
                 record.error_code = "COVER_ARCHIVE_FAILED"
             else:

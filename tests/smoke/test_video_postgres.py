@@ -1,7 +1,10 @@
 """Verify task constraints, audit fields, polling fairness and locks on PostgreSQL."""
 
 import asyncio
+import hashlib
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -16,6 +19,116 @@ from schema.video import ProviderResult, VideoCreate, VideoEdit, VideoListQuery,
 from video.providers import VideoStorageError
 from video.repository import VideoRepository
 from video.service import VideoService
+
+
+@pytest.mark.docker
+@pytest.mark.asyncio
+async def test_wan3_migration_preserves_legacy_hash_and_filters_owned_models() -> None:
+    schema = "video_smoke_" + uuid4().hex
+    conninfo = get_postgres_connection_string()
+    async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+        await conn.execute(SQL("CREATE SCHEMA {}").format(Identifier(schema)))
+    scoped = make_conninfo(conninfo, options=f"-csearch_path={schema}")
+    repo = VideoRepository(scoped)
+    try:
+        old_payload = {
+            "prompt": "旧视频",
+            "model": "happyhorse-1.0-t2v",
+            "resolution": "1080P",
+            "ratio": "16:9",
+            "duration": 5,
+            "watermark": False,
+            "seed": None,
+        }
+        old_hash = hashlib.sha256(
+            json.dumps(old_payload, sort_keys=True, ensure_ascii=False).encode()
+        ).hexdigest()
+        async with await psycopg.AsyncConnection.connect(scoped, autocommit=True) as conn:
+            await conn.execute(
+                SQL(Path("src/video/sql/create_video_generation_tasks.sql").read_text())
+            )
+            row = await (
+                await conn.execute(
+                    """
+                INSERT INTO video_generation_tasks (
+                    user_id, idempotency_key, request_hash, request_payload, create_by, update_by
+                ) VALUES (%s, %s, %s, %s, %s, %s) RETURNING id, create_time, update_time
+            """,
+                    (12, "legacy-wan-upgrade", old_hash, Jsonb(old_payload), 12, 12),
+                )
+            ).fetchone()
+        assert row is not None
+        legacy_id, created_at, updated_at = row
+        for _ in range(2):
+            repo = VideoRepository(scoped)
+            await repo.open()
+            old = await repo.get(legacy_id, 12)
+            assert old is not None and old.model == "happyhorse-1.0-t2v"
+            assert old.request_hash == old_hash
+            assert old.create_time == created_at and old.update_time == updated_at
+            assert old.request_payload == VideoCreate.model_validate(old_payload)
+            await repo.close()
+        repo = VideoRepository(scoped)
+        await repo.open()
+        service = VideoService(repo, AsyncMock(), AsyncMock(), 0)
+        replay = await service.create(
+            12, "legacy-wan-upgrade", VideoCreate.model_validate(old_payload)
+        )
+        assert replay.id == legacy_id
+        service.provider.create.assert_not_awaited()
+        happyhorse, _ = await repo.reserve(
+            12, "new-happyhorse", "f" * 64, VideoCreate(prompt="兼容旧版")
+        )
+        async with repo.pool.connection() as conn:
+            row = await (
+                await conn.execute(
+                    """SELECT request_payload ?| ARRAY[
+                'first_frame_url', 'last_frame_url', 'audio', 'prompt_extend'
+            ] AS has_wan_fields FROM video_generation_tasks WHERE id = %s""",
+                    (happyhorse.id,),
+                )
+            ).fetchone()
+            assert row is not None and row["has_wan_fields"] is False
+        body = VideoCreate(
+            model="wan3.0-video",
+            prompt="首尾帧过渡",
+            duration=30,
+            audio=False,
+            first_frame_url="https://images.example/start.png",
+            last_frame_url="https://images.example/end.png",
+        )
+        wan, _ = await repo.reserve(12, "wan-create", "b" * 64, body)
+        await repo.reserve(13, "wan-other-user", "c" * 64, body)
+        prime, _ = await repo.reserve(
+            12, "wan-prime", "d" * 64, body.model_copy(update={"model": "wan3.0-video-prime"})
+        )
+        assert (await repo.get(wan.id, 12)).request_payload == body
+        assert (await repo.get(wan.id, 12)).last_frame_url == str(body.last_frame_url)
+        for model, expected in [
+            ("wan3.0-video", wan.id),
+            ("wan3.0-video-prime", prime.id),
+            ("happyhorse-1.0-t2v", legacy_id),
+        ]:
+            items, total = await repo.list_tasks(12, VideoListQuery(model=model))
+            assert total == 1 and [item.id for item in items] == [expected]
+            assert items[0].model == model
+        items, total = await repo.list_tasks(12, VideoListQuery(model="wan3.0-video", q="首尾帧"))
+        assert total == 1 and items[0].first_frame_url == str(body.first_frame_url)
+        assert (await repo.list_tasks(14, VideoListQuery(model="wan3.0-video")))[1] == 0
+        async with repo.pool.connection() as conn:
+            for field, value in [("model", "unknown-model"), ("first_frame_url", None)]:
+                with pytest.raises(psycopg.errors.CheckViolation):
+                    await conn.execute(
+                        SQL("""UPDATE video_generation_tasks SET {} = %s,
+                        update_by = 12, update_time = CURRENT_TIMESTAMP WHERE id = %s""").format(
+                            Identifier(field)
+                        ),
+                        (value, wan.id),
+                    )
+    finally:
+        await repo.close()
+        async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+            await conn.execute(SQL("DROP SCHEMA {} CASCADE").format(Identifier(schema)))
 
 
 @pytest.mark.docker
@@ -352,6 +465,77 @@ async def test_video_list_filters_pagination_and_creation_order():
             12, "write-after-list", "b" * 64, VideoCreate(prompt="新任务")
         )
         assert created
+    finally:
+        await repo.close()
+        async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+            await conn.execute(SQL("DROP SCHEMA {} CASCADE").format(Identifier(schema)))
+
+
+@pytest.mark.docker
+@pytest.mark.asyncio
+async def test_video_keyword_search_matches_titles_and_descriptions_with_user_isolation():
+    schema = "video_smoke_" + uuid4().hex
+    conninfo = get_postgres_connection_string()
+    async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+        await conn.execute(SQL("CREATE SCHEMA {}").format(Identifier(schema)))
+    repo = VideoRepository(make_conninfo(conninfo, options=f"-csearch_path={schema}"))
+    try:
+        await repo.open()
+        seeds = [
+            (12, "海边日落", "海鸥飞过，Sunset sky", "SUCCEEDED", 0),
+            (12, "海边清晨", "帆船驶过", "PENDING", 0),
+            (12, "旧任务", "海边海鸥飞过", "PENDING", 0),
+            (13, "海边海鸥", "其他用户", "PENDING", 0),
+            (12, "海边海鸥", "已删除", "PENDING", 1),
+            (12, "100%_完成!", "字面符号与反斜线\\", "PENDING", 0),
+            (12, "100ABC完成", "普通描述", "PENDING", 0),
+            (12, "引号", "' OR 1=1 --", "PENDING", 0),
+        ]
+        ids = []
+        for index, (user_id, title, prompt, status, deleted) in enumerate(seeds):
+            record, _ = await repo.reserve(
+                user_id,
+                f"search-{index}",
+                "a" * 64,
+                VideoCreate(title=title, prompt=prompt),
+            )
+            ids.append(record.id)
+            async with repo.pool.connection() as conn:
+                await conn.execute(
+                    """UPDATE video_generation_tasks SET title = %s, status = %s,
+                    is_delete = %s, create_time = %s,
+                    update_by = %s, update_time = CURRENT_TIMESTAMP WHERE id = %s""",
+                    (
+                        None if index == 2 else title,
+                        status,
+                        deleted,
+                        datetime(2026, 1, index + 1, tzinfo=UTC),
+                        user_id,
+                        record.id,
+                    ),
+                )
+        for query, expected in [
+            (VideoListQuery(q="海边"), [ids[2], ids[1], ids[0]]),
+            (VideoListQuery(q=" 海边\t海鸥 "), [ids[2], ids[0]]),
+            (VideoListQuery(q="海边 海鸥", status="SUCCEEDED"), [ids[0]]),
+            (VideoListQuery(q="sUnSeT"), [ids[0]]),
+            (VideoListQuery(q="%_"), [ids[5]]),
+            (VideoListQuery(q="!"), [ids[5]]),
+            (VideoListQuery(q="\\"), [ids[5]]),
+            (VideoListQuery(q="' OR 1=1 --"), [ids[7]]),
+            (VideoListQuery(q="不存在的场景"), []),
+        ]:
+            items, total = await repo.list_tasks(12, query)
+            assert [item.id for item in items] == expected
+            assert total == len(expected)
+            assert all(item.user_id == 12 for item in items)
+        for page, expected in [(1, [ids[2]]), (2, [ids[0]]), (3, [])]:
+            items, total = await repo.list_tasks(
+                12, VideoListQuery(q="海边 海鸥", page=page, page_size=1)
+            )
+            assert [item.id for item in items] == expected and total == 2
+        other_items, total = await repo.list_tasks(13, VideoListQuery(q="海边 海鸥"))
+        assert total == 1 and other_items[0].id == ids[3]
     finally:
         await repo.close()
         async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:

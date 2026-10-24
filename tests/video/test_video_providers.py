@@ -287,3 +287,155 @@ async def test_qiniu_failure_does_not_return_url():
 def test_request_boundaries(changes):
     with pytest.raises(ValidationError):
         VideoCreate.model_validate({"prompt": "horse", **changes})
+
+
+@pytest.mark.parametrize("model", ["wan3.0-video", "wan3.0-video-prime"])
+@pytest.mark.parametrize("frames", [0, 1, 2])
+@pytest.mark.asyncio
+async def test_wan3_wire_contract(model: str, frames: int) -> None:
+    import json
+
+    images = {
+        "first_frame_url": "https://images.example/start.png",
+        "last_frame_url": "https://images.example/end.webp",
+    }
+    body = VideoCreate.model_validate(
+        {
+            "model": model,
+            "prompt": "南瓜变成小兔子",
+            "duration": 30,
+            "ratio": "adaptive",
+            "audio": False,
+            "prompt_extend": False,
+            "seed": -1,
+            "title": "作品",
+            "cover_url": "https://images.example/cover.jpg",
+            **dict(list(images.items())[:frames]),
+        }
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.headers["X-DashScope-Async"] == "enable"
+        assert json.loads(request.content) == {
+            "model": model,
+            "input": {
+                "prompt": body.prompt,
+                **(
+                    {
+                        "media": [
+                            {"type": kind, "url": images[field]}
+                            for kind, field in [
+                                ("first_frame", "first_frame_url"),
+                                ("last_frame", "last_frame_url"),
+                            ][:frames]
+                        ]
+                    }
+                    if frames
+                    else {}
+                ),
+            },
+            "parameters": {
+                "duration": 30,
+                "resolution": "1080P",
+                "ratio": "adaptive",
+                "audio": False,
+                "prompt_extend": False,
+                "watermark": False,
+                "seed": -1,
+            },
+        }
+        return httpx.Response(
+            200, json={"output": {"task_id": "wan-task", "task_status": "PENDING"}}
+        )
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        provider = HappyHorseClient(client, config())
+        assert (await provider.create(body)).output.task_id == "wan-task"
+
+
+@pytest.mark.parametrize("duration", [-1, 2, 30])
+def test_wan3_image_only_and_native_boundaries(duration: int) -> None:
+    body = VideoCreate(
+        model="wan3.0-video",
+        first_frame_url="https://images.example/start.png",
+        duration=duration,
+        ratio="adaptive",
+        prompt="中" * 20000,
+        seed=-1,
+    )
+    assert body.duration == duration
+    image_only = body.model_copy(update={"prompt": ""})
+    assert "prompt" not in image_only.provider_payload()["input"]
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"duration": 0},
+        {"duration": 1},
+        {"duration": 31},
+        {"duration": 3.5},
+        {"duration": True},
+        {"ratio": "4:5"},
+        {"ratio": "5:4"},
+        {"ratio": "9:21"},
+        {"seed": -2},
+        {"prompt": "中" * 20001},
+        {"prompt": " "},
+        {"last_frame_url": "https://images.example/end.jpg"},
+        {"first_frame_url": "data:image/png;base64,AAAA"},
+        {"first_frame_url": "oss://dashscope-instant/start.png"},
+        {"first_frame_url": "file:///private/start.png"},
+        {"first_frame_url": "https://images.example/" + "x" * 2048},
+        {"audio": "false"},
+        {"prompt_extend": "true"},
+        {"media": [{"type": "reference_image", "url": "https://images.example/start.png"}]},
+    ],
+)
+def test_wan3_rejects_invalid_or_unimplemented_inputs(changes: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        VideoCreate.model_validate({"model": "wan3.0-video", "prompt": "海边", **changes})
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"first_frame_url": "https://images.example/start.jpg"},
+        {"last_frame_url": "https://images.example/end.jpg"},
+        {"audio": False},
+        {"prompt_extend": True},
+        {"ratio": "adaptive"},
+        {"prompt": "x" * 5001},
+    ],
+)
+def test_happyhorse_does_not_accept_wan3_parameters(changes: dict[str, object]) -> None:
+    with pytest.raises(ValidationError):
+        VideoCreate.model_validate({"prompt": "海边", **changes})
+
+
+@pytest.mark.asyncio
+async def test_wan3_archives_video_and_cover_under_own_prefix() -> None:
+    storage = QiniuVideoStorage(config())
+    storage.manager = Mock()
+    storage.manager.stat.return_value = (None, SimpleNamespace(status_code=612))
+    storage.manager.fetch.side_effect = [
+        (
+            {"key": "videos/wan3/wan-task.mp4", "hash": "hash", "fsize": 100},
+            SimpleNamespace(status_code=200),
+        ),
+        (
+            {
+                "key": "videos/wan3/wan-task.jpg",
+                "hash": "hash",
+                "fsize": 100,
+                "mimeType": "image/jpeg",
+            },
+            SimpleNamespace(status_code=200),
+        ),
+    ]
+    key, url = await storage.archive(
+        "wan-task", "https://result.oss-cn-beijing.aliyuncs.com/v.mp4", prefix="wan3"
+    )
+    cover_key, cover_url = await storage.archive_cover("wan-task", key)
+    assert key == "videos/wan3/wan-task.mp4" and url.endswith(key)
+    assert cover_key == "videos/wan3/wan-task.jpg" and cover_url.endswith(cover_key)

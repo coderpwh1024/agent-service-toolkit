@@ -17,12 +17,14 @@ from schema.video import VideoCreate, VideoEdit, VideoListQuery, VideoRecord, Vi
 from video.metadata import derive_video_title
 
 _LIST_COLUMNS = SQL("""
-    id, user_id, title, cover_url, task_id, status, storage_status, aliyun_video_url,
+    id, user_id, COALESCE(model, request_payload ->> 'model', 'happyhorse-1.1-t2v') AS model,
+    first_frame_url, last_frame_url, title, cover_url, task_id, status, storage_status, aliyun_video_url,
     qiniu_video_url, qiniu_object_key, error_code, create_time, update_time
 """)
 
 _COLUMNS = SQL("""
-    id, user_id, title, cover_url, idempotency_key, request_hash, request_payload, task_id, status,
+    id, user_id, COALESCE(model, request_payload ->> 'model', 'happyhorse-1.1-t2v') AS model,
+    first_frame_url, last_frame_url, title, cover_url, idempotency_key, request_hash, request_payload, task_id, status,
     storage_status, aliyun_video_url, qiniu_video_url, qiniu_object_key, qiniu_cover_object_key,
     provider_request_id, error_code, next_poll_time, create_by, update_by,
     create_time, update_time, is_delete
@@ -46,10 +48,15 @@ class VideoRepository:
             Path(__file__).with_name("sql").joinpath("create_video_generation_tasks.sql").read_text,
             encoding="utf-8",
         )
+        migration = await asyncio.to_thread(
+            Path(__file__).with_name("sql").joinpath("add_wan3_video_fields.sql").read_text,
+            encoding="utf-8",
+        )
         async with self.pool.connection() as conn:
             async with conn.transaction():
                 await conn.execute("SELECT pg_advisory_xact_lock(824567120)")
                 await conn.execute(SQL(cast(LiteralString, ddl)))
+                await conn.execute(SQL(cast(LiteralString, migration)))
 
     async def close(self) -> None:
         await self.pool.close()
@@ -76,21 +83,42 @@ class VideoRepository:
                 await conn.execute(
                     SQL("""
                         INSERT INTO video_generation_tasks (
-                            user_id, title, cover_url, idempotency_key, request_hash, request_payload,
+                            user_id, model, first_frame_url, last_frame_url,
+                            title, cover_url, idempotency_key, request_hash, request_payload,
                             create_by, update_by, next_poll_time
                         ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP + INTERVAL '5 minutes'
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP + INTERVAL '5 minutes'
                         )
                         ON CONFLICT (user_id, idempotency_key) WHERE is_delete = 0 DO NOTHING
                         RETURNING {}
                     """).format(_COLUMNS),
                     (
                         user_id,
-                        body.title or derive_video_title(body.prompt),
+                        body.model,
+                        str(body.first_frame_url)
+                        if isinstance(body, VideoCreate) and body.first_frame_url
+                        else None,
+                        str(body.last_frame_url)
+                        if isinstance(body, VideoCreate) and body.last_frame_url
+                        else None,
+                        body.title or derive_video_title(body.prompt) or "万相图片视频",
                         str(body.cover_url) if body.cover_url is not None else None,
                         key,
                         request_hash,
-                        Jsonb(body.model_dump(mode="json")),
+                        Jsonb(
+                            body.model_dump(
+                                mode="json",
+                                exclude={
+                                    "first_frame_url",
+                                    "last_frame_url",
+                                    "audio",
+                                    "prompt_extend",
+                                }
+                                if isinstance(body, VideoCreate)
+                                and body.model.startswith("happyhorse-")
+                                else set(),
+                            )
+                        ),
                         user_id,
                         user_id,
                     ),
@@ -142,6 +170,21 @@ class VideoRepository:
         if query.storage_status is not None:
             conditions.append(SQL("storage_status = %s"))
             params.append(query.storage_status)
+        if query.model is not None:
+            conditions.append(
+                SQL("COALESCE(model, request_payload ->> 'model', 'happyhorse-1.1-t2v') = %s")
+            )
+            params.append(query.model)
+        if query.q is not None:
+            for term in query.q.split():
+                pattern = "%" + term.replace("!", "!!").replace("%", "!%").replace("_", "!_") + "%"
+                conditions.append(
+                    SQL("""(
+                        COALESCE(title, '') ILIKE %s ESCAPE '!' OR
+                        COALESCE(request_payload ->> 'prompt', '') ILIKE %s ESCAPE '!'
+                    )""")
+                )
+                params.extend([pattern, pattern])
         where = SQL(" AND ").join(conditions)
         async with self.pool.connection() as conn:
             async with conn.transaction():
