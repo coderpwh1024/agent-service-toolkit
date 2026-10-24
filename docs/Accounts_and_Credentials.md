@@ -12,10 +12,10 @@
 | `POSTGRES_USER`、`POSTGRES_PASSWORD` | PostgreSQL 数据库身份 | 服务端连接数据库；Compose 用于初始化数据库 |
 | `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB` | 数据库连接目标 | 本地默认 `127.0.0.1:5432/agent_service`；服务容器内使用 `postgres:5432` |
 | `AUTH_SECRET` | 可信后台服务凭据，由部署者自行设置 | 服务端管理调用和现有 Streamlit/Python 客户端；不能内置到移动 App |
-| `APP_TOKEN_SECRET` | App 访问令牌的 HS256 签名密钥，至少 32 字符 | 由 Nacos YAML 加载；启用邮箱认证或实时语音时必需 |
+| `APP_TOKEN_SECRET` | App 访问令牌的 HS256 签名密钥，至少 32 字符 | 由 Nacos YAML 加载；启用邮箱认证、实时语音或文件上传时必需 |
 | `REDIS_URL` | Redis 连接地址 | 邮箱验证码的 3 分钟有效期、失败次数和 24 小时发送上限 |
 | `SMTP_*` | 验证邮件发送配置 | 由 Nacos YAML 加载；支持 STARTTLS 或隐式 SSL，二者不能同时启用 |
-| `QINIU_*` | 用户头像对象存储 | 由 Nacos `storage.qiniu` 加载；AK/SK 仅保存在服务端 |
+| `QINIU_*` | 用户头像、文件上传及视频对象存储 | 由 Nacos `storage.qiniu` 加载；AK/SK 仅保存在服务端 |
 
 模型、认证、Redis、PostgreSQL、SMTP、RAG 和实时语音配置统一维护在 Nacos YAML 中，不在 `.env` 重复保存。数据库凭据不是聊天界面的登录账号；数据库当前用于会话检查点、跨会话记忆及 RAG 数据。
 

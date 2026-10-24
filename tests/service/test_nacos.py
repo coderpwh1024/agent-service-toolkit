@@ -10,6 +10,15 @@ from service import nacos
 from voice.catalog import voice_options
 
 
+def test_file_upload_settings_map_from_nacos() -> None:
+    config = nacos.Settings(_env_file=None, USE_FAKE_MODEL=True)
+    nacos.apply_remote_settings(
+        config, "storage:\n  files:\n    enabled: true\n    max_bytes: 1048576\n"
+    )
+    assert config.FILE_UPLOAD_ENABLED is True
+    assert config.FILE_UPLOAD_MAX_BYTES == 1048576
+
+
 @pytest.fixture(autouse=True)
 def ai_client(monkeypatch, mem0_prompts):
     client = AsyncMock()

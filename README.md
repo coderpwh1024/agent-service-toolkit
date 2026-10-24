@@ -59,6 +59,7 @@ docker compose watch
 1. **移动端实时语音 API**：提供百炼实时 ASR、Agent、流式 TTS、插话取消、播放进度和业务确认协议，可由独立 Flutter App 连接——请参阅[接口文档](docs/Voice_API.md)和[整体规划](docs/Voice_App_Plan.md)。
 1. **Streamlit 界面**：提供用户友好的聊天界面，并支持基于阿里云百炼的语音输入和输出；两者复用 `DASHSCOPE_API_KEY`。
 1. **HappyHorse 视频生成 API**：支持幂等提交、查询回写 PostgreSQL、按状态分页列出视频、自动提取标题和视频封面、视频与封面七牛云持久转存，以及每 5 分钟最多 10 条的后台同步。通过 `VIDEO_ENABLED=true` 启用；可通过 Nacos 视频 Skill 用语音生成、查询、分页列出及编辑本人视频，详见[接口文档](docs/Video_API.md)。
+1. **文件上传 API**：支持上传文件到七牛云、保存 PostgreSQL 文件元数据，并按当前用户查询文件 URL。通过 Nacos `storage.files.enabled` 或 `FILE_UPLOAD_ENABLED=true` 启用，详见[接口与表设计](docs/File_Upload_API.md)。
 1. **多智能体支持**：在服务中运行多个智能体，并通过 URL 路径调用。可用的智能体和模型在 `/info` 中说明。
 1. **异步设计**：使用 async/await 高效处理并发请求。
 1. **内容审核**：使用 Safeguard 实现内容审核（需要 Groq API 密钥）。
@@ -99,6 +100,7 @@ docker compose watch
 
 - [设置阿里云百炼千问](docs/Alibaba_Bailian.md)
 - [移动端实时语音 API](docs/Voice_API.md)
+- [文件上传与 URL 查询 API](docs/File_Upload_API.md)
 - [语音触发的当前用户邮件发送技能](docs/Email_Skill.md)
 - [设置 Ollama](docs/Ollama.md)
 - [设置 VertexAI](docs/VertexAI.md)

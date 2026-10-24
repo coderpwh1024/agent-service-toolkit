@@ -142,6 +142,10 @@ _NESTED_SETTINGS: dict[str, Any] = {
             "upload_token_ttl_seconds": "QINIU_UPLOAD_TOKEN_TTL_SECONDS",
             "avatar_max_bytes": "QINIU_AVATAR_MAX_BYTES",
         },
+        "files": {
+            "enabled": "FILE_UPLOAD_ENABLED",
+            "max_bytes": "FILE_UPLOAD_MAX_BYTES",
+        },
     },
     "rag": {
         "collection_name": "RAG_COLLECTION_NAME",

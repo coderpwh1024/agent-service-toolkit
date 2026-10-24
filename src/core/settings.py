@@ -299,6 +299,8 @@ class Settings(BaseSettings):
     QINIU_PUBLIC_BASE_URL: str | None = None
     QINIU_UPLOAD_TOKEN_TTL_SECONDS: int = Field(default=3600, ge=60, le=86400)
     QINIU_AVATAR_MAX_BYTES: int = Field(default=5 * 1024 * 1024, ge=1024, le=20 * 1024 * 1024)
+    FILE_UPLOAD_ENABLED: bool = False
+    FILE_UPLOAD_MAX_BYTES: int = Field(default=20 * 1024 * 1024, ge=1, le=100 * 1024 * 1024)
 
     VIDEO_ENABLED: bool = False
     VIDEO_API_BASE_URL: str = "https://dashscope.aliyuncs.com/api/v1"

@@ -68,6 +68,8 @@ from service.email_auth import email_auth_lifespan
 from service.email_auth import router as email_auth_router
 from service.email_skill import email_skill_lifespan
 from service.email_skill import router as email_skill_router
+from service.files import file_lifespan
+from service.files import router as file_router
 from service.memories import router as memories_router
 from service.nacos import NacosIntegration
 from service.threads import list_user_threads
@@ -153,6 +155,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 email_skill_lifespan(app),
                 voice_lifespan(app),
                 video_lifespan(app),
+                file_lifespan(app),
             ):
                 await nacos.register_service()
                 app.state.nacos = nacos
@@ -174,6 +177,7 @@ router.include_router(agui_router)
 router.include_router(memories_router)
 router.include_router(email_skill_router)
 router.include_router(video_router)
+router.include_router(file_router)
 
 
 def _uses_protocol_response(path: str) -> bool:
