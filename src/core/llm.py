@@ -80,6 +80,7 @@ def get_model(model_name: AllModelEnum, /, *, enable_thinking: bool | None = Non
         return ChatOpenAI(
             model=api_model_name,
             streaming=True,
+            stream_usage=True,
             base_url=settings.DASHSCOPE_BASE_URL,
             api_key=settings.DASHSCOPE_API_KEY,
             extra_body={"enable_thinking": enable_thinking}

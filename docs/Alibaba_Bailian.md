@@ -76,3 +76,15 @@ VOICE_TTS_LANGUAGE=Auto
 接口细节可参考阿里云官方的
 [千问语音识别 API](https://help.aliyun.com/zh/model-studio/qwen-asr-api-reference) 和
 [千问语音合成 API](https://help.aliyun.com/zh/model-studio/qwen-tts-api)。
+
+## 流式用量与显式缓存
+
+普通聊天入口显式应用 `models.chat.enable_thinking`（环境变量 `CHAT_LLM_ENABLE_THINKING`，默认 `false`），请求可用 `agent_config.enable_thinking=true` 开启深度推理。语音仍用既有独立开关。
+
+阿里云聊天客户端启用 `stream_usage=True`，用于读取流式末帧 Token 用量，不影响正文流式返回。主对话的模型阶段、输入 Token 和缓存命中量由 `core.model_metrics` 记录。
+
+`models.dashscope.explicit_cache_enabled`（环境变量 `DASHSCOPE_EXPLICIT_CACHE_ENABLED`）默认关闭。启用后，主对话只在固定 System 指令末端添加供应商支持的显式缓存断点。动态状态、检索记忆和用户问题保持在断点之后。显式缓存有最低前缀长度、有效期和创建费用要求，命中比例不能直接换算为首 Token 加速比例，应先对照实测。
+
+- [百炼上下文缓存](https://help.aliyun.com/zh/model-studio/context-cache)
+- [显式缓存最佳实践](https://help.aliyun.com/zh/model-studio/explicit-cache-guide)
+- [流式输出与用量](https://help.aliyun.com/zh/model-studio/stream)

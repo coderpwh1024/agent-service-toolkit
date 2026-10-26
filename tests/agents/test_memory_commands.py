@@ -309,7 +309,7 @@ async def test_structured_outputs_are_hidden_and_checkpoint_restores_confirmatio
         ]
     )
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
-    monkeypatch.setattr(module, "get_model", lambda _: model)
+    monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
     graph = module.mem0_chatbot.copy()
     graph.checkpointer = MemorySaver()
     config = {"configurable": {"user_id": "alice", "thread_id": "thread"}}
@@ -365,7 +365,7 @@ async def test_confirmation_checkpoint_cannot_be_reused_by_another_user(monkeypa
         ]
     )
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
-    monkeypatch.setattr(module, "get_model", lambda _: model)
+    monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
     graph = module.mem0_chatbot.copy()
     graph.checkpointer = MemorySaver()
     config = {"configurable": {"user_id": "alice", "thread_id": "thread"}}
@@ -385,7 +385,7 @@ async def test_cancelled_delivery_context_is_not_reextracted_as_a_memory(monkeyp
     memory.search.return_value = []
     model = FakeListChatModel(responses=["你好。"])
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
-    monkeypatch.setattr(module, "get_model", lambda _: model)
+    monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
     graph = module.mem0_chatbot.copy()
     graph.checkpointer = MemorySaver()
     await graph.ainvoke(

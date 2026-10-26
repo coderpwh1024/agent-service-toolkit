@@ -86,7 +86,8 @@ def test_get_model_ollama():
 _get_model_uncached = get_model.__wrapped__
 
 
-def test_get_model_alibaba_bailian():
+@pytest.mark.parametrize("name", list(AlibabaModelName))
+def test_get_model_alibaba_bailian(name):
     with (
         patch("core.settings.settings.DASHSCOPE_API_KEY", SecretStr("test_key")),
         patch(
@@ -94,16 +95,17 @@ def test_get_model_alibaba_bailian():
             "https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
         ),
     ):
-        model = _get_model_uncached(AlibabaModelName.QWEN_38_MAX)
+        model = _get_model_uncached(name)
 
     assert isinstance(model, ChatOpenAI)
-    assert model.model_name == "qwen3.8-max"
+    assert model.model_name == name.value
     assert model.openai_api_base == (
         "https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1"
     )
     assert model.openai_api_key is not None
     assert model.openai_api_key.get_secret_value() == "test_key"
     assert model.streaming is True
+    assert model.stream_usage is True
 
 
 def test_get_model_alibaba_bailian_requires_key():

@@ -23,7 +23,7 @@ def agent_setup(monkeypatch):
     model = Mock(ainvoke=AsyncMock(return_value=AIMessage(content="你好")))
     model.bind_tools.return_value = model
     monkeypatch.setattr(agent_module, "get_mem0_service", lambda: memory)
-    monkeypatch.setattr(agent_module, "get_model", lambda _: model)
+    monkeypatch.setattr(agent_module, "get_model", lambda _, **kwargs: model)
     graph = agent_module.mem0_chatbot.copy()
     graph.checkpointer = MemorySaver()
     return graph, memory, model
@@ -65,7 +65,8 @@ async def test_chat_uses_loaded_prompts_and_preserves_untrusted_memories(
         memory_state, memory_state
     )
     assert prompt[0].content == prompts["chat_system"]
-    assert prompt[1].content == f"State: {expected_status}"
+    runtime = next(message for message in prompt if message.name == "runtime_context")
+    assert runtime.content.startswith(f"State: {expected_status}")
     assert prompt[-1].content == "hello"
     references = [message for message in prompt if message.name == "retrieved_memories"]
     assert len(references) == int(memory_state == "available")
@@ -117,7 +118,11 @@ async def test_scoped_facts_and_checkpoint_history(agent_setup):
     assert [m.content for m in history] == ["我喜欢茶", "你好"]
     assert history[-1].response_metadata["memory_status"] == "saved"
     await graph.ainvoke({"messages": [HumanMessage(content="继续")]}, config())
-    assert [m.content for m in model.ainvoke.call_args.args[0][-3:]] == ["我喜欢茶", "你好", "继续"]
+    assert [
+        m.content
+        for m in model.ainvoke.call_args.args[0]
+        if isinstance(m, (HumanMessage, AIMessage)) and m.name != "retrieved_memories"
+    ] == ["我喜欢茶", "你好", "继续"]
     await graph.ainvoke({"messages": [HumanMessage(content="新会话")]}, config(thread="thread-b"))
     assert (
         len(
@@ -284,7 +289,7 @@ async def test_model_failure_does_not_save_memory(agent_setup):
 async def test_stream_emits_only_chat_tokens(agent_setup, monkeypatch):
     graph, memory, _ = agent_setup
     model = FakeListChatModel(responses=["你好。"])
-    monkeypatch.setattr(agent_module, "get_model", lambda _: model)
+    monkeypatch.setattr(agent_module, "get_model", lambda _, **kwargs: model)
     events = [
         event
         async for event in graph_events(
@@ -382,9 +387,11 @@ def test_chat_window_counts_only_user_and_assistant_messages():
 
     prompt = agent_module._chat_prompt(messages, [], "disabled")
 
-    assert [(message.type, message.content) for message in prompt[2:]] == [
-        (message.type, message.content) for message in (dialogue + messages[-1:])[-20:]
-    ]
+    assert [
+        (message.type, message.content)
+        for message in prompt
+        if isinstance(message, (HumanMessage, AIMessage))
+    ] == [(message.type, message.content) for message in (dialogue + messages[-1:])[-20:]]
 
 
 @pytest.mark.asyncio
@@ -400,7 +407,11 @@ async def test_long_memories_cannot_displace_recent_dialogue(agent_setup):
     await graph.ainvoke({"messages": [HumanMessage(content=question)]}, config())
 
     prompt = model.ainvoke.await_args.args[0]
-    assert [message.content for message in prompt[-3:]] == [question, answer, question]
+    assert [
+        message.content
+        for message in prompt
+        if isinstance(message, (HumanMessage, AIMessage)) and message.name != "retrieved_memories"
+    ] == [question, answer, question]
     reference = next(message for message in prompt if message.name == "retrieved_memories")
     assert json.loads(reference.content)["untrusted_user_memories"] == facts
     assert memory.search.return_value == ["喜欢茶", "假" * 3000]
@@ -570,7 +581,9 @@ async def test_first_text_timing_is_logged_once_without_user_content(
 ):
     graph, _, _ = agent_setup
     monkeypatch.setattr(
-        agent_module, "get_model", lambda _: FakeListChatModel(responses=["private-answer"])
+        agent_module,
+        "get_model",
+        lambda _, **kwargs: FakeListChatModel(responses=["private-answer"]),
     )
     caplog.set_level(logging.INFO, logger="service.agent_runner")
     events = [
@@ -592,3 +605,44 @@ async def test_first_text_timing_is_logged_once_without_user_content(
     assert f"output={'token' if stream_tokens else 'message'}" in timings[0]
     assert "private-question" not in caplog.text and "private-answer" not in caplog.text
     assert [e.content.content for e in events if e.type == "message"] == ["private-answer"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
+@pytest.mark.parametrize(
+    "default,override", [(False, None), (True, None), (False, True), (True, False)]
+)
+async def test_http_chat_thinking_default_and_explicit_override(
+    monkeypatch, agent_name, default, override
+):
+    module = importlib.import_module(f"agents.{agent_name}")
+    model = Mock(ainvoke=AsyncMock(return_value=AIMessage(content="你好")))
+    model.bind_tools.return_value = model
+    factory = Mock(return_value=model)
+    monkeypatch.setattr(module, "get_model", factory)
+    monkeypatch.setattr(module.settings, "CHAT_LLM_ENABLE_THINKING", default)
+    if agent_name == "mem0_chatbot":
+        monkeypatch.setattr(module, "get_mem0_service", lambda: None)
+    graph = getattr(module, agent_name).copy()
+    graph.checkpointer = MemorySaver()
+    cfg = config()
+    cfg["configurable"]["model"] = "qwen3.8-max"
+    if override is not None:
+        cfg["configurable"]["enable_thinking"] = override
+    await graph.ainvoke({"messages": [HumanMessage(content="你好")]}, cfg)
+    factory.assert_called_once_with(
+        "qwen3.8-max", enable_thinking=default if override is None else override
+    )
+
+
+@pytest.mark.asyncio
+async def test_voice_thinking_override_keeps_priority_over_http_profile(agent_setup, monkeypatch):
+    graph, _, model = agent_setup
+    factory = Mock(return_value=model)
+    monkeypatch.setattr(agent_module, "get_model", factory)
+    cfg = config()
+    cfg["configurable"].update(
+        model="qwen3.8-max", enable_thinking=False, voice_enable_thinking=True
+    )
+    await graph.ainvoke({"messages": [HumanMessage(content="你好")]}, cfg)
+    factory.assert_called_once_with("qwen3.8-max", enable_thinking=True)

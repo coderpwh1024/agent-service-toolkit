@@ -814,3 +814,17 @@ def test_mem0_collection_name_rejects_other_tables(value):
     with pytest.raises(ValueError):
         nacos.apply_remote_settings(config, f"MEM0_COLLECTION_NAME: {value}\n")
     assert config.MEM0_COLLECTION_NAME == "mem0_chat"
+
+
+def test_explicit_cache_setting_maps_from_nacos_and_defaults_off():
+    config = make_settings()
+    assert config.DASHSCOPE_EXPLICIT_CACHE_ENABLED is False
+    nacos.apply_remote_settings(config, "models:\n  dashscope:\n    explicit_cache_enabled: true\n")
+    assert config.DASHSCOPE_EXPLICIT_CACHE_ENABLED is True
+
+
+def test_http_chat_thinking_default_maps_from_nacos():
+    config = make_settings()
+    assert config.CHAT_LLM_ENABLE_THINKING is False
+    nacos.apply_remote_settings(config, "models:\n  chat:\n    enable_thinking: true\n")
+    assert config.CHAT_LLM_ENABLE_THINKING is True

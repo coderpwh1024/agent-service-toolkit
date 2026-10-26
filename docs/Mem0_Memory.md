@@ -32,7 +32,7 @@ memory:
 
 `mem0-chatbot` 的回答上下文最多包含当前线程最近 20 条用户和助手消息，包含本轮用户输入；用户消息和助手消息各算一条，不是 20 轮。系统规则和本轮检索出的长期记忆单独加入，不占这 20 条名额。语音中断后的播放说明使用助手角色，也计入消息窗口。完整聊天检查点和长期记忆继续保留，窗口之外的对话不会从数据库删除；长期事实仍可跨线程检索。原有 `chatbot` Agent 保持原来的上下文行为。
 
-邮件和记忆管理指令仍优先处理。普通聊天先检索本人记忆，再由主模型直接回答或选择联网研究、加载视频 Skill；不再运行独立的视频意图识别请求。主模型平时只看到视频技能名称、描述、加载工具及本人是否有草稿／列表／最近任务的状态标记，选择加载后才接收完整技能、最近十二条对话及本人视频上下文，再直接生成受控操作参数。视频结果不作为长期用户事实提取；取消请求会停止正在等待的检索或模型调用，已提交任务仍按原有幂等和查询规则处理。Mem0 同步 SDK 已开始的工作仍按原有规则占用容量直到真正退出。
+邮件和记忆管理指令仍优先处理。普通聊天先检索本人记忆，再由主模型直接回答或选择联网研究、加载视频 Skill；不再运行独立的视频意图识别请求。提示词先放固定角色与工具规则，再放真实历史，末尾放本轮状态、日期、视频状态标记和不可信检索记忆，当前用户消息保持最后一条。完整视频 Skill 和操作参数仍只按需加载。视频结果不作为长期用户事实提取；取消请求会停止正在等待的检索或模型调用，已提交任务仍按原有幂等和查询规则处理。Mem0 同步 SDK 已开始的工作仍按原有规则占用容量直到真正退出。
 
 回答模型不再使用应用层的总输入预算：窗口内的消息保留完整正文，检索服务返回的长期记忆全部加入请求，不再因估算字节数而裁剪历史、丢弃检索结果或提前返回 `memory_status=input_too_long`。原有 Nacos `chat_context_tokens` 和环境变量 `MEM0_CHAT_CONTEXT_TOKENS` 仍可按原有类型及范围加载，以兼容已有部署，但不再影响聊天请求。`max_context_chars` 仍限制检索记忆正文总长度，也限制传给提取模型的近期对话正文总长度。供应商模型自身的上下文窗口和接口输入长度限制仍然适用，超限错误沿用现有模型调用失败路径处理。
 
@@ -40,7 +40,7 @@ PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`
 
 ## 联网研究子智能体
 
-`mem0-chatbot` 默认可以按需调用 `research-assistant` 的进程内研究子图，不需要 A2A 服务或额外搜索 API Key。首次回答模型请求同时提供 `research_assistant` 工具，由模型决定是否委派；普通聊天不新增专门的路由模型调用。邮件、记忆管理和视频技能仍先按原流程处理。聊天模型需要支持工具调用；不实现 `bind_tools` 的模型保留普通聊天。
+`mem0-chatbot` 默认可以按需调用 `research-assistant` 的进程内研究子图，不需要 A2A 服务或额外搜索 API Key。首次回答模型请求同时提供 `research_assistant` 工具，由模型决定是否委派；普通聊天不新增专门的路由模型调用。邮件和记忆管理仍先按原流程处理；视频操作由主模型按需加载 Skill。聊天模型需要支持工具调用；不实现 `bind_tools` 的模型保留普通聊天。
 
 可在现有 Nacos 配置中增加以下字段，不影响原有 Mem0 参数；未添加时使用这些默认值：
 
@@ -337,3 +337,21 @@ PostgreSQL 冒烟测试使用实际 Mem0 算法、pgvector 和 PostgreSQL histor
 直接对本机 PostgreSQL 运行单个冒烟测试时，pytest 不会启动服务的 Nacos 配置加载流程；测试进程的 `POSTGRES_*` 配置必须与 Nacos 中的数据库配置一致。正常服务启动则会先加载 Nacos，再初始化 Mem0 和数据库连接。
 
 参考：[Mem0 pgvector 配置](https://docs.mem0.ai/components/vectordbs/dbs/pgvector)、[Mem0 官方实现](https://github.com/mem0ai/mem0)、[pgvector 部署说明](https://github.com/pgvector/pgvector)。
+
+## 首 Token 与缓存观测
+
+普通 HTTP 聊天默认显式关闭 thinking（`CHAT_LLM_ENABLE_THINKING=false`，Nacos `models.chat.enable_thinking`）。需要深度推理时可通过请求 `agent_config.enable_thinking=true` 开启；既有 `voice_enable_thinking` 覆盖优先，语音继续采用独立的 `voice.llm.enable_thinking`。这避免普通文本入口未传参数时沿用供应商默认思考行为。其他 agent 和原始 `get_model()` 默认行为不变。
+
+主模型调用记录 `core.model_metrics` 的首输出与完成日志，阶段为 `main_initial`、`video_operation` 或 `research_final`。文字首 Token 与工具调用首包分别计时，日志包含调用 ID、模型、固定提示词/工具摘要、输入/输出 Token、缓存读取/创建 Token 和总时长。不打印提示词、用户内容、工具参数或响应正文；供应商未返回的用量记为未知，不伪记为零。LangGraph 的 `Agent first text` 继续表示用户可见首字，两者不能混用。
+
+阿里云客户端显式请求流式用量，正文仍即时通过原有 SSE 和语音事件传输。可选的 `models.dashscope.explicit_cache_enabled` 映射为 `DASHSCOPE_EXPLICIT_CACHE_ENABLED`，默认 `false`；Compose 同步传入。启用后只在已注册阿里云模型的固定 System 前缀末端添加 `cache_control`，不把用户记忆、日期、身份或视频草稿标为固定内容。无此能力的模型保持原始消息结构。缓存仍由供应商管理，不是 Redis、Nacos 或 LangGraph 检查点缓存。
+
+只读模型对照可运行以下脚本。它会调用付费模型，但不会执行模型选择的工具，也不会提交邮件、视频或记忆操作。候选文件只供显式评估使用，不是服务的本地提示词回退：
+
+```sh
+PYTHONPATH=src uv run python scripts/benchmark_chat_latency.py \
+  --baseline-prompt /path/to/baseline.txt --candidate-prompt /path/to/candidate.txt \
+  --samples 5 --output /path/to/report.json
+```
+
+脚本比较原提示词布局、精简后的布局、显式缓存与 Flash 候选，按轮交错运行并记录真实输入与缓存用量。只统计收到正文且正常结束的样本；故障和截断单独保留。Flash 仅在此隔离评估中创建客户端，不注册为服务可用模型，也不自动切换默认模型。候选模板必须通过聊天、记忆边界和工具流程验证后，才经 Nacos Prompt CLI 创建新版本并发布；现有其他五条记忆模板保持独立管理。

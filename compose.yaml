@@ -48,6 +48,8 @@ services:
       # also uses a project .env file for interpolation when one is present.
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      DASHSCOPE_EXPLICIT_CACHE_ENABLED: ${DASHSCOPE_EXPLICIT_CACHE_ENABLED:-false}
+      CHAT_LLM_ENABLE_THINKING: ${CHAT_LLM_ENABLE_THINKING:-false}
       DASHSCOPE_EMBEDDING_MODEL: ${DASHSCOPE_EMBEDDING_MODEL:-qwen3.7-text-embedding}
       AUTH_SECRET: ${AUTH_SECRET:-}
       APP_TOKEN_TTL_SECONDS: ${APP_TOKEN_TTL_SECONDS:-1296000}
@@ -185,6 +187,8 @@ services:
       AUTH_SECRET: ${AUTH_SECRET:-}
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
       DASHSCOPE_BASE_URL: ${DASHSCOPE_BASE_URL:-https://dashscope.aliyuncs.com/compatible-mode/v1}
+      DASHSCOPE_EXPLICIT_CACHE_ENABLED: ${DASHSCOPE_EXPLICIT_CACHE_ENABLED:-false}
+      CHAT_LLM_ENABLE_THINKING: ${CHAT_LLM_ENABLE_THINKING:-false}
       DASHSCOPE_NATIVE_BASE_URL: ${DASHSCOPE_NATIVE_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}
     develop:
       watch:

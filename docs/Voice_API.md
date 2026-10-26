@@ -70,7 +70,7 @@ PostgreSQL 是必需依赖。服务启动时会幂等创建 `app_thread_owners`�
 
 百炼上游默认直连，不继承操作系统代理。确实需要 HTTP 代理时设置 `voice.realtime.proxy`；SOCKS 代理还需在部署镜像中安装 `websockets` 所需的 SOCKS 可选依赖。完整语音配置维护在 Nacos 的 `agent-service-toolkit.yaml` 中。
 
-普通语音聊天 `chatbot`、`mem0-chatbot` 在千问模型上默认显式关闭思考，以减少日常对话的首字等待。Nacos 的 `voice.llm.enable_thinking` 对应 `VOICE_LLM_ENABLE_THINKING`，默认 `false`，需要深度推理时可设为 `true` 并重启服务。该选项只改变这两个语音聊天 Agent 的千问请求参数，不修改全局模型默认值，不改变普通文字入口或复杂工具 Agent 的现有行为，其他供应商不会收到百炼扩展字段。思考模式的质量与延时取舍参见[百炼官方说明](https://help.aliyun.com/zh/model-studio/deep-thinking/)。
+普通语音聊天 `chatbot`、`mem0-chatbot` 在千问模型上默认显式关闭思考，以减少日常对话的首字等待。Nacos 的 `voice.llm.enable_thinking` 对应 `VOICE_LLM_ENABLE_THINKING`，默认 `false`，需要深度推理时可设为 `true` 并重启服务。该选项只改变这两个语音聊天 Agent 的千问请求参数，不修改全局模型默认值；普通文字入口由 `models.chat.enable_thinking` 独立管理，复杂工具 Agent 保持原有行为，其他供应商不会收到百炼扩展字段。思考模式的质量与延时取舍参见[百炼官方说明](https://help.aliyun.com/zh/model-studio/deep-thinking/)。
 
 移动 App 通过 `POST /auth/email/code` 和 `POST /auth/email/verify` 完成邮箱验证码登录，详见[账号与认证说明](Accounts_and_Credentials.md)。验证成功后，用户令牌位于统一响应的 `data.access_token`，默认有效期为 15 天。兼容的可信后台也可以配置 `AUTH_SECRET`，在自行验证用户后调用：
 

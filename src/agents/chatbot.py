@@ -24,11 +24,15 @@ async def chatbot(
 
     configurable = config["configurable"]
     model_name = configurable.get("model", settings.DEFAULT_MODEL)
-    thinking = configurable.get("voice_enable_thinking")
-    model = (
-        get_model(model_name, enable_thinking=thinking)
+    thinking = configurable.get(
+        "voice_enable_thinking",
+        configurable.get("enable_thinking", settings.CHAT_LLM_ENABLE_THINKING),
+    )
+    model = get_model(
+        model_name,
+        enable_thinking=thinking
         if isinstance(thinking, bool)
-        else get_model(model_name)
+        else settings.CHAT_LLM_ENABLE_THINKING,
     )
     human = next(
         (message for message in reversed(inputs["messages"]) if isinstance(message, HumanMessage)),

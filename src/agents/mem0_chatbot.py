@@ -38,11 +38,17 @@ class Mem0ChatState(TypedDict):
 def _chat_prompt(messages: list[BaseMessage], facts: list[str], status: str) -> list[BaseMessage]:
     prefix: list[BaseMessage] = [
         SystemMessage(content=settings.mem0_prompts.chat_system),
-        SystemMessage(content=settings.mem0_prompts.memory_status_template.format(status=status)),
     ]
     recent_messages = [
         message for message in messages if isinstance(message, (HumanMessage, AIMessage))
     ][-CHAT_MESSAGE_LIMIT:]
+    prefix.extend(recent_messages[:-1])
+    prefix.append(
+        SystemMessage(
+            content=settings.mem0_prompts.memory_status_template.format(status=status),
+            name="runtime_context",
+        )
+    )
     if facts:
         prefix.append(
             HumanMessage(
@@ -50,7 +56,7 @@ def _chat_prompt(messages: list[BaseMessage], facts: list[str], status: str) -> 
                 name="retrieved_memories",
             )
         )
-    return prefix + recent_messages
+    return prefix + recent_messages[-1:]
 
 
 def _extraction_context(messages: list[BaseMessage]) -> list[dict[str, str]]:
@@ -134,11 +140,15 @@ async def mem0_chatbot(
         except ValidationError:
             logger.warning("Discarded invalid memory dialogue checkpoint")
     model_name = configurable.get("model", settings.DEFAULT_MODEL)
-    thinking = configurable.get("voice_enable_thinking")
-    model = (
-        get_model(model_name, enable_thinking=thinking)
+    thinking = configurable.get(
+        "voice_enable_thinking",
+        configurable.get("enable_thinking", settings.CHAT_LLM_ENABLE_THINKING),
+    )
+    model = get_model(
+        model_name,
+        enable_thinking=thinking
         if isinstance(thinking, bool)
-        else get_model(model_name)
+        else settings.CHAT_LLM_ENABLE_THINKING,
     )
     if user_messages:
         email_response, email_dialogue = await handle_email_command(

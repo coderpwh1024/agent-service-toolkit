@@ -97,10 +97,12 @@ _NESTED_SETTINGS: dict[str, Any] = {
         },
     },
     "models": {
+        "chat": {"enable_thinking": "CHAT_LLM_ENABLE_THINKING"},
         "dashscope": {
             "api_key": "DASHSCOPE_API_KEY",
             "base_url": "DASHSCOPE_BASE_URL",
             "embedding_model": "DASHSCOPE_EMBEDDING_MODEL",
+            "explicit_cache_enabled": "DASHSCOPE_EXPLICIT_CACHE_ENABLED",
         },
     },
     "authentication": {

@@ -15,6 +15,7 @@ from langgraph.types import StreamWriter
 from pydantic import ValidationError
 
 from core import settings
+from core.model_metrics import invoke_chat_model
 from schema.video_skill import VideoSkillIntent
 from skills.video import (
     _reply,
@@ -46,7 +47,7 @@ class VideoSkillSession:
             "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
         }
 
-    def rules(self, config: RunnableConfig) -> str:
+    def rules(self, config: RunnableConfig, *, include_context: bool = True) -> str:
         rules = """
 视频任务先调用 load_video_skill，按返回的技能参考和真实上下文调用 video_operation。
 本轮在补充或修改、取消视频草稿、翻页或选择上一份视频列表时也必须加载；普通聊天直接回答。
@@ -56,7 +57,11 @@ class VideoSkillSession:
 只有当前用户明确要求操作或补充待提交请求，才可提交；不能按历史、助手建议或研究结果自动提交。
 视频结果以受控工具实际返回为准，不能编造任务、数量、链接或成功状态。
 保存、修改、取消草稿同样需要实际调用工具，不能用口头确认替代真实操作。
+已有视频草稿时，“改成十五秒，先不生成”仍是参数修改，必须加载技能，不能重复上一轮追问。
 """
+        return rules + (self.context(config) if include_context else "")
+
+    def context(self, config: RunnableConfig) -> str:
         dialogue = video_skill_dialogue(self.saved, config)
         hint = {
             "pending_video_draft": bool(dialogue.draft_request),
@@ -64,8 +69,8 @@ class VideoSkillSession:
             "previous_video_task": dialogue.last_record_id is not None,
         }
         if any(hint.values()):
-            rules += "\n当前线程视频状态（具体参数须加载技能）：" + json.dumps(hint)
-        return rules
+            return "\n当前线程视频状态（具体参数须加载技能）：" + json.dumps(hint)
+        return ""
 
     async def answer(
         self,
@@ -94,7 +99,9 @@ class VideoSkillSession:
         logger.info("视频技能已按需加载 技能摘要=%s", settings.video_skill.digest[:12])
         try:
             async with asyncio.timeout(settings.VIDEO_SKILL_TIMEOUT_SECONDS):
-                decision = await model.bind_tools([tool]).ainvoke(loaded_prompt, config)
+                decision = await invoke_chat_model(
+                    model.bind_tools([tool]), loaded_prompt, config, stage="video_operation"
+                )
         except TimeoutError:
             return _reply("视频请求处理超时，本次没有提交任务，请稍后再试。", "timeout")
         except Exception as exc:

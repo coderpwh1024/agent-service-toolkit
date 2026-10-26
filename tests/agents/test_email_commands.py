@@ -163,7 +163,7 @@ async def test_both_streaming_agents_execute_skill_and_checkpoint_result(
 ):
     service, model, _ = email_runtime
     module = importlib.import_module(f"agents.{agent_name}")
-    monkeypatch.setattr(module, "get_model", lambda _: model)
+    monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
     if agent_name == "mem0_chatbot":
         monkeypatch.setattr(module, "get_mem0_service", lambda: None)
     graph = getattr(module, agent_name).copy()

@@ -9,7 +9,7 @@ from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.runnables.config import patch_config
 from langchain_core.tools import BaseTool, tool
@@ -19,6 +19,8 @@ from pydantic import ValidationError
 from agents.research_assistant import research_subagent
 from agents.safeguard import SafetyAssessment
 from core import settings
+from core.chat_context import prepare_chat_prompt
+from core.model_metrics import invoke_chat_model
 from schema.research import ResearchRequest, ResearchResult, ResearchSource
 
 if TYPE_CHECKING:
@@ -146,8 +148,19 @@ async def answer_with_research(
 ) -> AIMessage:
     research_enabled = enable_research and settings.MEM0_RESEARCH_ENABLED
     video = video if settings.VIDEO_SKILL_ENABLED else None
+    rules = _RULES if research_enabled else ""
+    context = f"当前日期：{datetime.now(UTC).date().isoformat()}。"
+    if video is not None:
+        rules += video.rules(config, include_context=False)
+        context += video.context(config)
+    prompt = prepare_chat_prompt(
+        prompt,
+        fixed_rules=rules,
+        runtime_context=context,
+        model_name=str(config.get("configurable", {}).get("model", settings.DEFAULT_MODEL)),
+    )
     if not research_enabled and video is None:
-        return await model.ainvoke(prompt, config)
+        return await invoke_chat_model(model, prompt, config, stage="main_initial")
     tools: list[BaseTool | dict[str, Any]] = [research_assistant] if research_enabled else []
     if video is not None:
         tools.append(video.load_tool())
@@ -155,16 +168,8 @@ async def answer_with_research(
         bound = model.bind_tools(tools)
     except NotImplementedError:
         logger.info("Research delegation unavailable for this model")
-        return await model.ainvoke(prompt, config)
-    rules = _RULES if research_enabled else ""
-    if video is not None:
-        rules += video.rules(config)
-    prompt = [
-        *prompt[:2],
-        SystemMessage(content=rules + f"\n当前日期：{datetime.now(UTC).date().isoformat()}。"),
-        *prompt[2:],
-    ]
-    response = await bound.ainvoke(prompt, config)
+        return await invoke_chat_model(model, prompt, config, stage="main_initial")
+    response = await invoke_chat_model(bound, prompt, config, stage="main_initial")
     if response.invalid_tool_calls:
         return AIMessage(
             content="工具参数无效，本次没有执行操作，请重新说明。",
@@ -206,8 +211,11 @@ async def answer_with_research(
     started = monotonic()
     try:
         async with asyncio.timeout(settings.MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS):
-            final = await model.ainvoke(
-                [*prompt, response, ToolMessage(content=output, tool_call_id=call["id"])], config
+            final = await invoke_chat_model(
+                model,
+                [*prompt, response, ToolMessage(content=output, tool_call_id=call["id"])],
+                config,
+                stage="research_final",
             )
     except TimeoutError:
         logger.info(
