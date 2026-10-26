@@ -1,5 +1,7 @@
+import asyncio
 import importlib
 import json
+import logging
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -19,6 +21,7 @@ agent_module = importlib.import_module("agents.mem0_chatbot")
 def agent_setup(monkeypatch):
     memory = Mock(search=AsyncMock(return_value=["喜欢茶"]), remember=AsyncMock())
     model = Mock(ainvoke=AsyncMock(return_value=AIMessage(content="你好")))
+    model.bind_tools.return_value = model
     monkeypatch.setattr(agent_module, "get_mem0_service", lambda: memory)
     monkeypatch.setattr(agent_module, "get_model", lambda _: model)
     graph = agent_module.mem0_chatbot.copy()
@@ -78,6 +81,7 @@ async def test_voice_chat_applies_the_configured_thinking_profile(
 ):
     module = importlib.import_module(f"agents.{agent_name}")
     model = Mock(ainvoke=AsyncMock(return_value=AIMessage(content="你好")))
+    model.bind_tools.return_value = model
     factory = Mock(return_value=model)
     monkeypatch.setattr(module, "get_model", factory)
     if agent_name == "mem0_chatbot":
@@ -309,9 +313,11 @@ async def test_long_chat_window_preserves_complete_messages_and_checkpoint(
         await graph.ainvoke({"messages": [HumanMessage(content=question)]}, config())
         expected_history.append(("ai", answer))
     prompt = model.ainvoke.await_args.args[0]
-    assert [(message.type, message.content) for message in prompt[2:]] == expected_history[:-1][
-        -20:
-    ]
+    assert [
+        (message.type, message.content)
+        for message in prompt
+        if not isinstance(message, SystemMessage)
+    ] == expected_history[:-1][-20:]
     checkpoint = await graph.checkpointer.aget_tuple(config())
     history = messages_from_checkpoint(checkpoint.checkpoint)
     assert [(message.type, message.content) for message in history] == expected_history
@@ -491,3 +497,98 @@ async def test_extraction_reference_is_bounded(agent_setup, monkeypatch):
     assert len(context) <= 10
     assert sum(len(message["content"]) for message in context) <= 100
     assert not any("topic-0:" in message["content"] for message in context)
+
+
+@pytest.mark.asyncio
+async def test_ordinary_chat_uses_one_model_call_without_video_classifier(agent_setup, monkeypatch):
+    graph, memory, model = agent_setup
+    monkeypatch.setattr(agent_module.settings, "VIDEO_SKILL_ENABLED", True)
+    result = await graph.ainvoke({"messages": [HumanMessage(content="你好")]}, config())
+    assert result["messages"][0].content == "你好"
+    model.ainvoke.assert_awaited_once()
+    model.with_structured_output.assert_not_called()
+    memory.search.assert_awaited_once_with("你好", "alice")
+    memory.remember.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cancel_during_preparation_cleans_up_memory_read(agent_setup):
+    graph, memory, model = agent_setup
+    started, cancelled = asyncio.Event(), asyncio.Event()
+
+    async def search(*args):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    memory.search.side_effect = search
+    invocation = asyncio.create_task(
+        graph.ainvoke({"messages": [HumanMessage(content="你好")]}, config())
+    )
+    async with asyncio.timeout(1):
+        await started.wait()
+        invocation.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await invocation
+    assert cancelled.is_set()
+    model.ainvoke.assert_not_awaited()
+    memory.remember.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("command", ["email", "memory"])
+async def test_commands_keep_priority_over_chat_preparation(agent_setup, monkeypatch, command):
+    graph, memory, model = agent_setup
+    if command == "email":
+        monkeypatch.setattr(
+            agent_module,
+            "handle_email_command",
+            AsyncMock(return_value=(AIMessage(content="邮件结果"), None)),
+        )
+    else:
+        monkeypatch.setattr(
+            agent_module,
+            "handle_memory_command",
+            AsyncMock(
+                return_value=AIMessage(
+                    content="记忆结果", response_metadata={"memory_status": "listed"}
+                )
+            ),
+        )
+    await graph.ainvoke({"messages": [HumanMessage(content="处理指令")]}, config())
+    memory.search.assert_not_awaited()
+    memory.remember.assert_not_awaited()
+    model.ainvoke.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream_tokens", [True, False])
+async def test_first_text_timing_is_logged_once_without_user_content(
+    agent_setup, monkeypatch, caplog, stream_tokens
+):
+    graph, _, _ = agent_setup
+    monkeypatch.setattr(
+        agent_module, "get_model", lambda _: FakeListChatModel(responses=["private-answer"])
+    )
+    caplog.set_level(logging.INFO, logger="service.agent_runner")
+    events = [
+        event
+        async for event in graph_events(
+            graph,
+            {"input": {"messages": [HumanMessage(content="private-question")]}, "config": config()},
+            "timing-run",
+            stream_tokens=stream_tokens,
+        )
+    ]
+    timings = [
+        record.getMessage()
+        for record in caplog.records
+        if "Agent first text" in record.getMessage()
+    ]
+    assert len(timings) == 1
+    assert "run_id=timing-run" in timings[0] and "duration_ms=" in timings[0]
+    assert f"output={'token' if stream_tokens else 'message'}" in timings[0]
+    assert "private-question" not in caplog.text and "private-answer" not in caplog.text
+    assert [e.content.content for e in events if e.type == "message"] == ["private-answer"]

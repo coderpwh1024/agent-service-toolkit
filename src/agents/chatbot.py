@@ -6,8 +6,9 @@ from langgraph.config import get_stream_writer
 from langgraph.func import entrypoint
 
 from agents.email_commands import handle_email_command
+from agents.research_delegation import answer_with_research
 from core import get_model, settings
-from skills.video import handle_video_skill
+from skills.video_chat import VideoSkillSession
 
 
 @entrypoint()
@@ -47,20 +48,16 @@ async def chatbot(
                     "video_dialogue": video_dialogue,
                 },
             )
-        response, video_dialogue = await handle_video_skill(
-            human,
-            video_dialogue,
-            model,
-            config,
-            history=messages[:-1],
-            writer=get_stream_writer(),
-        )
-        if response is not None:
-            return entrypoint.final(
-                value={"messages": [response]},
-                save={"messages": messages + [response], "video_dialogue": video_dialogue},
-            )
-    response = await model.ainvoke(messages)
+    video = (
+        VideoSkillSession(human, video_dialogue, messages[:-1], get_stream_writer())
+        if human is not None
+        else None
+    )
+    response = await answer_with_research(
+        model, messages, config, video=video, enable_research=False
+    )
+    if video is not None:
+        video_dialogue = video.saved
     return entrypoint.final(
         value={"messages": [response]},
         save={"messages": messages + [response], "video_dialogue": video_dialogue},

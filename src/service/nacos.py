@@ -88,6 +88,12 @@ _NESTED_SETTINGS: dict[str, Any] = {
             "timeout_seconds": "MEM0_TIMEOUT_SECONDS",
             "max_context_chars": "MEM0_MAX_CONTEXT_CHARS",
             "chat_context_tokens": "MEM0_CHAT_CONTEXT_TOKENS",
+            "research": {
+                "enabled": "MEM0_RESEARCH_ENABLED",
+                "timeout_seconds": "MEM0_RESEARCH_TIMEOUT_SECONDS",
+                "final_timeout_seconds": "MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS",
+                "search_timeout_seconds": "RESEARCH_SEARCH_TIMEOUT_SECONDS",
+            },
         },
     },
     "models": {

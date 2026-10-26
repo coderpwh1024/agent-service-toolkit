@@ -12,7 +12,7 @@ from core import settings
 from core.skills import SkillDefinition
 from schema.video import VideoCreate, VideoTask, VideoTaskPage
 from schema.video_skill import VideoSkillDialogue, VideoSkillIntent
-from skills.video import handle_video_skill
+from skills.video import execute_video_skill, video_skill_reference
 
 
 def task(record_id=123, **changes):
@@ -66,24 +66,19 @@ def video_skill(monkeypatch):
     )
     service.repo.latest_id = AsyncMock(return_value=123)
     monkeypatch.setattr(runtime, "_service", service)
-    structured = Mock(ainvoke=AsyncMock(return_value=VideoSkillIntent(action="none")))
-    structured.with_config.return_value = structured
     model = Mock(
-        with_structured_output=Mock(return_value=structured),
         ainvoke=AsyncMock(return_value=AIMessage(content="普通聊天")),
     )
-    return service, model, structured
+    return service, model
 
 
 async def invoke(video_skill, text, intent, saved=None, **kwargs):
-    _, model, structured = video_skill
-    structured.ainvoke.return_value = VideoSkillIntent.model_validate(intent)
-    return await handle_video_skill(
+    kwargs.pop("history", [])
+    return await execute_video_skill(
         HumanMessage(content=text, id="voice-input-fixed"),
         saved,
-        model,
+        VideoSkillIntent.model_validate(intent),
         config(),
-        history=kwargs.pop("history", []),
         **kwargs,
     )
 
@@ -91,7 +86,7 @@ async def invoke(video_skill, text, intent, saved=None, **kwargs):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model", [None, "wan3.0-video", "wan3.0-video-prime"])
 async def test_wan3_skill_preserves_frame_inputs_and_native_parameters(video_skill, model) -> None:
-    service, _, _ = video_skill
+    service, _ = video_skill
     generation = {
         "first_frame_url": "https://images.example/start.jpg",
         "last_frame_url": "https://images.example/end.jpg",
@@ -123,7 +118,7 @@ async def test_wan3_skill_preserves_frame_inputs_and_native_parameters(video_ski
 
 @pytest.mark.asyncio
 async def test_wan3_missing_first_frame_stays_draft_until_corrected(video_skill) -> None:
-    service, _, _ = video_skill
+    service, _ = video_skill
     response, saved = await invoke(
         video_skill,
         "使用万相按尾帧生成",
@@ -155,7 +150,7 @@ async def test_wan3_missing_first_frame_stays_draft_until_corrected(video_skill)
 
 @pytest.mark.asyncio
 async def test_wan3_list_model_is_preserved_on_next_page(video_skill) -> None:
-    service, _, _ = video_skill
+    service, _ = video_skill
     _, saved = await invoke(
         video_skill,
         "查万相高速版视频",
@@ -169,7 +164,7 @@ async def test_wan3_list_model_is_preserved_on_next_page(video_skill) -> None:
 
 @pytest.mark.asyncio
 async def test_generation_uses_no_watermark_and_replay_key(video_skill):
-    service, _, structured = video_skill
+    service, _ = video_skill
     intent = {
         "action": "create",
         "authorized": True,
@@ -190,12 +185,11 @@ async def test_generation_uses_no_watermark_and_replay_key(video_skill):
     assert first.args[2] == VideoCreate(prompt="海边日落", duration=10, watermark=False)
     assert response.response_metadata["video"]["record_id"] == 123
     assert events[0].content[0]["type"] == "video.task"
-    structured.with_config.assert_called_with(tags=["skip_stream"])
 
 
 @pytest.mark.asyncio
 async def test_skill_returns_backend_derived_metadata_without_requiring_user_metadata(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     service.create.return_value = task(
         title="海边日落",
         cover_url="https://cdn.example/videos/happyhorse/task-123.jpg",
@@ -216,7 +210,7 @@ async def test_skill_returns_backend_derived_metadata_without_requiring_user_met
 
 @pytest.mark.asyncio
 async def test_cover_failure_explains_incomplete_assets_without_regeneration(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     service.query.return_value = task(
         title="海边日落",
         status="SUCCEEDED",
@@ -236,7 +230,7 @@ async def test_cover_failure_explains_incomplete_assets_without_regeneration(vid
 
 @pytest.mark.asyncio
 async def test_legacy_list_with_missing_metadata_does_not_claim_complete_cover(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     service.list_tasks.return_value = VideoTaskPage(
         items=[task(status="SUCCEEDED", storage_status="STORED")],
         total=1,
@@ -251,7 +245,7 @@ async def test_legacy_list_with_missing_metadata_does_not_claim_complete_cover(v
 
 @pytest.mark.asyncio
 async def test_metadata_draft_is_retained_and_published_for_create_and_detail(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     metadata = {"title": "海边日落", "cover_url": "https://cdn.example/cover.jpg"}
     _, saved = await invoke(
         video_skill,
@@ -287,7 +281,7 @@ async def test_metadata_draft_is_retained_and_published_for_create_and_detail(vi
 
 @pytest.mark.asyncio
 async def test_list_event_returns_metadata_and_legacy_nulls(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     service.list_tasks.return_value = VideoTaskPage(
         items=[task(title="海边", cover_url="https://cdn.example/cover.jpg"), task(124)],
         total=2,
@@ -309,7 +303,7 @@ async def test_list_event_returns_metadata_and_legacy_nulls(video_skill):
     [({"title": " "}, "标题"), ({"cover_url": "ftp://cdn.example/c.jpg"}, "封面")],
 )
 async def test_invalid_metadata_keeps_draft_and_does_not_submit(video_skill, metadata, expected):
-    service, _, _ = video_skill
+    service, _ = video_skill
     response, saved = await invoke(
         video_skill,
         "按这个标题和封面生成视频",
@@ -328,7 +322,7 @@ async def test_invalid_metadata_keeps_draft_and_does_not_submit(video_skill, met
 
 @pytest.mark.asyncio
 async def test_edit_passes_explicit_metadata_to_new_task(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     metadata = {"title": "水墨海边", "cover_url": "https://cdn.example/ink.jpg"}
     service.edit.return_value = task(124, **metadata)
     response, _ = await invoke(
@@ -347,7 +341,7 @@ async def test_edit_passes_explicit_metadata_to_new_task(video_skill):
 
 @pytest.mark.asyncio
 async def test_rejected_duration_retains_scene_and_accepts_correction(video_skill):
-    service, _, structured = video_skill
+    service, _ = video_skill
     response, saved = await invoke(
         video_skill,
         "生成三十秒海边视频",
@@ -359,6 +353,7 @@ async def test_rejected_duration_retains_scene_and_accepts_correction(video_skil
     )
     assert "3 至 15 秒" in response.content
     service.create.assert_not_awaited()
+    payload = json.loads(video_skill_reference(saved, config(), []))
     _, saved = await invoke(
         video_skill,
         "改为十五秒",
@@ -367,7 +362,6 @@ async def test_rejected_duration_retains_scene_and_accepts_correction(video_skil
     )
     assert service.create.await_args.args[2].prompt == "海边日落"
     assert service.create.await_args.args[2].duration == 15
-    payload = json.loads(structured.ainvoke.await_args.args[0][-1].content)
     assert payload["dialogue"]["draft_generation"]["duration"] == 30
     assert payload["dialogue"]["draft_generation"]["prompt"] == "海边日落"
     assert saved["draft_request"] is None
@@ -375,7 +369,7 @@ async def test_rejected_duration_retains_scene_and_accepts_correction(video_skil
 
 @pytest.mark.asyncio
 async def test_missing_scene_retains_duration_and_receives_recent_history(video_skill):
-    service, _, structured = video_skill
+    service, _ = video_skill
     response, saved = await invoke(
         video_skill,
         "生成十秒视频",
@@ -390,14 +384,14 @@ async def test_missing_scene_retains_duration_and_receives_recent_history(video_
         saved,
         history=history,
     )
-    payload = json.loads(structured.ainvoke.await_args.args[0][-1].content)
+    payload = json.loads(video_skill_reference(saved, config(), history))
     assert payload["recent_history"][0]["content"] == history[0].content
     assert service.create.await_args.args[2].duration == 10
 
 
 @pytest.mark.asyncio
 async def test_new_request_can_discard_rejected_draft(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     _, saved = await invoke(
         video_skill,
         "生成三十秒海边视频",
@@ -419,7 +413,7 @@ async def test_new_request_can_discard_rejected_draft(video_skill):
 
 @pytest.mark.asyncio
 async def test_list_count_next_page_and_ordinal_use_database(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     response, saved = await invoke(
         video_skill, "我生成过哪些视频", {"action": "list", "query": {"status": "SUCCEEDED"}}
     )
@@ -438,7 +432,7 @@ async def test_list_count_next_page_and_ordinal_use_database(video_skill):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("action", ["list", "detail"])
 async def test_keyword_search_returns_candidates_instead_of_previous_task(video_skill, action):
-    service, _, _ = video_skill
+    service, _ = video_skill
     service.list_tasks.return_value = VideoTaskPage(
         items=[task(125, title="海边海鸥"), task(123, title="日落海鸥")],
         total=8,
@@ -475,7 +469,7 @@ async def test_keyword_search_returns_candidates_instead_of_previous_task(video_
     "limit, latest, expected", [(None, False, 5), (2, False, 2), (None, True, 1)]
 )
 async def test_search_result_limit_and_latest_are_applied(video_skill, limit, latest, expected):
-    service, _, _ = video_skill
+    service, _ = video_skill
     query = {"q": "海边"}
     if limit is not None:
         query["page_size"] = limit
@@ -491,7 +485,7 @@ async def test_search_result_limit_and_latest_are_applied(video_skill, limit, la
 
 @pytest.mark.asyncio
 async def test_keyword_count_and_empty_search_do_not_fall_back(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     service.list_tasks.return_value = VideoTaskPage(
         items=[], total=0, page=1, page_size=5, total_pages=0
     )
@@ -511,7 +505,7 @@ async def test_keyword_count_and_empty_search_do_not_fall_back(video_skill):
 
 @pytest.mark.asyncio
 async def test_edit_by_description_requires_selection_before_submission(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     saved = VideoSkillDialogue(user_id="7", last_record_id=999).model_dump()
     response, saved = await invoke(
         video_skill,
@@ -539,7 +533,7 @@ async def test_edit_by_description_requires_selection_before_submission(video_sk
 
 @pytest.mark.asyncio
 async def test_search_service_failure_does_not_submit_or_return_old_task(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     service.list_tasks.side_effect = RuntimeError("search unavailable")
     saved = VideoSkillDialogue(user_id="7", last_record_id=999).model_dump()
     response, _ = await invoke(
@@ -553,7 +547,7 @@ async def test_search_service_failure_does_not_submit_or_return_old_task(video_s
 
 @pytest.mark.asyncio
 async def test_invalid_ordinal_and_empty_list_explain_result(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     saved = VideoSkillDialogue(user_id="7", listed_ids=[123]).model_dump()
     response, _ = await invoke(video_skill, "第二条", {"action": "detail", "selection": 2}, saved)
     assert "不在刚才" in response.content
@@ -567,7 +561,7 @@ async def test_invalid_ordinal_and_empty_list_explain_result(video_skill):
 
 @pytest.mark.asyncio
 async def test_edit_uses_owned_record_and_does_not_generate_text_video(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     response, _ = await invoke(
         video_skill,
         "编号三改成水墨风格并保留声音",
@@ -587,7 +581,7 @@ async def test_edit_uses_owned_record_and_does_not_generate_text_video(video_ski
 
 @pytest.mark.asyncio
 async def test_edit_draft_preserves_selected_source(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     saved = VideoSkillDialogue(user_id="7", last_record_id=125, listed_ids=[125, 123]).model_dump()
     response, saved = await invoke(
         video_skill, "编辑第二条", {"action": "edit", "authorized": True, "selection": 2}, saved
@@ -615,7 +609,7 @@ async def test_edit_draft_preserves_selected_source(video_skill):
     ],
 )
 async def test_unsupported_explains_reason_and_never_submits(video_skill, reason, expected):
-    service, _, _ = video_skill
+    service, _ = video_skill
     response, saved = await invoke(
         video_skill,
         "生成视频的原始要求",
@@ -634,7 +628,7 @@ async def test_unsupported_explains_reason_and_never_submits(video_skill, reason
 
 @pytest.mark.asyncio
 async def test_none_and_unauthorized_create_do_not_execute(video_skill):
-    service, _, _ = video_skill
+    service, _ = video_skill
     response, _ = await invoke(video_skill, "讨论一下视频生成", {"action": "none"})
     assert response is None
     response, _ = await invoke(
@@ -646,26 +640,15 @@ async def test_none_and_unauthorized_create_do_not_execute(video_skill):
 
 @pytest.mark.asyncio
 async def test_authentication_failure_does_not_access_service(video_skill):
-    service, model, structured = video_skill
-    structured.ainvoke.return_value = VideoSkillIntent(action="list")
-    response, _ = await handle_video_skill(
+    service, model = video_skill
+    response, _ = await execute_video_skill(
         HumanMessage(content="视频列表"),
         None,
-        model,
+        VideoSkillIntent(action="list"),
         {"configurable": {"user_id": "7", "authenticated_user_id": "8"}},
-        history=[],
     )
     assert response.response_metadata["video_status"] == "unauthenticated"
     service.list_tasks.assert_not_awaited()
-
-
-@pytest.mark.asyncio
-async def test_parser_failure_has_no_submission_and_does_not_leak(video_skill):
-    service, _, structured = video_skill
-    structured.ainvoke.side_effect = TimeoutError("secret-private-value")
-    response, _ = await invoke(video_skill, "生成海边视频", {"action": "none"})
-    assert "没有提交" in response.content and "secret" not in response.content
-    service.create.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -673,17 +656,25 @@ async def test_parser_failure_has_no_submission_and_does_not_leak(video_skill):
 async def test_agents_use_skill_for_counts_without_old_keywords(
     video_skill, monkeypatch, agent_name
 ):
-    service, model, structured = video_skill
+    service, model = video_skill
     module = importlib.import_module(f"agents.{agent_name}")
     monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
     if agent_name == "mem0_chatbot":
         monkeypatch.setattr(module, "get_mem0_service", lambda: None)
     graph = getattr(module, agent_name).copy()
     graph.checkpointer = MemorySaver()
-    structured.ainvoke.return_value = VideoSkillIntent(action="count")
+    model.bind_tools.return_value = model
+    model.ainvoke.side_effect = [
+        AIMessage(content="", tool_calls=[{"name": "load_video_skill", "args": {}, "id": "load"}]),
+        AIMessage(
+            content="",
+            tool_calls=[{"name": "video_operation", "args": {"action": "count"}, "id": "count"}],
+        ),
+    ]
     result = await graph.ainvoke(
         {"messages": [HumanMessage(content="我现在有几个视频啊")]}, config()
     )
     assert "42" in result["messages"][0].content
     service.list_tasks.assert_awaited_once()
-    model.ainvoke.assert_not_awaited()
+    assert model.ainvoke.await_count == 2
+    model.with_structured_output.assert_not_called()

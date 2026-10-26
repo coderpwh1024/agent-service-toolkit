@@ -28,7 +28,7 @@ def test_json_logs_have_timestamp_and_redact_exception_value():
 
 def test_sdk_payload_logs_are_filtered():
     log_filter = ServiceLogFilter()
-    for name in ["mem0.memory.main", "httpx", "openai._base_client"]:
+    for name in ["mem0.memory.main", "httpx", "openai._base_client", "ddgs.ddgs", "primp"]:
         assert not log_filter.filter(logging.LogRecord(name, logging.DEBUG, "", 1, "", (), None))
     assert log_filter.filter(
         logging.LogRecord("memory.mem0_service", logging.INFO, "", 1, "", (), None)

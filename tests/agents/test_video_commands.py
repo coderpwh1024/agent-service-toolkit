@@ -19,6 +19,7 @@ async def test_video_requests_use_ordinary_chat_without_video_execution(
 ):
     module = importlib.import_module(f"agents.{agent_name}")
     model = Mock(ainvoke=AsyncMock(return_value=AIMessage(content="普通聊天回答")))
+    model.bind_tools.return_value = model
     service = Mock(create=AsyncMock(), query=AsyncMock(), list_tasks=AsyncMock())
     monkeypatch.setattr(runtime, "_service", service)
     monkeypatch.setattr(settings, "VIDEO_ENABLED", True)

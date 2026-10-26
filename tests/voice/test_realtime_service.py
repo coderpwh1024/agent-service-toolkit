@@ -9,7 +9,10 @@ from uuid import uuid4
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
-from langchain_core.language_models.fake_chat_models import FakeListChatModel
+from langchain_core.language_models.fake_chat_models import (
+    FakeListChatModel,
+    FakeMessagesListChatModel,
+)
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.memory import MemorySaver
@@ -1339,6 +1342,157 @@ def test_mem0_cancel_invalidates_audio(voice_env, agent_id):
     assert turns[0].interrupted and turns[0].execution_status == "cancelled"
 
 
+def test_audio_transcript_delegates_web_research_once_and_speaks_only_final_answer(
+    voice_env, monkeypatch
+):
+    import importlib
+
+    from agents.safeguard import SafeguardOutput, SafetyAssessment
+    from service import voice as voice_routes
+
+    module = importlib.import_module("agents.mem0_chatbot")
+    research = importlib.import_module("agents.research_assistant")
+    client, repo, agents, headers = voice_env
+
+    class SearchSpeech(FakeSpeech):
+        async def append_audio(self, ws, pcm):
+            for _ in range(2):
+                await self.events.put(
+                    {
+                        "type": "conversation.item.input_audio_transcription.completed",
+                        "item_id": "search-audio",
+                        "transcript": "帮我联网查一下最新的公开消息",
+                    }
+                )
+
+    class SearchModel(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    model = SearchModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {
+                        "name": "research_assistant",
+                        "args": {"query": "最新的公开消息"},
+                        "id": "search-1",
+                    }
+                ],
+            ),
+            AIMessage(content="查到了，这是最新消息。[来源](https://example.com/news)"),
+        ]
+    )
+    memory = Mock(search=AsyncMock(return_value=[]), remember=AsyncMock())
+    search = AsyncMock(
+        return_value=(
+            "内部网页摘要",
+            [{"title": "消息", "link": "https://example.com/news", "snippet": "公开证据"}],
+        )
+    )
+    monkeypatch.setattr(voice_routes, "AlibabaRealtime", SearchSpeech)
+    monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
+    monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
+    monkeypatch.setattr(
+        research, "get_model", lambda *_, **kwargs: FakeListChatModel(responses=["内部研究结论"])
+    )
+    monkeypatch.setattr(research.BoundedWebSearch, "_arun", search)
+    monkeypatch.setattr(
+        research.Safeguard,
+        "ainvoke",
+        AsyncMock(return_value=SafeguardOutput(safety_assessment=SafetyAssessment.SAFE)),
+    )
+    graph = module.mem0_chatbot.copy()
+    graph.checkpointer = MemorySaver()
+    agents["mem0-chatbot"] = graph
+    auth = headers()
+    session = create(client, auth, agent_id="mem0-chatbot")
+    with connect(client, session, auth) as ws:
+        ready = configure(ws)
+        ws.send_bytes(
+            encode_audio(b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, 0, kind=1)
+        )
+        seen = read_until(ws, "response.done")
+        spoken = "".join(e["text"] for e in seen if e["type"] == "text.delta")
+        assert spoken == "查到了，这是最新消息。[来源](https://example.com/news)"
+        assert any(e["type"] == "audio" for e in seen)
+        assert "内部" not in spoken and "tool_calls" not in spoken
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    search.assert_awaited_once()
+    memory.remember.assert_awaited_once()
+    assert len(repo.records) == 1
+
+
+def test_voice_cancel_stops_research_and_allows_next_turn(voice_env, monkeypatch):
+    import importlib
+    from threading import Event
+
+    from agents.safeguard import SafeguardOutput, SafetyAssessment
+
+    module = importlib.import_module("agents.mem0_chatbot")
+    research = importlib.import_module("agents.research_assistant")
+    client, repo, agents, headers = voice_env
+    started, cancelled = Event(), Event()
+
+    class SearchModel(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+    async def search(self, query, **kwargs):
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    model = SearchModel(
+        responses=[
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "research_assistant", "args": {"query": "公开问题"}, "id": "search-1"}
+                ],
+            ),
+            AIMessage(content="新的回答。"),
+        ]
+    )
+    memory = Mock(search=AsyncMock(return_value=[]), remember=AsyncMock())
+    monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
+    monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
+    monkeypatch.setattr(research.BoundedWebSearch, "_arun", search)
+    monkeypatch.setattr(
+        research.Safeguard,
+        "ainvoke",
+        AsyncMock(return_value=SafeguardOutput(safety_assessment=SafetyAssessment.SAFE)),
+    )
+    graph = module.mem0_chatbot.copy()
+    graph.checkpointer = MemorySaver()
+    agents["mem0-chatbot"] = graph
+    auth = headers()
+    session = create(client, auth, agent_id="mem0-chatbot")
+    with connect(client, session, auth) as ws:
+        configure(ws)
+        event(ws, "input.text", text="帮我联网查询")
+        beginning = read_until(ws, "response.started")[-1]
+        assert started.wait(2)
+        event(ws, "response.cancel", response_id=beginning["response_id"])
+        read_until(ws, "response.cancelled")
+        assert cancelled.wait(2)
+        event(ws, "input.text", text="不用查了，你好")
+        seen = read_until(ws, "response.done")
+        if seen[-1]["response_id"] == beginning["response_id"]:
+            seen += read_until(ws, "response.done")
+        assert "".join(e["text"] for e in seen if e["type"] == "text.delta") == "新的回答。"
+        assert any(e["type"] == "audio" for e in seen)
+        event(ws, "session.close")
+        read_until(ws, "session.closed")
+    assert memory.remember.await_count == 1
+    turns = list(repo.records.values())
+    assert turns[0].execution_status == "cancelled" and turns[0].interrupted
+
+
 @pytest.mark.parametrize(
     "action,confirmation,status",
     [
@@ -1834,11 +1988,11 @@ def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
                     }
                 )
 
-    class VideoModel(FakeListChatModel):
-        def with_structured_output(self, schema, **kwargs):
-            return self | RunnableLambda(
-                lambda message: schema.model_validate_json(message.content)
-            )
+    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+
+    class VideoModel(FakeMessagesListChatModel):
+        def bind_tools(self, tools, **kwargs):
+            return self
 
     pending = VideoTask(
         id=123,
@@ -1886,19 +2040,19 @@ def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
         SkillDefinition("manage-user-videos", "视频管理", "受控视频技能", "a" * 64),
     )
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", VideoSpeech)
+    operations = [
+        {"action": "create", "authorized": True, "generation": {"prompt": "海边", "duration": 5}},
+        {"action": "list", "query": {"q": "海边 海鸥"}},
+        {"action": "detail", "selection": 2},
+        {"action": "edit", "authorized": True, "editing": {"prompt": "水墨风格"}},
+    ]
     model = VideoModel(
         responses=[
-            json.dumps(intent, ensure_ascii=False)
-            for intent in [
-                {
-                    "action": "create",
-                    "authorized": True,
-                    "generation": {"prompt": "海边", "duration": 5},
-                },
-                {"action": "list", "query": {"q": "海边 海鸥"}},
-                {"action": "detail", "selection": 2},
-                {"action": "edit", "authorized": True, "editing": {"prompt": "水墨风格"}},
-            ]
+            AIMessage(
+                content="", tool_calls=[{"name": name, "args": args, "id": f"{index}-{name}"}]
+            )
+            for index, operation in enumerate(operations)
+            for name, args in [("load_video_skill", {}), ("video_operation", operation)]
         ]
     )
     monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)

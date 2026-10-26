@@ -18,10 +18,11 @@ from pydantic import ValidationError
 
 from agents.email_commands import handle_email_command
 from agents.memory_commands import handle_memory_command
+from agents.research_delegation import answer_with_research
 from core import get_model, settings
-from memory.mem0_service import get_mem0_service
+from memory.mem0_service import Mem0Service, get_mem0_service
 from schema.memory_commands import MemoryDialogue
-from skills.video import handle_video_skill
+from skills.video_chat import VideoSkillSession
 
 logger = logging.getLogger(__name__)
 CHAT_MESSAGE_LIMIT = 20
@@ -67,6 +68,8 @@ def _extraction_context(messages: list[BaseMessage]) -> list[dict[str, str]]:
             message.content, str
         ):
             continue
+        if isinstance(message, AIMessage) and message.response_metadata.get("research_status"):
+            continue
         if len(message.content) > remaining:
             break
         context.append(
@@ -79,6 +82,20 @@ def _extraction_context(messages: list[BaseMessage]) -> list[dict[str, str]]:
         if len(context) == 10:
             break
     return list(reversed(context))
+
+
+async def _retrieve_facts(
+    memory: Mem0Service | None, user_messages: list[dict[str, str]], user_id: str
+) -> tuple[list[str], str]:
+    if memory is None:
+        return [], "disabled"
+    if not user_messages:
+        return [], "available"
+    try:
+        return await memory.search(user_messages[-1]["content"], user_id), "available"
+    except Exception as exc:
+        logger.warning("Mem0 search failed error_type=%s", type(exc).__name__)
+        return [], "search_failed"
 
 
 @entrypoint()
@@ -159,36 +176,31 @@ async def mem0_chatbot(
                     "video_dialogue": video_dialogue,
                 },
             )
-        video_response, video_dialogue = await handle_video_skill(
-            next(
-                message for message in reversed(new_messages) if isinstance(message, HumanMessage)
-            ),
-            video_dialogue,
-            model,
-            config,
-            history=messages[:-1],
-            writer=get_stream_writer(),
-        )
-        if video_response is not None:
-            return entrypoint.final(
-                value={"messages": [video_response]},
-                save={
-                    "messages": messages + [video_response],
-                    "memory_dialogue": dialogue.model_dump(mode="json"),
-                    "video_dialogue": video_dialogue,
-                },
-            )
-    status = "disabled" if memory is None else "available"
-    facts: list[str] = []
     logger.info("Mem0 chatbot started memory_enabled=%s", memory is not None)
-    if memory and user_messages:
-        try:
-            facts = await memory.search(user_messages[-1]["content"], user_id)
-        except Exception as exc:
-            status = "search_failed"
-            logger.warning("Mem0 search failed error_type=%s", type(exc).__name__)
+    facts, status = await _retrieve_facts(memory, user_messages, user_id)
     prompt = _chat_prompt(messages, facts, status)
-    response = await model.ainvoke(prompt, config)
+    logger.info("Mem0 answer started preparation_ms=%d", int((monotonic() - started) * 1000))
+    human = next(
+        (message for message in reversed(new_messages) if isinstance(message, HumanMessage)),
+        None,
+    )
+    video = (
+        VideoSkillSession(human, video_dialogue, messages[:-1], get_stream_writer())
+        if human is not None
+        else None
+    )
+    response = await answer_with_research(model, prompt, config, video=video)
+    if video is not None:
+        video_dialogue = video.saved
+    if response.response_metadata.get("video_status"):
+        return entrypoint.final(
+            value={"messages": [response]},
+            save={
+                "messages": messages + [response],
+                "memory_dialogue": dialogue.model_dump(mode="json"),
+                "video_dialogue": video_dialogue,
+            },
+        )
     if memory and user_messages:
         try:
             await memory.remember(

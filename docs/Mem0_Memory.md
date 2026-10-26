@@ -32,13 +32,45 @@ memory:
 
 `mem0-chatbot` 的回答上下文最多包含当前线程最近 20 条用户和助手消息，包含本轮用户输入；用户消息和助手消息各算一条，不是 20 轮。系统规则和本轮检索出的长期记忆单独加入，不占这 20 条名额。语音中断后的播放说明使用助手角色，也计入消息窗口。完整聊天检查点和长期记忆继续保留，窗口之外的对话不会从数据库删除；长期事实仍可跨线程检索。原有 `chatbot` Agent 保持原来的上下文行为。
 
+邮件和记忆管理指令仍优先处理。普通聊天先检索本人记忆，再由主模型直接回答或选择联网研究、加载视频 Skill；不再运行独立的视频意图识别请求。主模型平时只看到视频技能名称、描述、加载工具及本人是否有草稿／列表／最近任务的状态标记，选择加载后才接收完整技能、最近十二条对话及本人视频上下文，再直接生成受控操作参数。视频结果不作为长期用户事实提取；取消请求会停止正在等待的检索或模型调用，已提交任务仍按原有幂等和查询规则处理。Mem0 同步 SDK 已开始的工作仍按原有规则占用容量直到真正退出。
+
 回答模型不再使用应用层的总输入预算：窗口内的消息保留完整正文，检索服务返回的长期记忆全部加入请求，不再因估算字节数而裁剪历史、丢弃检索结果或提前返回 `memory_status=input_too_long`。原有 Nacos `chat_context_tokens` 和环境变量 `MEM0_CHAT_CONTEXT_TOKENS` 仍可按原有类型及范围加载，以兼容已有部署，但不再影响聊天请求。`max_context_chars` 仍限制检索记忆正文总长度，也限制传给提取模型的近期对话正文总长度。供应商模型自身的上下文窗口和接口输入长度限制仍然适用，超限错误沿用现有模型调用失败路径处理。
 
 PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`，维持 PostgreSQL 16 与原数据卷路径。已有数据库先备份，再按部署方式安装扩展；不要删除数据卷。启动账户需要创建 Mem0 表和 `vector` 扩展的权限；生产环境可由 DBA 提前执行 `CREATE EXTENSION IF NOT EXISTS vector`。新 agent 启用 Mem0 后，数据库、扩展或必要配置不可用会阻止服务启动，避免隐式使用 SQLite 或内存存储。
 
+## 联网研究子智能体
+
+`mem0-chatbot` 默认可以按需调用 `research-assistant` 的进程内研究子图，不需要 A2A 服务或额外搜索 API Key。首次回答模型请求同时提供 `research_assistant` 工具，由模型决定是否委派；普通聊天不新增专门的路由模型调用。邮件、记忆管理和视频技能仍先按原流程处理。聊天模型需要支持工具调用；不实现 `bind_tools` 的模型保留普通聊天。
+
+可在现有 Nacos 配置中增加以下字段，不影响原有 Mem0 参数；未添加时使用这些默认值：
+
+```yaml
+memory:
+  mem0:
+    research:
+      enabled: true
+      timeout_seconds: 20
+      final_timeout_seconds: 15
+      search_timeout_seconds: 5
+```
+
+对应环境变量为 `MEM0_RESEARCH_ENABLED`、`MEM0_RESEARCH_TIMEOUT_SECONDS`、`MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS` 和 `RESEARCH_SEARCH_TIMEOUT_SECONDS`，Compose 同样传入这些字段。Nacos 中的值优先，配置更新后重启后端生效；设置 `enabled: false` 可关闭委派，原有聊天和记忆功能继续工作。长期记忆开关 `MEM0_ENABLED` 与研究开关独立。
+
+用户可输入或说“帮我联网查一下最新的公开消息”。主 agent 将问题和必要条件整理为最多 2000 字符的搜索任务，子图复用 Research 的 WebSearch 和 Safeguard，先搜索一次，再用同一个选定的聊天模型关闭思考、整理证据。省去子图内决定是否搜索的模型调用，每轮最多委派一次、最多返回四条来源。DDGS 默认自动选择搜索后端，需要后端能访问相关外部站点。外部搜索收到模型整理的查询；规则要求不附带全部记忆和无关私密资料，这属于模型约束，不能视为确定性的敏感信息过滤器。
+
+搜索调用默认最多等待 5 秒，包含安全检查、搜索和证据整理的子任务合计最多等待 20 秒，主 agent 的最终回答另限 15 秒。后两项范围为 1–60 秒，搜索超时范围为 1–15 秒。研究失败、无结果或超时时直接返回明确提示，不再追加模型调用或伪造联网结论。正常搜索路径包含主 agent 的委派决策、子 agent 的证据整理和主 agent 的最终回答，共三次回答模型调用；启用 Groq 时另有原有安全审核。上述预算不包含原有邮件/记忆/视频识别、记忆检索/提取及首次聊天模型调用，因此不是端到端响应时间承诺。普通聊天的原有流式输出继续保留。
+
+同步搜索在工作线程中执行，每进程最多四个未完成请求；满载时立即报告暂不可用，不建立无界等待队列。异步超时或语音取消不会阻塞事件循环；底层同步请求不能被强制终止，在实际退出前继续占用并发名额，并有原生网络超时。独立 Research agent 的异步 WebSearch 同样受搜索超时和并发限制。
+
+主 agent 保持用户绑定、模型选择、线程所有权和完整对话历史；子图不使用独立持久检查点，任务结果由父工作流管理。子图仅接收当前搜索任务，不接收全部聊天历史或长期记忆。来源取自真实搜索工具返回值，研究摘要与来源以工具结果交回主 agent，不能覆盖系统指令。根聊天历史仅保存用户消息和最终回答；原始工具结果不交给 Mem0 提取，带研究状态的历史助手回复也不作为后续事实提取的参考。
+
+文字 SSE 和实时语音均隐藏子图内部 token、消息及原始网页摘要，只输出主 agent 的最终回答。语音仍使用原 ASR、TTS、输入去重、插话取消与播放确认，不增加客户端协议或切换 agent。最终消息增加 `response_metadata.research_status`，可能为 `success`、`empty`、`timeout`、`unavailable`、`blocked` 或 `invalid`；获得资料时同时提供 `research_sources`（标题、URL、摘要）。`memory_status` 仍沿用原有语义。
+
+INFO 日志记录研究开始、完成状态、来源数量、耗时和取消，不打印搜索问题、网页正文、用户记忆或密钥；失败日志仅记录异常类型。研究调度的工具契约和边界规则随代码维护，不替代下述 Nacos 中的聊天角色及记忆提示词。
+
 ## 提示词配置
 
-Mem0 的提示词正文统一存放在 **Nacos 的 AI → Prompt 管理中心**，每条独立维护、版本化并发布。应用的 `agent-service-toolkit.yaml` 只保存模型、存储等参数以及可选的 Prompt Key/标签引用，不保存提示词正文。代码和仓库没有本地提示词文件或默认正文回退。
+Mem0 的聊天角色和记忆提示词正文统一存放在 **Nacos 的 AI → Prompt 管理中心**，每条独立维护、版本化并发布。应用的 `agent-service-toolkit.yaml` 只保存模型、存储等参数以及可选的 Prompt Key/标签引用，不保存提示词正文。这六条模板在代码和仓库中没有本地正文回退。
 
 | 默认 Prompt Key | 用途及来源 |
 | --- | --- |
@@ -290,6 +322,8 @@ result = client.delete_all_memories(user_id="alice")
 ## 日志和验证
 
 通过 `python src/run_service.py` 启动时，统一使用标准库 logging 与 JSON formatter。在本地引导配置中设置 `LOG_LEVEL=INFO` 可查看 agent 开始/完成、记忆命中数量、写入数量、耗时与错误类型；`LOG_FORMAT=text` 可切换文本日志。这两个字段不能由 Nacos 覆盖。日志不输出用户消息、检索事实、连接串、密钥或原始音频，并过滤可能输出供应商载荷的 SDK 日志。Mem0 遥测在加载 SDK 前关闭。
+
+首字延时可结合三类 INFO 日志定位：`Mem0 video routing completed` 记录视频识别耗时，`Mem0 answer started preparation_ms` 记录进入 agent 到回答模型调用前的准备时间，`Agent first text run_id=... duration_ms=... output=token|message` 每轮只记录一次首个根级可见文本。最后一项从公共事件迭代器开始执行时计时，不包含先前 HTTP 认证、ASR 或 TTS，也不能当作用户说完到听到首音的端到端延时。记忆操作的独立耗时仍见 `Mem0 operation completed`；并行阶段的耗时存在重叠，不应直接相加。
 
 ```sh
 uv sync --frozen

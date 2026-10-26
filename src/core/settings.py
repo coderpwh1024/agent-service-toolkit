@@ -233,6 +233,10 @@ class Settings(BaseSettings):
     COMPATIBLE_BASE_URL: str | None = None
 
     OPENWEATHERMAP_API_KEY: SecretStr | None = None
+    MEM0_RESEARCH_ENABLED: bool = True
+    MEM0_RESEARCH_TIMEOUT_SECONDS: float = Field(default=20, ge=1, le=60)
+    MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS: float = Field(default=15, ge=1, le=60)
+    RESEARCH_SEARCH_TIMEOUT_SECONDS: float = Field(default=5, ge=1, le=15)
 
     # MCP Configuration
     GITHUB_PAT: SecretStr | None = None

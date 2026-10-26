@@ -87,6 +87,33 @@ def test_mem0_chat_budget_rejects_invalid_limits(budget):
         Settings(_env_file=None, MEM0_CHAT_CONTEXT_TOKENS=budget)
 
 
+@pytest.mark.parametrize(
+    "name,maximum",
+    [
+        ("MEM0_RESEARCH_TIMEOUT_SECONDS", 60),
+        ("MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS", 60),
+        ("RESEARCH_SEARCH_TIMEOUT_SECONDS", 15),
+    ],
+)
+@pytest.mark.parametrize("invalid", [0, -1, 1000])
+def test_research_deadlines_reject_invalid_values(name, maximum, invalid):
+    with pytest.raises(ValidationError, match=name):
+        Settings(_env_file=None, **{name: invalid})
+    assert getattr(Settings(_env_file=None, **{name: maximum}), name) == maximum
+
+
+def test_research_defaults_and_environment_override(monkeypatch):
+    defaults = Settings(_env_file=None)
+    assert defaults.MEM0_RESEARCH_ENABLED
+    assert defaults.MEM0_RESEARCH_TIMEOUT_SECONDS == 20
+    assert defaults.MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS == 15
+    assert defaults.RESEARCH_SEARCH_TIMEOUT_SECONDS == 5
+    monkeypatch.setenv("MEM0_RESEARCH_ENABLED", "false")
+    monkeypatch.setenv("MEM0_RESEARCH_TIMEOUT_SECONDS", "10")
+    config = Settings(_env_file=None)
+    assert not config.MEM0_RESEARCH_ENABLED and config.MEM0_RESEARCH_TIMEOUT_SECONDS == 10
+
+
 def test_mem0_reranker_requires_model_and_url_together():
     from pydantic import SecretStr
 

@@ -33,3 +33,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+elif __name__ == "__mp_main__":
+    # Uvicorn's reload worker imports the entry module without calling main().
+    configure_logging(settings.LOG_LEVEL, settings.LOG_FORMAT)

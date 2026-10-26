@@ -276,7 +276,7 @@ video:
 skills:
   video:
     enabled: true
-    version: "1.4.0"
+    version: "1.5.1"
     label: latest
     timeout_seconds: 20
 ```
@@ -290,22 +290,26 @@ CLI 的连接地址和 Namespace 必须与应用一致；密码留在受保护�
 ```sh
 nacos-cli skill-upload skills/manage-user-videos
 nacos-cli skill-describe manage-user-videos --output json
-nacos-cli skill-review manage-user-videos --version 1.4.0
+nacos-cli skill-review manage-user-videos --version 1.5.1
 nacos-cli skill-describe manage-user-videos --output json
 ```
 
 待目标版本通过异步评审后发布；如果已经在线则跳过发布。后续更新使用新版本，不覆盖已发布版本。
 
 ```sh
-nacos-cli skill-release manage-user-videos --version 1.4.0
-nacos-cli skill-get manage-user-videos --version 1.4.0 -o /path/to/skill-review
+nacos-cli skill-release manage-user-videos --version 1.5.1
+nacos-cli skill-get manage-user-videos --version 1.5.1 -o /path/to/skill-review
 ```
 
 最终核对目标版本为 `online`，并对比下载后的 `SKILL.md` 摘要与仓库文件一致。仅上传草稿不代表已经可被运行时加载。
 
 ### 对话流程与能力
 
-`chatbot` 和 `mem0-chatbot` 在邮件、记忆指令处理后调用视频 Skill；语音转写与文字共用入口。没有视频关键词正则门槛，启用后每轮通过受控的结构化识别决定是否处理，普通对话返回 `none` 后沿用原聊天流程。识别调用带 `skip_stream`，结构化 JSON 不进入播报。
+`chatbot` 和 `mem0-chatbot` 在邮件、记忆指令处理后进入主模型对话；语音转写与文字共用入口。普通轮次只绑定轻量的 `load_video_skill` 工具（Mem0 还保留联网研究工具），无需前置视频识别模型。主模型决定加载后，才收到完整 Skill 和视频上下文，并绑定 `video_operation`，直接按 `VideoSkillIntent` 契约生成参数。后端只验证和执行，不再调用独立模型识别视频意图，也没有视频关键词正则门槛。
+
+每次模型响应只允许选择一个工具；视频流程先加载，加载后最多执行一次视频操作，操作结果直接返回，不额外调用模型改写。未知工具、错误参数、多工具请求和加载超时都不会提交任务。`VIDEO_SKILL_TIMEOUT_SECONDS` 限制加载后主模型准备参数的时间；视频提交和后台生成沿用原有生命周期。Skill 和操作参数不作为聊天消息持久化、不进入语音播报；`video.task`、`video.list`、`video.count` 事件保持不变。模型不支持工具时保留普通聊天能力，无法执行视频操作。
+
+普通轮次仅额外携带已校验归属和有效期的“有草稿／有列表／有最近任务”状态标记，用于识别后续补充和翻页，具体参数仍按需加载。
 
 技能接收当前输入、最近十二条对话（总计最多 12000 字符）、本人最近任务引用、最近列表编号以及十分钟有效的草稿。动态输入和远程技能均为参考数据，不能覆盖授权规则。仅本轮明确生成、编辑或补充待提交需求才允许提交；历史、记忆和助手建议不能独立授权。不会自动检索影视素材、原声或长期记忆。
 

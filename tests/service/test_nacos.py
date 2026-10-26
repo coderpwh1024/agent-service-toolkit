@@ -36,6 +36,20 @@ def make_settings(**overrides) -> Settings:
     return Settings(USE_FAKE_MODEL=True, _env_file=None, **overrides)
 
 
+def test_mem0_research_settings_map_from_nacos():
+    config = make_settings()
+    nacos.apply_remote_settings(
+        config,
+        "memory:\n  mem0:\n    research:\n      enabled: false\n"
+        "      timeout_seconds: 12\n      final_timeout_seconds: 10\n"
+        "      search_timeout_seconds: 3\n",
+    )
+    assert not config.MEM0_RESEARCH_ENABLED
+    assert config.MEM0_RESEARCH_TIMEOUT_SECONDS == 12
+    assert config.MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS == 10
+    assert config.RESEARCH_SEARCH_TIMEOUT_SECONDS == 3
+
+
 @pytest.mark.asyncio
 async def test_email_skill_downloads_published_version_and_rejects_bad_archive(ai_client):
     from io import BytesIO

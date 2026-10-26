@@ -1,9 +1,11 @@
 """Transport-independent LangGraph events for SSE and realtime voice."""
 
 import inspect
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from time import monotonic
 from typing import Any
 
 from langchain_core.messages import (
@@ -23,6 +25,8 @@ from service.utils import (
     remove_tool_calls,
 )
 from voice.persistence import VoiceRepository
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -91,6 +95,8 @@ async def graph_events(
     stream_tokens: bool = True,
     user_message: str = "",
 ) -> AsyncIterator[AgentEvent]:
+    started = monotonic()
+    first_text_sent = False
     async for stream_event in agent.astream(
         **kwargs, stream_mode=["updates", "messages", "custom"], subgraphs=True
     ):
@@ -101,6 +107,8 @@ async def graph_events(
         else:
             mode, event = stream_event
             namespace = ()
+        if any(part.startswith("mem0_research:") for part in namespace):
+            continue
         if mode == "messages":
             if not stream_tokens:
                 continue
@@ -109,9 +117,17 @@ async def graph_events(
                 continue
             content = remove_tool_calls(msg.content)
             if content:
+                text = convert_message_content_to_string(content)
+                if not namespace and text.strip() and not first_text_sent:
+                    first_text_sent = True
+                    logger.info(
+                        "Agent first text run_id=%s duration_ms=%d output=token",
+                        run_id,
+                        int((monotonic() - started) * 1000),
+                    )
                 yield AgentEvent(
                     "token",
-                    convert_message_content_to_string(content),
+                    text,
                     msg.id,
                     metadata.get("langgraph_node", ""),
                     namespace,
@@ -120,6 +136,8 @@ async def graph_events(
         batches: list[tuple[str, list]] = []
         if mode == "updates":
             for node, updates in event.items():
+                if node == "mem0_research":
+                    continue
                 if node == "__interrupt__":
                     for interrupt in updates:
                         yield AgentEvent(
@@ -166,6 +184,19 @@ async def graph_events(
                 chat_message.run_id = run_id
                 if chat_message.type == "human" and chat_message.content == user_message:
                     continue
+                if (
+                    not first_text_sent
+                    and not namespace
+                    and chat_message.type == "ai"
+                    and not chat_message.tool_calls
+                    and chat_message.content.strip()
+                ):
+                    first_text_sent = True
+                    logger.info(
+                        "Agent first text run_id=%s duration_ms=%d output=message",
+                        run_id,
+                        int((monotonic() - started) * 1000),
+                    )
                 yield AgentEvent(
                     "message", chat_message, getattr(message, "id", None), node, namespace
                 )
