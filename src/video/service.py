@@ -10,6 +10,7 @@ from schema.video import (
     VideoCreate,
     VideoEdit,
     VideoListQuery,
+    VideoMetadataUpdate,
     VideoRecord,
     VideoStatus,
     VideoStorageStatus,
@@ -188,6 +189,37 @@ class VideoService:
                 raise LookupError("视频任务不存在")
             record = await self._refresh(record, user_id)
         return self._output(record)
+
+    async def update_metadata(
+        self, record_id: int, user_id: int, body: VideoMetadataUpdate
+    ) -> VideoTask:
+        async with self.repo.guard(f"video-task:{record_id}") as acquired:
+            if not acquired:
+                raise VideoBusyError("视频任务正在同步，请稍后修改")
+            record = await self.repo.get(record_id, user_id)
+            if record is None:
+                raise LookupError("视频任务不存在")
+            if body.cover_url is not None and not (
+                record.status == VideoStatus.SUCCEEDED
+                and record.storage_status == VideoStorageStatus.STORED
+                and record.qiniu_cover_object_key
+            ):
+                raise VideoConflictError("封面仅可在视频与自动封面完成转存后修改")
+            title = body.title if body.title != record.title else None
+            cover_url = str(body.cover_url) if body.cover_url is not None else None
+            if cover_url == record.cover_url:
+                cover_url = None
+            if title is not None or cover_url is not None:
+                record = await self.repo.update_metadata(
+                    record_id, user_id, title=title, cover_url=cover_url
+                )
+        return self._output(record)
+
+    async def delete(self, record_id: int, user_id: int) -> None:
+        async with self.repo.guard(f"video-task:{record_id}") as acquired:
+            if not acquired:
+                raise VideoBusyError("视频任务正在同步，请稍后删除")
+            await self.repo.delete(record_id, user_id)
 
     async def list_tasks(self, user_id: int, query: VideoListQuery) -> VideoTaskPage:
         logger.info(

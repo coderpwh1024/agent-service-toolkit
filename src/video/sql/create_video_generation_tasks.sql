@@ -57,7 +57,7 @@ COMMENT ON TABLE video_generation_tasks IS 'HappyHorse 视频生成及七牛永�
 COMMENT ON COLUMN video_generation_tasks.id IS '自增业务主键，与阿里云任务 ID 分离';
 COMMENT ON COLUMN video_generation_tasks.user_id IS '所属应用用户 BIGINT ID，与认证令牌绑定';
 COMMENT ON COLUMN video_generation_tasks.title IS '视频展示标题，优先使用用户指定值，否则从生成描述首句提取最多 80 字符';
-COMMENT ON COLUMN video_generation_tasks.cover_url IS '完成后为七牛云永久 JPEG 封面地址；从生成视频第 1 秒截帧后独立转存，处理前可为空';
+COMMENT ON COLUMN video_generation_tasks.cover_url IS '视频展示封面地址；自动截帧转存完成后可由用户替换，处理前可为空';
 COMMENT ON COLUMN video_generation_tasks.idempotency_key IS '用户范围内的幂等键；同键不同参数拒绝提交';
 COMMENT ON COLUMN video_generation_tasks.request_hash IS '规范化请求的 SHA256 摘要';
 COMMENT ON COLUMN video_generation_tasks.request_payload IS '经校验的生成参数，含用户提示词，属于受保护业务数据';

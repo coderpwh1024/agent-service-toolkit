@@ -15,10 +15,92 @@ from psycopg.sql import SQL, Identifier
 from psycopg.types.json import Jsonb
 
 from memory.postgres import get_postgres_connection_string
-from schema.video import ProviderResult, VideoCreate, VideoEdit, VideoListQuery, VideoStatus
+from schema.video import (
+    ProviderResult,
+    VideoCreate,
+    VideoEdit,
+    VideoListQuery,
+    VideoMetadataUpdate,
+    VideoStatus,
+    VideoStorageStatus,
+)
 from video.providers import VideoStorageError
 from video.repository import VideoRepository
 from video.service import VideoService
+
+
+@pytest.mark.docker
+@pytest.mark.asyncio
+async def test_video_metadata_update_and_soft_delete_are_owned_and_audited() -> None:
+    schema = "video_smoke_" + uuid4().hex
+    conninfo = get_postgres_connection_string()
+    async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+        await conn.execute(SQL("CREATE SCHEMA {}").format(Identifier(schema)))
+    repo = VideoRepository(make_conninfo(conninfo, options=f"-csearch_path={schema}"))
+    try:
+        await repo.open()
+        service = VideoService(repo, AsyncMock(), AsyncMock(), 0)
+        record, _ = await repo.reserve(12, "metadata", "a" * 64, VideoCreate(prompt="海边"))
+        original_payload = record.request_payload
+        original_hash = record.request_hash
+        original_create_time = record.create_time
+
+        renamed = await service.update_metadata(record.id, 12, VideoMetadataUpdate(title="新标题"))
+        assert renamed.title == "新标题" and renamed.cover_url is None
+        record = await repo.get(record.id, 12)
+        assert record is not None
+        assert record.update_by == 12 and record.update_time >= original_create_time
+        record.status = VideoStatus.SUCCEEDED
+        record.storage_status = VideoStorageStatus.STORED
+        record.qiniu_video_url = "https://cdn.example/video.mp4"
+        record.qiniu_object_key = "videos/video.mp4"
+        record.qiniu_cover_object_key = "videos/auto.jpg"
+        record.cover_url = "https://cdn.example/auto.jpg"
+        await repo.save(record, 0)
+
+        edited = await service.update_metadata(
+            record.id,
+            12,
+            VideoMetadataUpdate(cover_url="https://cdn.example/custom.jpg"),
+        )
+        assert edited.cover_url == "https://cdn.example/custom.jpg"
+        assert (await service.query(record.id, 12)).cover_url == edited.cover_url
+        stored = await repo.get(record.id, 12)
+        assert stored is not None
+        assert stored.request_payload == original_payload and stored.request_hash == original_hash
+        assert stored.create_time == original_create_time and stored.update_by == 12
+        assert (await repo.list_tasks(12, VideoListQuery(q="新标题")))[1] == 1
+        with pytest.raises(LookupError):
+            await service.update_metadata(record.id, 13, VideoMetadataUpdate(title="他人标题"))
+        with pytest.raises(LookupError):
+            await service.delete(record.id, 13)
+
+        await service.delete(record.id, 12)
+
+        assert await repo.get(record.id, 12) is None
+        assert (await repo.list_tasks(12, VideoListQuery()))[1] == 0
+        assert await repo.latest_id(12) is None
+        async with repo.pool.connection() as conn:
+            deleted = await (
+                await conn.execute(
+                    """SELECT is_delete, update_by, update_time FROM video_generation_tasks
+                    WHERE id = %s""",
+                    (record.id,),
+                )
+            ).fetchone()
+        assert deleted is not None
+        assert deleted["is_delete"] == 1 and deleted["update_by"] == 12
+        assert deleted["update_time"] >= stored.update_time
+        with pytest.raises(LookupError):
+            await service.delete(record.id, 12)
+        replacement, created = await repo.reserve(
+            12, "metadata", "b" * 64, VideoCreate(prompt="新任务")
+        )
+        assert created and replacement.id != record.id
+    finally:
+        await repo.close()
+        async with await psycopg.AsyncConnection.connect(conninfo, autocommit=True) as conn:
+            await conn.execute(SQL("DROP SCHEMA {} CASCADE").format(Identifier(schema)))
 
 
 @pytest.mark.docker

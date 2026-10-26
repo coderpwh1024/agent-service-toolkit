@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from core import settings
-from schema.video import VideoListQuery, VideoTask, VideoTaskPage
+from schema.video import VideoListQuery, VideoMetadataUpdate, VideoTask, VideoTaskPage
 from service.access import create_access_token
 from service.video import router
 from video.service import VideoBusyError, VideoConflictError
@@ -87,7 +87,11 @@ def client(monkeypatch):
     app = FastAPI()
     app.include_router(router)
     app.state.video_service = SimpleNamespace(
-        create=AsyncMock(), query=AsyncMock(), list_tasks=AsyncMock()
+        create=AsyncMock(),
+        query=AsyncMock(),
+        list_tasks=AsyncMock(),
+        update_metadata=AsyncMock(),
+        delete=AsyncMock(),
     )
     with TestClient(app) as client:
         yield client, app.state.video_service
@@ -159,6 +163,104 @@ def test_video_routes_are_registered_in_service():
     assert schema["paths"]["/videos"]["post"]["operationId"] == "create_video"
     assert schema["paths"]["/videos"]["get"]["operationId"] == "list_videos"
     assert schema["paths"]["/videos/{record_id}"]["get"]["operationId"] == "query_video"
+    assert schema["paths"]["/videos/{record_id}"]["patch"]["operationId"] == "update_video_metadata"
+    assert schema["paths"]["/videos/{record_id}"]["delete"]["operationId"] == "delete_video"
+
+
+def test_update_metadata_and_delete_bind_current_user(client):
+    test_client, service = client
+    task = VideoTask(
+        id=123,
+        user_id=12,
+        title="新标题",
+        cover_url="https://cdn.example/custom.jpg",
+        task_id="task-123",
+        status="SUCCEEDED",
+        storage_status="STORED",
+        aliyun_video_url=None,
+        qiniu_video_url="https://cdn.example/video.mp4",
+        qiniu_object_key="videos/happyhorse/task-123.mp4",
+        error_code=None,
+        create_time=datetime.now(UTC),
+        update_time=datetime.now(UTC),
+    )
+    service.update_metadata.return_value = task
+
+    updated = test_client.patch(
+        "/videos/123",
+        headers=headers(),
+        json={"title": " 新标题 ", "cover_url": "https://cdn.example/custom.jpg"},
+    )
+    deleted = test_client.delete("/videos/123", headers=headers())
+
+    assert updated.status_code == 200
+    assert updated.json()["data"]["title"] == "新标题"
+    assert updated.json()["data"]["cover_url"] == "https://cdn.example/custom.jpg"
+    service.update_metadata.assert_awaited_once_with(
+        123,
+        12,
+        VideoMetadataUpdate(title="新标题", cover_url="https://cdn.example/custom.jpg"),
+    )
+    assert deleted.status_code == 200
+    assert deleted.json()["data"] == {"deleted": True}
+    service.delete.assert_awaited_once_with(123, 12)
+
+
+@pytest.mark.parametrize("path", ["/videos/123", "/videos/0"])
+def test_metadata_mutations_reject_invalid_identity_or_id(client, path):
+    test_client, service = client
+    expected = 422 if path.endswith("/0") else 403
+    assert (
+        test_client.patch(
+            path, headers={"Authorization": "Bearer trusted"}, json={"title": "x"}
+        ).status_code
+        == expected
+    )
+    assert (
+        test_client.delete(path, headers={"Authorization": "Bearer trusted"}).status_code
+        == expected
+    )
+    service.update_metadata.assert_not_awaited()
+    service.delete.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"title": " "},
+        {"title": "字" * 201},
+        {"cover_url": "javascript:alert(1)"},
+        {"cover_url": None},
+        {"title": "标题", "prompt": "越权参数"},
+    ],
+)
+def test_metadata_update_rejects_invalid_body(client, payload):
+    test_client, service = client
+    assert test_client.patch("/videos/123", headers=headers(), json=payload).status_code == 422
+    service.update_metadata.assert_not_awaited()
+
+
+@pytest.mark.parametrize("method", ["patch", "delete"])
+@pytest.mark.parametrize("error,status", [(LookupError(), 404), (VideoBusyError("同步中"), 409)])
+def test_metadata_mutations_hide_foreign_records_and_report_busy(client, method, error, status):
+    test_client, service = client
+    getattr(service, "update_metadata" if method == "patch" else "delete").side_effect = error
+    response = getattr(test_client, method)(
+        "/videos/123",
+        headers=headers(),
+        **({"json": {"title": "新标题"}} if method == "patch" else {}),
+    )
+    assert response.status_code == status
+
+
+def test_metadata_update_rejects_cover_before_archival(client):
+    test_client, service = client
+    service.update_metadata.side_effect = VideoConflictError("封面尚未就绪")
+    response = test_client.patch(
+        "/videos/123", headers=headers(), json={"cover_url": "https://cdn.example/custom.jpg"}
+    )
+    assert response.status_code == 409
 
 
 @pytest.mark.parametrize(

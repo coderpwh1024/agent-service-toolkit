@@ -1,6 +1,6 @@
 # HappyHorse 与万相 3.0 视频生成
 
-视频功能由独立的 `src/video/` 模块维护，`src/service/video.py` 负责路由和生命周期适配，提供文生视频、查询并回写数据库、七牛云持久转存和后台同步。默认关闭，不影响现有聊天、语音和头像功能。没有新增生产依赖，复用项目已有的 httpx、psycopg 和七牛 SDK。
+视频功能由独立的 `src/video/` 模块维护，`src/service/video.py` 负责路由和生命周期适配，提供文生视频、查询、标题与封面修改、逻辑删除、七牛云持久转存和后台同步。默认关闭，不影响现有聊天、语音和头像功能。没有新增生产依赖，复用项目已有的 httpx、psycopg 和七牛 SDK。
 
 ## 万相 3.0 接入与兼容设计
 
@@ -229,6 +229,24 @@ curl "$AGENT_URL/videos/123" \
 ```
 
 `GET /videos/{record_id}` 只允许查询本人记录。不存在、逻辑删除或他人记录统一返回 404。任务正在被另一个查询或定时同步处理时返回 409，可稍后重查。
+
+## 修改标题与封面、删除视频
+
+前端可使用 `PATCH /videos/{record_id}` 修改本人视频的展示标题、封面地址，使用 `DELETE /videos/{record_id}` 删除本人视频。两者都要求应用用户 Bearer 令牌，`record_id` 是 `POST /videos` 返回的本地正整数 `data.id`，不需要 `Idempotency-Key`。这两个接口只操作本地记录，不创建新视频任务，也未接入视频 Skill。
+
+```sh
+curl -X PATCH "$AGENT_URL/videos/123" \
+  -H "Authorization: Bearer $APP_ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"title":"新的展示标题","cover_url":"https://cdn.example.com/covers/new.jpg"}'
+
+curl -X DELETE "$AGENT_URL/videos/123" \
+  -H "Authorization: Bearer $APP_ACCESS_TOKEN"
+```
+
+`PATCH` 至少提供 `title` 或 `cover_url`，可只改一项。标题会去除首尾空白，长度为 1–200 字符；封面必须是最多 2048 字符的 HTTP/HTTPS URL。空 body、`null`、空白标题、非法 URL 或未知字段返回 422。前端选图后可先调用 `POST /files` 上传，再将响应的 `data.url` 作为 `cover_url`；接口本身只保存地址，不上传或抓取图片。封面仅在视频及自动封面都完成转存后可修改，否则返回 409；标题可在生成中修改。修改成功返回 HTTP 200 和统一封装的完整 `VideoTask`，后续列表与详情会显示新值。生成入参、请求摘要与幂等键不变；已转存视频再次查询或后台同步也不会覆盖新封面。重复提交相同值不会刷新审计时间。
+
+`DELETE` 成功返回 HTTP 200、`data: {"deleted": true}`。数据库将 `is_delete` 置为 `1`，同步更新 `update_by` 和 `update_time`；详情、列表和后台同步不再处理该记录，原视频文件及七牛对象保留。删除生成中的记录也不请求供应商取消任务。删除后再次访问、重复删除、访问他人记录或不存在的编号均返回 404；任务正被同步或查询占用时，修改或删除返回 409，可稍后重试。两个接口都不接受管理令牌冒充用户。
 
 对于排队或生成中的任务，服务按数据库保存的 `task_id` 请求阿里云查询接口，回写任务状态及临时 URL。拿到成功 URL 后，先保存源地址，再调用七牛抓取；七牛确认视频对象存在后，先写入视频对象键与七牛视频 URL，再提取并保存封面。只有非空标题、视频和封面永久地址都确认就绪才写入 `STORED`。元数据完整的已转存任务、或上游已终止的任务直接返回数据库结果。查询上游失败时保留原生成状态，保存 `QUERY_FAILED`，供后续重试。
 

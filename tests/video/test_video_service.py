@@ -13,6 +13,7 @@ from schema.video import (
     VideoCreate,
     VideoEdit,
     VideoListQuery,
+    VideoMetadataUpdate,
     VideoRecord,
     VideoStatus,
     VideoStorageStatus,
@@ -20,7 +21,7 @@ from schema.video import (
 )
 from video.metadata import derive_video_title
 from video.providers import VideoProviderError, VideoStorageError
-from video.service import VideoConflictError, VideoEditInputError, VideoService
+from video.service import VideoBusyError, VideoConflictError, VideoEditInputError, VideoService
 
 
 def record(**changes) -> VideoRecord:
@@ -88,9 +89,31 @@ class MemoryRepository:
 
     async def get(self, record_id, user_id):
         current = self.records.get(record_id)
-        if current and current.user_id == user_id:
+        if current and current.user_id == user_id and current.is_delete == 0:
             return current.model_copy(deep=True)
         return None
+
+    async def update_metadata(self, record_id, user_id, *, title, cover_url):
+        current = await self.get(record_id, user_id)
+        if current is None:
+            raise LookupError("视频任务不存在")
+        if title is not None:
+            current.title = title
+        if cover_url is not None:
+            current.cover_url = cover_url
+        current.update_by = user_id
+        current.update_time = datetime.now(UTC)
+        self.records[record_id] = current.model_copy(deep=True)
+        return current
+
+    async def delete(self, record_id, user_id):
+        current = await self.get(record_id, user_id)
+        if current is None:
+            raise LookupError("视频任务不存在")
+        current.is_delete = 1
+        current.update_by = user_id
+        current.update_time = datetime.now(UTC)
+        self.records[record_id] = current
 
     async def save(self, current, actor):
         self.saved_actors.append(actor)
@@ -158,6 +181,84 @@ async def test_edit_is_new_idempotent_task_with_original_preserved(service):
     ready = await service.query(first.id, 12)
     assert ready.storage_status == "STORED"
     service.storage.archive.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_metadata_update_preserves_video_and_survives_query(service):
+    original = record(
+        title="旧标题",
+        cover_url="https://cdn.example/old.jpg",
+        status="SUCCEEDED",
+        storage_status="STORED",
+        qiniu_video_url="https://cdn.example/video.mp4",
+        qiniu_object_key="videos/video.mp4",
+        qiniu_cover_object_key="videos/cover.jpg",
+    )
+    service.repo.records[original.id] = original
+
+    updated = await service.update_metadata(
+        1,
+        12,
+        VideoMetadataUpdate(title=" 新标题 ", cover_url="https://cdn.example/custom.jpg"),
+    )
+
+    assert updated.title == "新标题"
+    assert updated.cover_url == "https://cdn.example/custom.jpg"
+    assert updated.qiniu_video_url == original.qiniu_video_url
+    assert service.repo.records[1].request_hash == original.request_hash
+    assert service.repo.records[1].request_payload == original.request_payload
+    assert service.repo.records[1].create_time == original.create_time
+    assert service.repo.records[1].update_by == 12
+    assert (await service.query(1, 12)).cover_url == updated.cover_url
+    previous_update_time = service.repo.records[1].update_time
+    repeated = await service.update_metadata(
+        1,
+        12,
+        VideoMetadataUpdate(title="新标题", cover_url="https://cdn.example/custom.jpg"),
+    )
+    assert repeated == updated
+    assert service.repo.records[1].update_time == previous_update_time
+    service.provider.query.assert_not_awaited()
+    service.storage.archive_cover.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_metadata_update_allows_title_during_generation_but_rejects_early_cover(service):
+    service.repo.records[1] = record(title="旧标题")
+    updated = await service.update_metadata(1, 12, VideoMetadataUpdate(title="新标题"))
+    assert updated.title == "新标题"
+    assert updated.cover_url is None
+    with pytest.raises(VideoConflictError, match="封面仅可"):
+        await service.update_metadata(
+            1, 12, VideoMetadataUpdate(cover_url="https://cdn.example/custom.jpg")
+        )
+    assert service.repo.records[1].title == "新标题"
+    assert service.repo.records[1].cover_url is None
+
+
+@pytest.mark.asyncio
+async def test_metadata_update_and_delete_enforce_owner_and_task_lock(service):
+    service.repo.records[1] = record()
+    with pytest.raises(LookupError):
+        await service.update_metadata(1, 13, VideoMetadataUpdate(title="其他用户"))
+    with pytest.raises(LookupError):
+        await service.delete(1, 13)
+    service.repo.locked.add("video-task:1")
+    with pytest.raises(VideoBusyError):
+        await service.update_metadata(1, 12, VideoMetadataUpdate(title="并发"))
+    with pytest.raises(VideoBusyError):
+        await service.delete(1, 12)
+    service.repo.locked.clear()
+
+    await service.delete(1, 12)
+
+    assert service.repo.records[1].is_delete == 1
+    assert service.repo.records[1].update_by == 12
+    assert await service.repo.get(1, 12) is None
+    with pytest.raises(LookupError):
+        await service.delete(1, 12)
+    with pytest.raises(LookupError):
+        await service.update_metadata(1, 12, VideoMetadataUpdate(title="删除后"))
 
 
 @pytest.mark.asyncio

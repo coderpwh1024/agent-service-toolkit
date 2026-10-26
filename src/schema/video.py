@@ -59,6 +59,21 @@ class VideoMetadata(BaseModel):
         return value.strip()
 
 
+class VideoMetadataUpdate(VideoMetadata):
+    model_config = ConfigDict(extra="forbid")
+    cover_url: HttpUrl | None = Field(
+        default=None,
+        max_length=2048,
+        description="已转存视频的新展示封面 HTTP(S) 地址，不修改原始生成请求",
+    )
+
+    @model_validator(mode="after")
+    def require_change(self) -> "VideoMetadataUpdate":
+        if self.title is None and self.cover_url is None:
+            raise ValueError("至少提供标题或封面地址")
+        return self
+
+
 class VideoCreate(VideoMetadata):
     model_config = ConfigDict(extra="forbid")
 
@@ -222,7 +237,7 @@ class VideoTask(BaseModel):
     last_frame_url: str | None = None
     title: str | None = Field(default=None, description="用户指定或从生成描述提取的视频标题")
     cover_url: str | None = Field(
-        default=None, description="视频和封面转存完成后为独立 JPEG 图片的七牛永久地址"
+        default=None, description="视频的展示封面地址；转存完成后可由用户替换"
     )
     task_id: str | None
     status: VideoStatus

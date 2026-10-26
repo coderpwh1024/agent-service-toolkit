@@ -11,7 +11,7 @@ from fastapi import APIRouter, FastAPI, Header, HTTPException, Path, Query, Requ
 from core import settings
 from memory.postgres import get_postgres_connection_string
 from schema import ApiResponse, api_success
-from schema.video import VideoCreate, VideoListQuery, VideoTask, VideoTaskPage
+from schema.video import VideoCreate, VideoListQuery, VideoMetadataUpdate, VideoTask, VideoTaskPage
 from service.access import principal
 from video.providers import HappyHorseClient, QiniuVideoStorage
 from video.repository import VideoRepository
@@ -74,6 +74,35 @@ async def query_video(
         raise HTTPException(404, "视频任务不存在") from None
     except VideoBusyError as exc:
         raise HTTPException(409, str(exc)) from None
+
+
+@router.patch("/{record_id}", response_model=ApiResponse[VideoTask])
+async def update_video_metadata(
+    record_id: Annotated[int, Path(gt=0, le=9223372036854775807)],
+    body: VideoMetadataUpdate,
+    request: Request,
+) -> ApiResponse[VideoTask]:
+    user_id = _user_id(request)
+    try:
+        return api_success(await _service(request).update_metadata(record_id, user_id, body))
+    except LookupError:
+        raise HTTPException(404, "视频任务不存在") from None
+    except (VideoBusyError, VideoConflictError) as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
+@router.delete("/{record_id}", response_model=ApiResponse[dict[str, bool]])
+async def delete_video(
+    record_id: Annotated[int, Path(gt=0, le=9223372036854775807)], request: Request
+) -> ApiResponse[dict[str, bool]]:
+    user_id = _user_id(request)
+    try:
+        await _service(request).delete(record_id, user_id)
+    except LookupError:
+        raise HTTPException(404, "视频任务不存在") from None
+    except VideoBusyError as exc:
+        raise HTTPException(409, str(exc)) from None
+    return api_success({"deleted": True})
 
 
 @asynccontextmanager

@@ -150,6 +150,49 @@ class VideoRepository:
             ).fetchone()
         return VideoRecord.model_validate(row) if row else None
 
+    async def update_metadata(
+        self, record_id: int, user_id: int, *, title: str | None, cover_url: str | None
+    ) -> VideoRecord:
+        assignments = []
+        values: list[object] = []
+        if title is not None:
+            assignments.append(SQL("title = %s"))
+            values.append(title)
+        if cover_url is not None:
+            assignments.append(SQL("cover_url = %s"))
+            values.append(cover_url)
+        if not assignments:
+            raise ValueError("至少提供一项发生变化的视频元数据")
+        async with self.pool.connection() as conn:
+            row = await (
+                await conn.execute(
+                    SQL("""
+                        UPDATE video_generation_tasks SET {},
+                            update_by = %s, update_time = CURRENT_TIMESTAMP
+                        WHERE id = %s AND user_id = %s AND is_delete = 0 RETURNING {}
+                    """).format(SQL(", ").join(assignments), _COLUMNS),
+                    [*values, user_id, record_id, user_id],
+                )
+            ).fetchone()
+        if row is None:
+            raise LookupError("视频任务不存在")
+        return VideoRecord.model_validate(row)
+
+    async def delete(self, record_id: int, user_id: int) -> None:
+        async with self.pool.connection() as conn:
+            row = await (
+                await conn.execute(
+                    """
+                    UPDATE video_generation_tasks SET is_delete = 1,
+                        update_by = %s, update_time = CURRENT_TIMESTAMP
+                    WHERE id = %s AND user_id = %s AND is_delete = 0 RETURNING id
+                    """,
+                    (user_id, record_id, user_id),
+                )
+            ).fetchone()
+        if row is None:
+            raise LookupError("视频任务不存在")
+
     async def latest_id(self, user_id: int) -> int | None:
         async with self.pool.connection() as conn:
             row = await (
