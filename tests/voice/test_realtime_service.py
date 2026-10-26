@@ -286,7 +286,7 @@ def test_model_upgrade_advertises_bound_voices_and_rejects_stale_selection(voice
     monkeypatch.setattr(settings, "VOICE_REALTIME_TTS_MODEL", "qwen-audio-3.1-tts-flash")
     data = client.get("/voice/capabilities", headers=auth).json()["data"]
     assert data["voice_catalog_model"] == "qwen-audio-3.1-tts-flash"
-    assert data["default_voice"] == "longanhuan_v3.1"
+    assert data["default_voice"] == "longanlingxin_v3.1"
     assert "Cherry" not in data["voices"]
     assert data["input_format"] == "pcm16_16000_mono"
     assert data["output_format"] == "pcm16_24000_mono"
@@ -622,6 +622,46 @@ def test_standalone_punctuation_does_not_truncate_the_rest_of_a_reply(voice_env,
         char for segment in turn.segments for char in segment.text if char.isalnum()
     )
     assert all(segment.complete and segment.samples > 0 for segment in turn.segments)
+
+
+@pytest.mark.parametrize("source", ["voices", "voice_catalog"])
+@pytest.mark.parametrize("lingxin_first", [True, False])
+def test_nacos_voice_order_controls_capabilities_and_session_default(
+    voice_env, monkeypatch, source: str, lingxin_first: bool
+) -> None:
+    from core.settings import Settings
+    from service.nacos import apply_remote_settings
+
+    client, _, _, headers = voice_env
+    model = "qwen-audio-3.1-tts-flash"
+    options = [
+        VoiceOption(id="longanlingxin_v3.1", name="龙安灵心", description="多语言与方言女声"),
+        VoiceOption(id="longanhuan_v3.1", name="龙安欢", description="多语言与方言女声"),
+    ]
+    if not lingxin_first:
+        options.reverse()
+    serialized_options = [option.model_dump() for option in options]
+    realtime = {"tts_model": model, "voices_model": model, "voices": serialized_options}
+    if source == "voice_catalog":
+        realtime["voices"] = list(reversed(serialized_options))
+        realtime["voice_catalog"] = {model: serialized_options}
+    config = Settings(_env_file=None, USE_FAKE_MODEL=True)
+    updated = apply_remote_settings(
+        config, json.dumps({"voice": {"enabled": True, "realtime": realtime}})
+    )
+    for name in updated:
+        monkeypatch.setattr(settings, name, getattr(config, name))
+    auth = headers()
+
+    response = client.get("/voice/capabilities", headers=auth)
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["voices"] == [option.id for option in options]
+    assert data["voice_options"] == serialized_options
+    assert data["default_voice"] == options[0].id
+    assert data["voice_catalog_model"] == model
+    assert create(client, auth)["voice"] == options[0].id
 
 
 def test_voice_capabilities_expose_compatible_ids_and_display_metadata(voice_env):

@@ -12,8 +12,8 @@ if TYPE_CHECKING:
 SpeechProtocol = Literal["auto", "realtime", "inference"]
 
 _QWEN_AUDIO_31_VOICES = (
-    ("longanhuan_v3.1", "龙安欢", "多语言与方言女声"),
     ("longanlingxin_v3.1", "龙安灵心", "多语言与方言女声"),
+    ("longanhuan_v3.1", "龙安欢", "多语言与方言女声"),
     ("longanfengyue_v3.1", "龙安风月", "多语言与方言女声"),
     ("xunanchuan_v3.1", "徐南川", "多语言与方言男声"),
     ("yuxiaoyun_v3.1", "余晓云", "阳光、亲切、自然，仅普通话"),

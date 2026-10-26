@@ -114,7 +114,7 @@ voice:
 
 `auto` 会保留配置地址中的地域和 Workspace 域名，将路径切换为所选协议的 `/api-ws/v1/realtime` 或 `/api-ws/v1/inference`。不会跨地域回退。`stt_url`、`tts_url` 可分别指定完整 WSS 地址，适合专有网关；不允许 URL 内嵌凭据、查询串或 fragment，认证仍使用 `models.dashscope.api_key`。
 
-Qwen Audio 3.1 默认使用 `longanhuan_v3.1`，并公布其他匹配音色；不会把旧版的 `Cherry`、`Serena` 当成新模型的音色。需要定制或使用其他模型时，为模型配置明确的目录：
+Qwen Audio 3.1 内置目录默认使用 `longanlingxin_v3.1`（龙安灵心），并公布其他匹配音色；不会把旧版的 `Cherry`、`Serena` 当成新模型的音色。需要定制或使用其他模型时，为模型配置明确的目录：
 
 ```yaml
 voice:
@@ -150,7 +150,7 @@ Inference 识别按任务和句子标识归一化：中间结果替换显示，�
 
 这些 HTTP 接口统一返回 `code`、`message`、`data`，成功时 HTTP 状态码和 `code` 均为 200。后续示例中的业务字段均位于 `data`。WebSocket 消息是独立事件协议，不使用该封装。
 
-`GET /voice/capabilities` 的 `voices` 保留为音色 ID 字符串数组，以兼容已有客户端；`default_voice` 是 Nacos 列表中的第一项，`voice_options` 提供 `id`、`name` 和 `description`，供前端直接展示选择器。旧的 Nacos 字符串列表写法仍可读取，但不会提供独立的中文展示名和描述。
+`GET /voice/capabilities` 的 `voices` 保留为音色 ID 字符串数组，以兼容已有客户端；`voice_options` 提供 `id`、`name` 和 `description`，供前端直接展示选择器。两者均保留上述查找顺序选中的目录顺序，不额外排序；`default_voice` 和创建会话时省略 `voice` 的默认值均取第一项。使用 Nacos `agent-service-toolkit.yaml` 的 `voice.realtime.voices` 时，需让 `voices_model` 与当前 `tts_model` 一致，并确认没有优先级更高的匹配 `voice_catalog`；将龙安灵心移到列表首位即可作为默认音色。旧的 Nacos 字符串列表写法仍可读取，但不会提供独立的中文展示名和描述。
 
 创建会话示例：
 

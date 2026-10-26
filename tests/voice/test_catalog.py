@@ -72,7 +72,7 @@ def test_upgrading_to_qwen_audio_does_not_reuse_the_old_voice_ids():
         VOICE_REALTIME_TTS_MODEL="qwen-audio-3.1-tts-flash",
         VOICE_REALTIME_VOICES=["Cherry", "Serena"],
     )
-    assert voice_options(config)[0].id == "longanhuan_v3.1"
+    assert voice_options(config)[0].id == "longanlingxin_v3.1"
     assert not {"Cherry", "Serena"} & {v.id for v in voice_options(config)}
 
 
