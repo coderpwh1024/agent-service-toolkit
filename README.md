@@ -1,397 +1,159 @@
-# 🧰 AI 智能体服务工具包
+# Mem0 智能体与实时语音架构
 
-[![构建状态](https://github.com/JoshuaC215/agent-service-toolkit/actions/workflows/test.yml/badge.svg)](https://github.com/JoshuaC215/agent-service-toolkit/actions/workflows/test.yml) [![codecov](https://codecov.io/github/JoshuaC215/agent-service-toolkit/graph/badge.svg?token=5MTJSYWD05)](https://codecov.io/github/JoshuaC215/agent-service-toolkit) [![Python 版本](https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2FJoshuaC215%2Fagent-service-toolkit%2Frefs%2Fheads%2Fmain%2Fpyproject.toml)](https://github.com/JoshuaC215/agent-service-toolkit/blob/main/pyproject.toml)
-[![GitHub 许可证](https://img.shields.io/github/license/JoshuaC215/agent-service-toolkit)](https://github.com/JoshuaC215/agent-service-toolkit/blob/main/LICENSE) [![Streamlit 应用](https://static.streamlit.io/badges/streamlit_badge_black_red.svg)](https://agent-service-toolkit.streamlit.app/)
+基于 **Flutter · FastAPI · LangGraph · Mem0 · PostgreSQL/pgvector** 的持续语音对话系统。
 
-一个用于运行 AI 智能体服务的完整工具包，基于 LangGraph、FastAPI 和 Streamlit 构建。
+用户的声音经实时 ASR 转为有效输入，由 `mem0-chatbot` 召回长期记忆、处理业务或委派研究，再将根回答流式送往界面与分段 TTS。手机负责真实播放与回执，后端分别保存完整对话、长期事实和语音轮次状态。
 
-它包含一个 [LangGraph](https://langchain-ai.github.io/langgraph/) 智能体、一个用于提供智能体服务的 [FastAPI](https://fastapi.tiangolo.com/) 服务、一个与该服务交互的客户端，以及一个使用该客户端提供聊天界面的 [Streamlit](https://streamlit.io/) 应用。数据结构和设置均使用 [Pydantic](https://github.com/pydantic/pydantic) 构建。
+[Mem0 业务流程](#mem0-业务交互流程) · [实时语音时序](#实时语音全链路时序) · [记忆与对话](#记忆提取与对话记录) · [延时观测](#首字首包与实际出声的延时) · [完整专题文档](docs/architecture/README.md) · [飞书知识库](https://k0ddd9qp4r.feishu.cn/wiki/OMg9wT217iHU1EkxWOScqkqNnJb)
 
-本项目提供了一个模板，帮助你使用 LangGraph 框架轻松构建并运行自己的智能体。它展示了从智能体定义到用户界面的完整配置，并通过一套完善、可靠的工具包，帮助你更轻松地开始开发基于 LangGraph 的项目。
+> 源码核验日期：2026-10-27。本文描述当前实现；功能开关、模型和音色受 Settings 与 Nacos 配置控制，默认值不代表线上实际配置。长期记忆默认关闭，启用后接入下述提取与召回流程。
 
-**[🎥 观看代码仓库和应用的视频演示](https://www.youtube.com/watch?v=pdYVHw_YCNY)**
+## 技术架构与职责
 
-## 概览
+![Mem0与实时语音系统技术架构](docs/architecture/assets/01-system-architecture.png)
 
-### [体验应用！](https://agent-service-toolkit.streamlit.app/)
+[放大查看 / 可编辑 SVG](docs/architecture/assets/01-system-architecture.svg)
 
-<a href="https://agent-service-toolkit.streamlit.app/"><img src="media/app_screenshot.png" width="600" alt="应用截图"></a>
+| 层次 | 技术与组件 | 在 Mem0 与语音链路中的职责 |
+| --- | --- | --- |
+| 手机交互 | 独立项目 `agent-voice-app`，Flutter/Dart | 登录、会话、字幕、记忆与历史页面；通过 HTTP 与 WebSocket 连接后端 |
+| 原生音频 | Android AudioRecord/AudioTrack；iOS AVAudioEngine/AVAudioPlayerNode | 采集、回声处理、音频路由、播放队列与真实分段完成回执 |
+| 唤醒 | Sherpa ONNX、本地关键词模型、Dart isolate | 前台唤醒与预滚缓冲；后端 ASR 再确认唤醒词 |
+| 接入与调度 | Python 3.12–3.14、FastAPI、Pydantic、asyncio | 身份绑定、线程授权、语音协议、队列背压、取消与资源释放 |
+| 主对话 | LangGraph `mem0_chatbot`、共享 `graph_events()` | 恢复对话、业务分流、工具调用与根回答流式输出 |
+| 长期记忆 | Mem0 SDK、提取 LLM、Embedding、可选 Reranker | 提取用户事实、跨线程召回、受控修改删除与变更历史 |
+| 语音供应商 | 百炼 ASR/TTS，realtime/inference 适配器 | 持续识别、VAD、分段合成与 PCM 流；与聊天模型分别调用 |
+| 持久化 | PostgreSQL、pgvector、LangGraph checkpointer | 完整对话、事实向量、提取参考、事实变更历史和语音状态 |
+| 业务与配置 | Redis、SMTP、视频服务、七牛、Nacos | 邮件去重/预约、视频异步任务与存储；启动时加载配置、Prompt 和 Skill |
 
-### 快速开始
+HTTP、SSE、AG-UI 和实时语音入口共用身份与线程约束。实时语音在后端内部调用共享 Agent 事件层，不需要再绕一遍 HTTP SSE。
 
-直接使用 Python 运行
+## Mem0 业务交互流程
 
-```sh
-# 默认使用阿里云百炼千问 3.8 Max，并使用 PostgreSQL 持久化记忆与 RAG。
-# .env 选择 local/test 环境并保存本地私密覆盖；应用配置维护在 Nacos 配置中心。
+![Mem0业务交互流程：邮件、记忆、研究与视频分流](docs/architecture/assets/02-mem0-business-flow.png)
 
-# 推荐使用 uv 安装 agent-service-toolkit，但也可以使用 "pip install ."
-# 有关 uv 的安装方式，请参阅：https://docs.astral.sh/uv/getting-started/installation/
-curl -LsSf https://astral.sh/uv/0.11.32/install.sh | sh
+[放大查看 / 可编辑 SVG](docs/architecture/assets/02-mem0-business-flow.svg) · [完整 Agent 与记忆说明](docs/architecture/Mem0_Agent_and_Memory.md)
 
-# 安装依赖。"uv sync" 会自动创建 .venv
-uv sync --frozen
-source .venv/bin/activate
-python src/run_service.py
+### 一轮请求如何执行
 
-# 在另一个终端中
-source .venv/bin/activate
-streamlit run src/streamlit_app.py
+1. **绑定用户与线程。** 服务校验身份和线程归属，恢复 LangGraph checkpoint 中的完整消息及待确认业务状态；语音输入与文字输入进入同一个 `mem0-chatbot`。
+2. **先处理邮件，再处理记忆命令。** 有相关线索或待补充/确认状态时，执行结构化识别与受控流程；分支返回后保存对话，不再进入普通聊天的自动事实提取。
+3. **召回用户长期事实。** 按 `user_id + agent_id` 检索，作为标有 `untrusted_user_memories` 的参考加入提示；最近 20 条 Human/AI 消息供主模型对话，完整历史仍保留在 checkpoint。
+4. **由主模型选择能力。** 可以直接回答、委派一次联网研究，或按需加载视频 Skill 后执行操作。研究内部规划、工具参数和子图正文被事件层隐藏，只有根回答进入 UI 与 TTS。
+5. **边生成边展示与合成。** 根正文 token 产生 `text.delta`，同时进入 TTS 文本队列；首个短语就可以合成和播放，无需等待完整回答。
+6. **保存事实与线程。** 普通/研究回答后，Agent 等待 `remember()` 提取最新用户输入中的事实，再返回最终状态；视频结果分支提前保存，不走自动提取。实时播报可与这段提取重叠，提取耗时仍可能延后轮次完成。
+
+### Skills、子 Agent 与模型步骤
+
+| 能力 | 实现与触发 | 与主 Agent 的关系 |
+| --- | --- | --- |
+| 日常对话 | `mem0_chatbot` + 当前选择的聊天模型 | 主 Agent 本身 |
+| 联网研究 | `research_assistant` 工具 → `mem0_research` task → `research_subagent` | 真正的 LangGraph 子图；每轮最多一次，搜索后摘要，再由主模型回答 |
+| 邮件 Skill | `send-current-user-email`、`handle_email_command`、`EmailSkillService` | 结构化意图识别与确定性业务流程；收件人绑定当前注册用户 |
+| 视频 Skill | `manage-user-videos`、`VideoSkillSession`、`VideoService` | 同一主模型先 `load_video_skill`，再 `video_operation`；生成任务异步完成 |
+| 记忆管理 | `MemoryIntent`、`MemoryMatch`、`MemoryDialogue` | 候选选择、预览、确认与并发复核组成的受控流程 |
+| 事实提取 | Mem0 SDK + 提取模型 + Embedding | 记忆组件调用；不承担独立多轮对话 |
+
+邮件与视频两种应用 Skill 从 Nacos 在启动时加载。仓库维护、飞书发布等开发工具 Skill 不属于应用运行时能力。研究子图使用受限搜索与摘要能力，无独立持久会话 checkpoint；它与独立注册的 `research-assistant` 工具集合不同。
+
+业务完成与语音完成有各自状态：邮件的 SMTP 接受、视频的任务提交或成片、TTS 合成和手机播放分别确认。取消语音不会撤回已提交的外部业务。
+
+## 实时语音全链路时序
+
+![实时语音全链路：用户说话、ASR、Mem0、首字符、TTS与真实播放](docs/architecture/assets/04-voice-sequence.png)
+
+[放大查看 / 可编辑 SVG](docs/architecture/assets/04-voice-sequence.svg) · [完整语音链路与延时说明](docs/architecture/Voice_End_to_End.md)
+
+### 从用户说话到听见回答
+
+| 阶段 | 交互与事件 | 关键实现 |
+| --- | --- | --- |
+| 01 / 会话就绪 | 获取 `/voice/capabilities` → `POST /voice/sessions` → WebSocket → `session.configure` → `session.ready` | App 显式选择 `mem0-chatbot`；ASR 上游就绪后才开放持续上传 |
+| 02 / 终端采集 | 原生 PCM → EventChannel → Dart → 上行二进制帧 | 16kHz、PCM16、单声道；Android 约 40ms 采集块；唤醒可补传预滚音频 |
+| 03 / 实时识别 | `upload()` 写 ASR；`recognize()` 读 partial/final | partial 用于字幕；有效 final 经去重、唤醒词处理后提交 Agent，常规 Flutter 路径使用 server VAD |
+| 04 / 接受输入 | `submit()` → 保存 VoiceTurn → `input.accepted` → worker | `input_id` 幂等；检查队列容量；新有效输入使旧响应失效 |
+| 05 / 并发准备 | `execute()` 同时启动 `generate()` 与 `speak()` | Agent 恢复线程并发送 `response.started`；TTS 独立预建连接并等待文本 |
+| 06 / Agent 首字 | Mem0 业务分流/召回 → 主模型根正文 → `text.delta` | UI 展示文字，正文同步进入有界 TTS 队列；内部研究与规划不播报 |
+| 07 / 分段合成 | `SpeechText` 清洗断句 → `audio.segment.started` → TTS PCM | 首段最多 24 字符/约 180ms 刷出，后续最多 160 字符/约 400ms；也按可用标点边界刷出 |
+| 08 / 音频下行 | `emit_audio()` → outgoing 队列 → WebSocket 二进制帧 | 24kHz、PCM16、单声道；连接、响应、分段与序号用于有序处理和过滤旧帧 |
+| 09 / 真实播放 | Dart 解码 → MethodChannel → 原生播放器 | 首包入队之后仍受原生缓冲、硬件和音频路由影响；收到音频不等于实际出声 |
+| 10 / 回执与落库 | `playback.progress` / `playback.finished` → VoiceRepository | 记录确认播完的分段与采样；Agent 与 TTS 结束后的 `response.done` 不代表设备已排空 |
+
+传输使用控制 JSON 与音频二进制帧混合的双向 WebSocket。音频帧为 `VCE1`、45 字节头加 PCM，单帧 payload 上限 6400 字节；协议和事件约定见 [Voice API](docs/Voice_API.md)。
+
+`/voice/capabilities.default_agent` 为 `mem0-chatbot`，但创建会话 schema 的 `agent_id` 默认仍是 `chatbot`。自行调用接口时应显式传 `agent_id: "mem0-chatbot"`，Flutter 正常路径会提交所选值。
+
+### 插话、取消与已听上下文
+
+- **自动检测到说话：** 端侧能量提示不立即暂停播放；ASR 的有效 final 被后端接受后，才取消上一响应。噪声、空白和无效转写不会直接重启 Agent。
+- **点击“我要插话”：** 手机立即暂停并保留缓冲，后端等待有效输入；未确认时走恢复提示与终端兜底。
+- **显式取消：** 手机停播清缓冲，后端使响应失效并取消可取消任务；双方继续丢弃迟到的旧响应音频。
+- **继续对话：** 下一轮 `delivery_context()` 只引用完整且确认播完的分段，避免将只生成过的内容视为已听上下文。
+
+### Streamlit 的语音路径
+
+Streamlit 提交完整录音，由同步 HTTP ASR 识别，再通过 `AgentClient.astream()` 接收 SSE 文字；流结束后对完整回答做整段 TTS。它与 Flutter 持续 PCM、分段播报、播放回执的路径不同，延时应分别统计。
+
+## 记忆提取与对话记录
+
+主 Agent 通过 Mem0 使用长期事实；对话恢复、事实召回与播放确认由不同数据层承担。
+
+| 数据 | 存储与范围 | 用途 |
+| --- | --- | --- |
+| 完整对话 | PostgreSQL LangGraph checkpoint；按线程授权 | 保存用户与助手消息、业务状态，支持恢复和继续聊天 |
+| 主模型窗口 | 每轮临时构造的最近 20 条 Human/AI 消息 | 控制模型上下文；截取窗口不会删除历史 |
+| 长期事实 | Mem0 SDK + pgvector；按用户与 Agent 隔离、跨线程召回 | 个性化回答，来源线程作为 metadata |
+| 提取参考与变更历史 | PostgreSQL `mem0_records` | 近期指代参考、ADD/UPDATE/DELETE 审计与 owner 校验 |
+| 语音轮次与播放 | `voice_turns.data` | 保存文本、分段、采样和播放确认；不保存原始 PCM |
+
+事实写入路径为 **最新用户消息 → 近期参考消歧 → 检索已有事实 → 提取模型结构化 JSON → 校验 → Embedding → 去重 → pgvector 与 ADD 历史**。近期 Human/AI 消息用于指代消解；研究摘要不会作为用户新事实来源。
+
+当前固定 Mem0 SDK 2.2.1 的自动提取采用新增策略，不会自动 UPDATE/DELETE 旧事实。自然语言修改、删除和清空要经过意图识别、候选定位、预览、明确确认和锁内复核；Flutter 的 REST 管理接口有独立表单确认与服务端所有权校验。
+
+召回默认取前 5 条、阈值 0.3，启用外部 Reranker 时先扩展候选再重排；事实参考默认受 6000 字符预算限制。参考带有非可信数据标签，不能覆盖系统指令。完整机制见 [记忆生命周期图](docs/architecture/assets/03-memory-lifecycle.svg) 与 [Mem0 专篇](docs/architecture/Mem0_Agent_and_Memory.md)。
+
+## 首字、首包与实际出声的延时
+
+**首字符、首音频包、扬声器实际首声有不同测量边界。** Agent 与 TTS 连接并发准备，文字生成、合成和播放也可以重叠，不能把各阶段累计指标直接相加。
+
+| 服务端指标 | 起点 → 终点 | 说明 |
+| --- | --- | --- |
+| `first_text_ms` | `accepted` → 首个根正文 | 包含轮次持久化、排队和 Agent 准备；不含之前的 ASR |
+| `tts_ready_ms` | `accepted` → TTS 连接上下文就绪 | 与 Agent 并行；realtime 与 inference 的就绪含义有差异 |
+| `first_speech_ms` | `accepted` → 首个可朗读短语产出 | 此时不等于供应商已接收或合成音频 |
+| `first_audio_ms` | `accepted` → 首 PCM 进入后端下行生产 | 包含文本聚合及合成等待；尚未经过完整发送链路 |
+| `first_audio_sent_ms` | `accepted` → 首 PCM 成功交给 WebSocket | 包含发送队列等待；不含手机接收和硬件起播 |
+| `text_to_audio_ms` | 首正文 → 首 PCM | 是多个步骤的综合等待，不是纯 TTS 模型耗时 |
+
+```text
+用户停说 → 首字符
+  = 停说到 ASR final / submit 接受
+    + 服务端 first_text_ms
+    + 文字下行与终端呈现等待
+
+用户停说 → 实际首声
+  = 停说到 ASR final / submit 接受
+    + 服务端 first_audio_sent_ms
+    + 音频下行 + Dart/原生队列 + 硬件与路由起播
 ```
 
-使用 Docker 运行
+Flutter 已记录收到 `response.started` 后的首字、首音频包，以及 native enqueue 耗时。这个起点晚于服务端 `accepted`，两端同名字段不能直接混算；enqueue 返回也不代表扬声器出声。
 
-```sh
-# 先维护 Nacos 中的 agent-service-toolkit.yaml，再在 .env 中选择 APP_ENV。
-docker compose watch
-```
+当前尚缺同轮端侧话音结束与首渲染/声学首声的完整观测，**停说到真实首声的 P50/P95 待真机测量**。首段约 180ms 是文本缓冲策略，不能作为端到端语音延时承诺。测量边界、历史样本与补测方案见 [延时观测图](docs/architecture/assets/05-voice-latency.svg) 和 [语音专篇](docs/architecture/Voice_End_to_End.md)。
 
-### 架构图
+## 核心代码与完整资料
 
-<img src="media/agent_architecture.png" width="600" alt="智能体架构图">
+| 模块 | 入口 |
+| --- | --- |
+| 主 Agent 与研究委派 | [mem0_chatbot.py](src/agents/mem0_chatbot.py)、[research_delegation.py](src/agents/research_delegation.py) |
+| 记忆服务与 SDK 适配 | [mem0_service.py](src/memory/mem0_service.py)、[mem0_sdk.py](src/memory/mem0_sdk.py)、[mem0_history.py](src/memory/mem0_history.py) |
+| 记忆管理、邮件与视频 | [memory_commands.py](src/agents/memory_commands.py)、[email_commands.py](src/agents/email_commands.py)、[video_chat.py](src/skills/video_chat.py) |
+| 共享执行与鉴权 | [agent_runner.py](src/service/agent_runner.py)、[access.py](src/service/access.py) |
+| 语音接入、会话与断句 | [voice.py](src/service/voice.py)、[session.py](src/voice/session.py)、[speech_output.py](src/voice/speech_output.py) |
+| 语音供应商、协议与持久化 | [providers/](src/voice/providers/)、[schema/voice.py](src/schema/voice.py)、[persistence.py](src/voice/persistence.py) |
+| 运行配置与技能加载 | [settings.py](src/core/settings.py)、[nacos.py](src/service/nacos.py)、[skills.py](src/core/skills.py) |
+| Flutter 客户端 | 相邻 `agent-voice-app` 项目的 `voice_session_controller.dart`、`audio_bridge.dart`、Android `MainActivity.kt` 与 iOS `VoiceAudioEngine.swift` |
 
-### 主要特性
+完整文档：[技术架构总览](docs/architecture/README.md) · [Mem0 Agent 与记忆](docs/architecture/Mem0_Agent_and_Memory.md) · [语音链路与延时](docs/architecture/Voice_End_to_End.md) · [跨项目源码与测试索引](docs/architecture/Source_Map.md)。
 
-1. **LangGraph 智能体及最新特性**：使用 LangGraph 框架构建的可自定义智能体。实现了 LangGraph v1.0 的最新特性，包括使用 `interrupt()` 实现人在回路、使用 `Command` 实现流程控制、使用 `Store` 实现长期记忆，以及 `langgraph-supervisor`。
-1. **FastAPI 服务**：通过流式和非流式端点提供智能体服务。
-1. **高级流式传输**：采用一种新颖的方法，同时支持基于 token 和基于消息的流式传输。
-1. **AG-UI 协议支持**：每个智能体也会通过 [AG-UI 协议](https://docs.ag-ui.com) 提供服务，以连接 CopilotKit 等兼容 AG-UI 的前端——请参阅[文档](docs/AGUI.md)。
-1. **移动端实时语音 API**：提供百炼实时 ASR、Agent、流式 TTS、插话取消、播放进度和业务确认协议，可由独立 Flutter App 连接——请参阅[接口文档](docs/Voice_API.md)和[整体规划](docs/Voice_App_Plan.md)。
-1. **Streamlit 界面**：提供用户友好的聊天界面，并支持基于阿里云百炼的语音输入和输出；两者复用 `DASHSCOPE_API_KEY`。
-1. **HappyHorse 视频生成 API**：支持幂等提交、查询回写 PostgreSQL、按状态分页列出视频、修改标题与封面、逻辑删除、自动提取标题和视频封面、视频与封面七牛云持久转存，以及每 5 分钟最多 10 条的后台同步。通过 `VIDEO_ENABLED=true` 启用；Nacos 视频 Skill 可用语音生成、查询、分页列出及通过模型编辑本人视频，标题与封面修改及删除接口供前端调用，详见[接口文档](docs/Video_API.md)。
-1. **文件上传 API**：支持上传文件到七牛云、保存 PostgreSQL 文件元数据，并按当前用户查询文件 URL。通过 Nacos `storage.files.enabled` 或 `FILE_UPLOAD_ENABLED=true` 启用，详见[接口与表设计](docs/File_Upload_API.md)。
-1. **多智能体支持**：在服务中运行多个智能体，并通过 URL 路径调用。可用的智能体和模型在 `/info` 中说明。
-1. **异步设计**：使用 async/await 高效处理并发请求。
-1. **内容审核**：使用 Safeguard 实现内容审核（需要 Groq API 密钥）。
-1. **RAG 智能体**：使用 PostgreSQL 和阿里云百炼 Embedding 实现的 RAG 智能体——请参阅[文档](docs/RAG_Assistant.md)。
-1. **聊天记录与长期记忆**：使用 PostgreSQL 保存会话检查点和跨会话记忆；`/threads` 按智能体列出会话，`/chat-records` 按 UTC 日期列出最近 30 天的聊天记录，并可查询当天详情。
-1. **反馈机制**：包含一个与 LangSmith 集成的星级反馈系统。
-1. **Docker 支持**：包含 Dockerfile 和 Docker Compose 文件，便于开发和部署。
-1. **Nacos 3.x 集成**：支持启动配置加载、服务注册与发现，并在服务关停时自动注销实例。
-1. **测试**：为整个代码仓库提供完善的单元测试和集成测试。
-
-### 关键文件
-
-代码仓库的结构如下：
-
-- `src/agents/`：定义多个具有不同能力的智能体
-- `src/schema/`：定义协议 schema
-- `src/core/`：核心模块，包括 LLM 定义和设置
-- `src/service/service.py`：用于提供智能体服务的 FastAPI 服务
-- `src/client/client.py`：与智能体服务交互的客户端
-- `src/streamlit_app.py`：提供聊天界面的 Streamlit 应用
-- `tests/`：单元测试和集成测试
-
-## 设置与使用
-
-1. 克隆代码仓库：
-
-   ```sh
-   git clone https://github.com/JoshuaC215/agent-service-toolkit.git
-   cd agent-service-toolkit
-   ```
-
-2. 配置 Nacos：
-   在 Nacos 配置中心创建或维护 Data ID `agent-service-toolkit.yaml`（类型为 `YAML`）。从 [`.env.example`](./.env.example) 创建 `.env` 并通过 `APP_ENV=local|test` 选择环境，私密覆盖保存在 `.env.local` 或 `.env.test`。完整规则见[本地与测试环境配置说明](docs/Environment_Configuration.md)，其他服务账号及认证边界见[账号、凭据与用户身份梳理](docs/Accounts_and_Credentials.md)。
-
-3. 现在，你可以使用 Docker 或仅使用 Python，在本地运行智能体服务和 Streamlit 应用。推荐使用 Docker，以简化环境配置，并在代码发生更改时立即重新加载服务。
-
-### 特定 AI 提供商的额外设置
-
-- [设置阿里云百炼千问](docs/Alibaba_Bailian.md)
-- [移动端实时语音 API](docs/Voice_API.md)
-- [文件上传与 URL 查询 API](docs/File_Upload_API.md)
-- [语音触发的当前用户邮件发送技能](docs/Email_Skill.md)
-- [设置 Ollama](docs/Ollama.md)
-- [设置 VertexAI](docs/VertexAI.md)
-- [使用 PostgreSQL 设置 RAG 与记忆库](docs/RAG_Assistant.md)
-
-### 构建或自定义你自己的智能体
-
-要根据自己的使用场景自定义智能体：
-
-1. 将新智能体添加到 `src/agents` 目录。你可以复制 `research_assistant.py` 或 `chatbot.py`，然后修改其行为和工具。
-1. 导入新智能体，并将其添加到 `src/agents/agents.py` 中的 `agents` 字典。可通过 `/<your_agent_name>/invoke` 或 `/<your_agent_name>/stream` 调用你的智能体。
-1. 调整 `src/streamlit_app.py` 中的 Streamlit 界面，使其与智能体的能力相匹配。
-
-### 处理私有凭据文件
-
-如果你的智能体或选用的 LLM 需要基于文件的凭据或证书，项目提供了 `privatecredentials/` 目录，方便你进行开发。除 `.gitkeep` 文件外，其中的所有内容都会被 Git 和 Docker 构建过程忽略。有关建议用法，请参阅[使用基于文件的凭据](docs/File_Based_Credentials.md)。
-
-### Docker 设置
-
-本项目包含 Docker 配置，便于开发和部署。`compose.yaml` 文件定义了四个服务：`postgres`、`redis`、`agent_service` 和 `streamlit_app`。Redis 用于邮箱验证码有效期与发送频率限制；每个应用服务的 `Dockerfile` 位于对应目录中。
-
-远程 Linux 服务器的镜像构建、生产覆盖配置、HTTPS 接入和更新步骤见[单台 Linux 服务器部署说明](docs/Linux_Deployment.md)。不使用 Docker 时，可运行 `python3 scripts/package_linux.py` 生成源码部署包，CentOS Stream 9/10 的依赖安装、配置和 systemd 启动步骤见[CentOS 非 Docker 部署](docs/Linux_NoDocker_Deployment.md)。部署包要求 glibc 至少为 2.28，不支持 CentOS 7 默认环境。
-
-对于本地开发，建议使用 [docker compose watch](https://docs.docker.com/compose/file-watch/)。该功能会在检测到源代码更改时自动更新容器，从而提供更顺畅的开发体验。
-
-1. 确保系统中已安装 Docker 和 Docker Compose（>= [v2.24.0](https://docs.docker.com/compose/release-notes/#2240)）。
-
-2. 配置好 Nacos 中的 `agent-service-toolkit.yaml` 后，根据示例创建环境选择和私密配置文件：
-
-   ```sh
-   cp .env.example .env
-   cp .env.local.example .env.local
-   cp .env.test.example .env.test
-   # 编辑 .env 选择 APP_ENV；在对应的私密文件中填写 Nacos 凭据
-   ```
-
-3. 以监视模式构建并启动服务：
-
-   ```sh
-   docker compose watch
-   ```
-
-   这将自动执行以下操作：
-   - 启动智能体服务所连接的 PostgreSQL 和 Redis 服务
-   - 启动使用 FastAPI 的智能体服务
-   - 启动提供用户界面的 Streamlit 应用
-
-4. 现在，当你修改代码时，服务将自动更新：
-   - 对相关 Python 文件和目录的修改会触发对应服务的更新。
-   - 注意：如果修改了 `pyproject.toml` 或 `uv.lock` 文件，则需要运行 `docker compose up --build` 重新构建服务。
-
-5. 在 Web 浏览器中访问 `http://localhost:8501`，即可打开 Streamlit 应用。
-
-6. 智能体服务 API 的宿主机端口由 `AGENT_HOST_PORT` 决定；`.env.example` 使用 `8000`，因此可通过 `http://127.0.0.1:8000` 访问，也可通过 `http://127.0.0.1:8000/redoc` 查看 OpenAPI 文档。
-
-7. 使用 `docker compose down` 停止服务。
-
-借助此配置，你可以实时开发和测试更改，无需手动重启服务。
-
-### 基于 AgentClient 构建其他应用
-
-此代码仓库包含一个通用的 `src/client/client.AgentClient`，可用于与智能体服务交互。该客户端设计灵活，可用于在智能体之上构建其他应用。它同时支持同步和异步调用，以及流式和非流式请求。
-
-除流式和事件协议外，HTTP 业务接口统一返回 `code`、`message`、`data`：
-
-```json
-{
-  "code": 200,
-  "message": "success",
-  "data": {}
-}
-```
-
-HTTP 状态码与响应体中的 `code` 保持一致。成功默认使用 200；未处理异常默认使用 500；参数校验、认证、限流等已知异常保留各自的 HTTP 状态码。`/stream`、`/{agent_id}/stream` 使用 SSE，`/agui/*` 使用 AG-UI 协议，`/voice/sessions/{session_id}/ws` 使用 WebSocket 事件协议，因此不套用该 JSON 封装。FastAPI 自带的 `/docs`、`/redoc` 和 `/openapi.json` 也保持框架原有格式。
-
-聊天记录接口按智能体和用户隔离：`GET /{agent_id}/chat-records?user_id=...` 返回最近 30 个 UTC 自然日中有聊天活动的日期并按最新活动倒序排列；`GET /{agent_id}/chat-records/{YYYY-MM-DD}?user_id=...` 返回指定日期各会话当天新增的具体消息。省略 `agent_id` 时使用默认智能体，详情日期必须处于同一 30 天窗口内。
-
-有关如何使用 `AgentClient` 的完整示例，请参阅 `src/run_client.py` 文件。下面是一个简短示例：
-
-```python
-from client import AgentClient
-client = AgentClient()
-
-response = client.invoke("Tell me a brief joke?")
-response.pretty_print()
-# ================================== Ai Message ==================================
-#
-# A man walked into a library and asked the librarian, "Do you have any books on Pavlov's dogs and Schrödinger's cat?"
-# The librarian replied, "It rings a bell, but I'm not sure if it's here or not."
-
-```
-
-### 不使用 Docker 进行本地开发
-
-你也可以使用 Python 虚拟环境，在本地运行智能体服务和 Streamlit 应用。所有服务启动方式都使用 PostgreSQL 保存短期记忆和长期记忆；不再支持 SQLite、MongoDB 或内存回退。直接运行 `langgraph dev` 使用独立的开发运行时，不经过本项目的存储初始化，因此不作为本项目支持的服务启动方式。
-
-1. 创建虚拟环境并安装依赖：
-
-   ```sh
-   uv sync --frozen
-   source .venv/bin/activate
-   ```
-
-2. 准备 PostgreSQL。可以连接已有数据库，也可以只启动项目的数据库容器：
-
-   ```sh
-   docker compose up -d postgres
-   ```
-
-   当前 Nacos 部署的 Redis/PostgreSQL 连接信息只在配置中心维护。切换数据库时应更新 Nacos YAML 配置并提前创建数据库，不要在 `.env` 中重复设置连接字段。只有显式禁用 Nacos 时，应用才会使用代码中的本地开发默认值。
-
-3. 运行 FastAPI 服务器：
-
-   ```sh
-   python src/run_service.py
-   ```
-
-4. 在单独的终端中运行 Streamlit 应用：
-
-   ```sh
-   streamlit run src/streamlit_app.py
-   ```
-
-5. 打开浏览器，访问 Streamlit 提供的 URL（通常为 `http://localhost:8501`）。
-
-服务会自动创建检查点和长期记忆所需的表；PG 不可用时启动失败，不会回退到本地文件或内存。已有 `checkpoints.db` 不会自动迁移或删除。长期记忆仍由智能体通过 Store 显式写入。
-
-### Mem0 对话记忆
-
-新增的 `mem0-chatbot` 位于 agent 列表首位，作为文字聊天默认 agent，支持 PostgreSQL/pgvector 长期记忆以及语音流式播报与插话取消。用户可通过语音描述要修改或删除的记忆，经候选选择和语音确认后执行，也可列出记忆、清空自己的全部记忆和查询变更历史。`/memories` API 支持查询、修改、单条删除、按用户批量删除及变更历史，并提供同步/异步客户端方法。配置位于 Nacos 的 `memory.mem0`；默认关闭长期记忆，完成数据库准备后设置 `enabled: true` 并重启。配置、存储说明和验证方法见 [Mem0 对话记忆](docs/Mem0_Memory.md)。
-
-Mem0 的六项提示词（含 SDK 提取系统消息）由 Nacos 的 AI → Prompt 管理中心独立管理，程序在启动时通过官方 SDK 读取已发布版本，不使用本地提示词文件或默认正文。Prompt Key、标签和启动要求见 [Mem0 提示词配置](docs/Mem0_Memory.md#提示词配置)。
-
-### Nacos 3.x
-
-项目使用官方 `nacos-sdk-python` 连接 Nacos 3.x。Nacos 3 默认将控制台和客户端服务分开：控制台可位于 `http://127.0.0.1:8080/`，应用 SDK 应连接服务器端口 `127.0.0.1:8848`，并确保对应的 gRPC 端口 `9848` 可访问。
-
-项目内置 `local` 与 `test` 两套非敏感引导配置。修改 `.env` 中的 `APP_ENV=local|test` 即可切换，密码分别保存在不提交的 `.env.local` 与 `.env.test`；地址、加载优先级、Compose 差异和排障方式见[环境配置说明](docs/Environment_Configuration.md)。
-
-在 `.env` 中启用本地 Nacos。由于本项目也默认监听 `8080`，Nacos 控制台已经占用该端口时，需要同时为应用设置其他端口：
-
-```dotenv
-NACOS_ENABLED=true
-NACOS_SERVER_ADDR=127.0.0.1:8848
-NACOS_USERNAME=nacos
-NACOS_PASSWORD=replace-with-nacos-password
-NACOS_CONFIG_DATA_ID=agent-service-toolkit.yaml
-NACOS_STORAGE_CONFIG_REQUIRED=true
-NACOS_SERVICE_NAME=agent-service-toolkit
-NACOS_SERVICE_IP=127.0.0.1
-PORT=8000
-```
-
-使用 Docker Compose 运行应用、Nacos 运行在宿主机时，将 `NACOS_SERVER_ADDR` 改为 `host.docker.internal:8848`，并将 `NACOS_SERVICE_IP` 设置为调用方可以访问的地址。`NACOS_NAMESPACE_ID` 使用命名空间 ID（留空代表 public），`NACOS_GROUP_NAME` 默认为 `DEFAULT_GROUP`。
-
-已创建的存储配置使用 `public` 命名空间、`DEFAULT_GROUP` 分组和 `agent-service-toolkit.yaml` Data ID，配置类型为 `YAML`。配置直接在 Nacos 配置中心维护，并采用按功能分类的多级结构，例如：
-
-```yaml
-models:
-  dashscope:
-    api_key: replace-with-bailian-api-key
-
-storage:
-  redis:
-    url: redis://redis-host:6379/0
-  postgres:
-    user: database-user
-    password: database-password
-    host: postgres-host
-    port: 5432
-    database: agent_service
-  qiniu:
-    ak: xxx
-    sk: xxx
-    bucket_name: agent-service-toolkit-avatars
-    public_base_url: https://cdn.example.com
-    upload_token_ttl_seconds: 3600
-    avatar_max_bytes: 5242880
-
-voice:
-  enabled: true
-  realtime:
-    stt_model: qwen3-asr-flash-realtime
-    tts_model: qwen3-tts-flash-realtime
-    voices:
-      - id: Cherry
-        name: 芊悦
-        description: 阳光积极、亲切自然
-      - id: Serena
-        name: 苏瑶
-        description: 温柔自然
-      - id: Ethan
-        name: 晨煦
-        description: 阳光、温暖、活力
-      - id: Maia
-        name: 四月
-        description: 知性温柔
-      - id: Kai
-        name: 凯
-        description: 舒缓自然
-      - id: Neil
-        name: 阿闻
-        description: 字正腔圆的新闻主持风格
-  session:
-    max_sessions: 8
-    duration_seconds: 1800
-  vad:
-    silence_ms: 500
-    threshold: 0.2
-```
-
-也兼容已有 Java/Spring 风格的 `mail`（或 `spring.mail`）节点，例如：
-
-```yaml
-mail:
-  host: smtp.example.com
-  port: 465
-  username: mailer@example.com
-  password: replace-with-smtp-client-password
-  default-encoding: UTF-8
-  properties:
-    mail:
-      smtp:
-        ssl:
-          enable: true
-        socketFactory:
-          fallback: false
-          class: com.example.MailSocketFactory
-```
-
-`host`、`port`、`username` 和 `password` 会映射为对应的 `SMTP_*` 设置；未单独提供
-`SMTP_FROM_EMAIL` 时使用 `username`。`ssl.enable=true` 会启用 465 常用的隐式 SSL 并关闭
-STARTTLS；也支持 `starttls.enable`/`starttls.required`。`socketFactory` 是 Java 专属设置，加载时
-仅做兼容性校验，Python SMTP 不会使用其中的类名。当前邮件模板固定使用 UTF-8，因此其他
-`default-encoding` 值会被拒绝。
-
-`storage.qiniu` 用于用户头像上传。`ak`、`sk` 和 `public_base_url` 必须在部署前替换为
-七牛账号的真实访问密钥和桶绑定域名；`bucket_name` 对应预先创建的对象存储空间。服务端只
-接受 JPEG、PNG、GIF 和 WebP，默认最大 5 MiB。数据库保存由 `public_base_url` 和服务端
-生成对象键组成的完整 URL，不保存本地临时路径或客户端文件名。
-
-远程配置会在 PostgreSQL、Redis、邮箱认证、智能体和其他服务资源初始化前加载。分类式多级 YAML 会映射到现有 `Settings` 字段；为兼容已有部署，原有顶层大写字段以及 `mail`/`spring.mail` 格式仍可使用，但同一字段不能在扁平和多级结构中配置不同值。启用 Nacos 且配置 `NACOS_CONFIG_DATA_ID` 后，模型 API 密钥可以只保存在远程 YAML 中；远程配置应用完成后仍会校验至少有一个可用模型 Provider。当 `NACOS_STORAGE_CONFIG_REQUIRED=true` 时，Redis/PostgreSQL 六个存储字段任一缺失、内容为空、类型错误或 Nacos 不可用都会导致启动失败，不会回退到 `.env` 或代码默认值。启用邮箱认证时，`APP_TOKEN_SECRET` 以及完整的 SMTP 字段也必须存在且有效。远程值会覆盖本地环境中的同名设置，因此数据库连接池、RAG、邮件认证、语音、模型和检查点存储均优先使用 Nacos 配置。
-
-`APP_ENV`、`NACOS_*` 连接参数以及 `HOST`、`PORT`、`MODE`、`LOG_LEVEL`、`GRACEFUL_SHUTDOWN_TIMEOUT` 属于引导配置，不能由 Nacos 远程 YAML 覆盖。当前实现只在启动时加载配置，修改环境选择或 Nacos 配置后需重启应用。若仅使用服务注册与发现，可显式设置 `NACOS_STORAGE_CONFIG_REQUIRED=false` 并不配置 `NACOS_CONFIG_DATA_ID`。若只使用配置中心而不注册当前服务，可设置 `NACOS_REGISTER_SERVICE=false`。运行期间可从 `app.state.nacos.list_instances(...)` 查询健康实例。
-
-## 使用 agent-service-toolkit 构建或受其启发的项目
-
-以下是部分借鉴了本代码仓库的代码或受其启发的公开项目。
-
-- **[PolyRAG](https://github.com/QuentinFuxa/PolyRAG)** - 扩展了 agent-service-toolkit，增加了基于 PostgreSQL 数据库和 PDF 文档的 RAG 能力。
-- **[alexrisch/agent-web-kit](https://github.com/alexrisch/agent-web-kit)** - agent-service-toolkit 的 Next.js 前端
-- **[raushan-in/dapa](https://github.com/raushan-in/dapa)** - Digital Arrest Protection App（DAPA，数字逮捕防护应用）通过用户友好的平台，帮助用户高效举报金融诈骗和欺诈行为。
-
-**如有新的项目需要添加，请提交一个编辑 README 的拉取请求或发起讨论！** 非常欢迎收录更多项目。
-
-## 贡献
-
-欢迎贡献！请随时提交拉取请求。
-
-**关于本代码仓库维护方式的说明：** 这是一个由个人维护的项目，issue、PR 和讨论大约每两周集中处理一次，并由一个 AI 维护智能体提供协助。如果回复需要一到两周时间，敬请耐心等待——对于确实紧急的问题（漏洞报告等）或正在进行的 PR，我会尽力在几天内回复。如果你对具体运作方式感兴趣，可以在 [`docs/maintenance/`](docs/maintenance/) 中查看纳入版本控制的完整自动化操作手册。
-
-目前，测试需要在不使用 Docker 的本地开发环境中运行。要运行智能体服务的测试：
-
-1. 确保当前位于项目根目录，并且已经激活虚拟环境。
-
-2. 安装开发依赖和 pre-commit 钩子：
-
-   ```sh
-   uv sync --frozen
-   pre-commit install
-   ```
-
-3. 使用 pytest 运行测试：
-
-   ```sh
-   pytest
-   ```
-
-### 可选依赖项的冒烟测试
-
-某些集成不会在单元测试套件或默认 CI 运行中进行测试，因为它们需要真实的基础设施：PostgreSQL 检查点和长期记忆存储、AG-UI 端点以及 LangFuse 追踪。`scripts/smoke_test.sh` 会在 Docker 中启动每项依赖，针对该依赖运行服务，端到端验证集成（包括直接验证 PostgreSQL 中的记录和重新连接后的记忆读取），然后将其关闭。
-
-```sh
-./scripts/smoke_test.sh                 # 默认：postgres、agui
-./scripts/smoke_test.sh postgres        # 单个目标
-./scripts/smoke_test.sh langfuse        # 重型：启动完整的 LangFuse 自托管技术栈
-./scripts/smoke_test.sh all             # 全部，包括 langfuse
-```
-
-这些是供维护者或智能体选择性运行的可信度检查，并非 CI 的一部分。请运行与你的更改相匹配的目标，而非整套测试。冒烟测试使用独立的 Compose 项目和端口，避免清理日常开发的数据卷。
-
-## 许可证
-
-本项目采用 MIT 许可证授权——详情请参阅 LICENSE 文件。
+在线与离线：[飞书 AI 知识库专题](https://k0ddd9qp4r.feishu.cn/wiki/OMg9wT217iHU1EkxWOScqkqNnJb) · [知识库分类导航](docs/architecture/Wiki_Index.md) · [离线 HTML 图册](docs/architecture/Architecture_Atlas.html) · [图稿与文档下载包](docs/architecture/Mem0_Architecture_Package.zip)。
