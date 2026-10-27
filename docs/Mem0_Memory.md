@@ -49,16 +49,16 @@ memory:
   mem0:
     research:
       enabled: true
-      timeout_seconds: 20
+      timeout_seconds: 90
       final_timeout_seconds: 15
-      search_timeout_seconds: 5
+      search_timeout_seconds: 60
 ```
 
 对应环境变量为 `MEM0_RESEARCH_ENABLED`、`MEM0_RESEARCH_TIMEOUT_SECONDS`、`MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS` 和 `RESEARCH_SEARCH_TIMEOUT_SECONDS`，Compose 同样传入这些字段。Nacos 中的值优先，配置更新后重启后端生效；设置 `enabled: false` 可关闭委派，原有聊天和记忆功能继续工作。长期记忆开关 `MEM0_ENABLED` 与研究开关独立。
 
 用户可输入或说“帮我联网查一下最新的公开消息”。主 agent 将问题和必要条件整理为最多 2000 字符的搜索任务，子图复用 Research 的 WebSearch 和 Safeguard，先搜索一次，再用同一个选定的聊天模型关闭思考、整理证据。省去子图内决定是否搜索的模型调用，每轮最多委派一次、最多返回四条来源。DDGS 默认自动选择搜索后端，需要后端能访问相关外部站点。外部搜索收到模型整理的查询；规则要求不附带全部记忆和无关私密资料，这属于模型约束，不能视为确定性的敏感信息过滤器。
 
-搜索调用默认最多等待 5 秒，包含安全检查、搜索和证据整理的子任务合计最多等待 20 秒，主 agent 的最终回答另限 15 秒。后两项范围为 1–60 秒，搜索超时范围为 1–15 秒。研究失败、无结果或超时时直接返回明确提示，不再追加模型调用或伪造联网结论。正常搜索路径包含主 agent 的委派决策、子 agent 的证据整理和主 agent 的最终回答，共三次回答模型调用；启用 Groq 时另有原有安全审核。上述预算不包含原有邮件/记忆/视频识别、记忆检索/提取及首次聊天模型调用，因此不是端到端响应时间承诺。普通聊天的原有流式输出继续保留。
+搜索调用默认最多等待 60 秒，包含安全检查、搜索和证据整理的子任务合计最多等待 90 秒，主 agent 的最终回答另限 15 秒。研究子任务范围为 1–120 秒，搜索和最终回答超时范围均为 1–60 秒。研究失败、无结果或超时时直接返回明确提示，不再追加模型调用或伪造联网结论。正常搜索路径包含主 agent 的委派决策、子 agent 的证据整理和主 agent 的最终回答，共三次回答模型调用；启用 Groq 时另有原有安全审核。上述预算不包含原有邮件/记忆/视频识别、记忆检索/提取及首次聊天模型调用，因此不是端到端响应时间承诺。普通聊天的原有流式输出继续保留。
 
 同步搜索在工作线程中执行，每进程最多四个未完成请求；满载时立即报告暂不可用，不建立无界等待队列。异步超时或语音取消不会阻塞事件循环；底层同步请求不能被强制终止，在实际退出前继续占用并发名额，并有原生网络超时。独立 Research agent 的异步 WebSearch 同样受搜索超时和并发限制。
 
@@ -323,7 +323,7 @@ result = client.delete_all_memories(user_id="alice")
 
 通过 `python src/run_service.py` 启动时，统一使用标准库 logging 与 JSON formatter。在本地引导配置中设置 `LOG_LEVEL=INFO` 可查看 agent 开始/完成、记忆命中数量、写入数量、耗时与错误类型；`LOG_FORMAT=text` 可切换文本日志。这两个字段不能由 Nacos 覆盖。日志不输出用户消息、检索事实、连接串、密钥或原始音频，并过滤可能输出供应商载荷的 SDK 日志。Mem0 遥测在加载 SDK 前关闭。
 
-首字延时可结合三类 INFO 日志定位：`Mem0 video routing completed` 记录视频识别耗时，`Mem0 answer started preparation_ms` 记录进入 agent 到回答模型调用前的准备时间，`Agent first text run_id=... duration_ms=... output=token|message` 每轮只记录一次首个根级可见文本。最后一项从公共事件迭代器开始执行时计时，不包含先前 HTTP 认证、ASR 或 TTS，也不能当作用户说完到听到首音的端到端延时。记忆操作的独立耗时仍见 `Mem0 operation completed`；并行阶段的耗时存在重叠，不应直接相加。
+首字延时可结合三类 INFO 日志定位：`Mem0 operation completed operation=search` 记录记忆检索耗时，`Model first output stage=main_initial` 区分主模型首个正文和工具调用，`Agent first text run_id=... duration_ms=... output=token|message` 每轮只记录一次根级可见文本。最后一项从公共事件迭代器开始执行时计时，不包含先前 HTTP 认证、ASR 或 TTS，也不能当作用户说完到听到首音的端到端延时。`Mem0 answer started preparation_ms` 还可定位进入 agent 到回答模型调用前的准备时间；并行阶段的耗时存在重叠，不应直接相加。
 
 ```sh
 uv sync --frozen

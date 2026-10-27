@@ -236,9 +236,9 @@ class Settings(BaseSettings):
 
     OPENWEATHERMAP_API_KEY: SecretStr | None = None
     MEM0_RESEARCH_ENABLED: bool = True
-    MEM0_RESEARCH_TIMEOUT_SECONDS: float = Field(default=20, ge=1, le=60)
+    MEM0_RESEARCH_TIMEOUT_SECONDS: float = Field(default=90, ge=1, le=120)
     MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS: float = Field(default=15, ge=1, le=60)
-    RESEARCH_SEARCH_TIMEOUT_SECONDS: float = Field(default=5, ge=1, le=15)
+    RESEARCH_SEARCH_TIMEOUT_SECONDS: float = Field(default=60, ge=1, le=60)
 
     # MCP Configuration
     GITHUB_PAT: SecretStr | None = None
