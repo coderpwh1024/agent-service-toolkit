@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1510" viewBox="0 0 1600 1510" role="img" aria-labelledby="title desc"><title id="title">语音延时观测：首字、首包与首声</title><desc id="desc">服务端与手机计时窗口不同。端到端停说至声学首声尚无完整实测，不将配置阈值当作延时。</desc>
+<rect width="1600" height="1510" fill="#FCFBF8"/>
+<g font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" fill="#242721">
+<text x="60" y="58" font-size="16" fill="#72766C" font-weight="600" text-anchor="start">05  /  LATENCY MAP</text>
+<text x="60" y="112" font-size="42" fill="#242721" font-weight="600" text-anchor="start">语音延时观测：首字、首包与首声</text>
+<text x="60" y="151" font-size="21" fill="#72766C" font-weight="400" text-anchor="start">所有节点只表达先后关系，横向距离不代表真实时间；配置阈值与历史样本分开展示。</text>
+<rect x="60" y="183" width="307" height="34" rx="17" fill="#FCF0E4" stroke="#FCF0E4" stroke-width="1"/>
+<text x="213.5" y="206" font-size="18" fill="#AF713D" font-weight="500" text-anchor="middle">停说 → 真正出声：P50 / P95 待测</text>
+<line x1="115" y1="322" x2="263" y2="322" stroke="#DDE2DB" stroke-width="2.3"/>
+<polygon points="263.0,322.0 253.5,327.5 253.5,316.5" fill="#DDE2DB"/>
+<line x1="285" y1="322" x2="433" y2="322" stroke="#DDE2DB" stroke-width="2.3"/>
+<polygon points="433.0,322.0 423.5,327.5 423.5,316.5" fill="#DDE2DB"/>
+<line x1="455" y1="322" x2="603" y2="322" stroke="#DDE2DB" stroke-width="2.3"/>
+<polygon points="603.0,322.0 593.5,327.5 593.5,316.5" fill="#DDE2DB"/>
+<line x1="625" y1="322" x2="773" y2="322" stroke="#DDE2DB" stroke-width="2.3"/>
+<polygon points="773.0,322.0 763.5,327.5 763.5,316.5" fill="#DDE2DB"/>
+<line x1="795" y1="322" x2="943" y2="322" stroke="#DDE2DB" stroke-width="2.3"/>
+<polygon points="943.0,322.0 933.5,327.5 933.5,316.5" fill="#DDE2DB"/>
+<line x1="965" y1="322" x2="1113" y2="322" stroke="#DDE2DB" stroke-width="2.3"/>
+<polygon points="1113.0,322.0 1103.5,327.5 1103.5,316.5" fill="#DDE2DB"/>
+<line x1="1135" y1="322" x2="1283" y2="322" stroke="#DDE2DB" stroke-width="2.3"/>
+<polygon points="1283.0,322.0 1273.5,327.5 1273.5,316.5" fill="#DDE2DB"/>
+<line x1="1305" y1="322" x2="1453" y2="322" stroke="#DDE2DB" stroke-width="2.3"/>
+<polygon points="1453.0,322.0 1443.5,327.5 1443.5,316.5" fill="#DDE2DB"/>
+<circle cx="105" cy="322" r="12" fill="#AF713D" stroke="none"/>
+<line x1="105" y1="308" x2="105" y2="278" stroke="#AF713D" stroke-width="1.3"/>
+<text x="105" y="260" font-size="18" fill="#AF713D" font-weight="600" text-anchor="middle">用户停说</text>
+<text x="105" y="286" font-size="17" fill="#72766C" font-weight="400" text-anchor="middle">设备侧 EOS</text>
+<circle cx="275" cy="322" r="12" fill="#187C91" stroke="none"/>
+<line x1="275" y1="336" x2="275" y2="344" stroke="#187C91" stroke-width="1.3"/>
+<text x="275" y="368" font-size="18" fill="#187C91" font-weight="600" text-anchor="middle">ASR final</text>
+<text x="275" y="394" font-size="17" fill="#72766C" font-weight="400" text-anchor="middle">识别 / 句末确认</text>
+<circle cx="445" cy="322" r="12" fill="#7E6397" stroke="none"/>
+<line x1="445" y1="308" x2="445" y2="278" stroke="#7E6397" stroke-width="1.3"/>
+<text x="445" y="260" font-size="18" fill="#7E6397" font-weight="600" text-anchor="middle">accepted · a0</text>
+<text x="445" y="286" font-size="17" fill="#72766C" font-weight="400" text-anchor="middle">服务端计时起点</text>
+<circle cx="615" cy="322" r="12" fill="#6D755F" stroke="none"/>
+<line x1="615" y1="336" x2="615" y2="344" stroke="#6D755F" stroke-width="1.3"/>
+<text x="615" y="368" font-size="18" fill="#6D755F" font-weight="600" text-anchor="middle">first_text · a1</text>
+<text x="615" y="394" font-size="17" fill="#72766C" font-weight="400" text-anchor="middle">首个文字增量</text>
+<circle cx="785" cy="322" r="12" fill="#6D755F" stroke="none"/>
+<line x1="785" y1="308" x2="785" y2="278" stroke="#6D755F" stroke-width="1.3"/>
+<text x="785" y="260" font-size="18" fill="#6D755F" font-weight="600" text-anchor="middle">first_speech · a2</text>
+<text x="785" y="286" font-size="17" fill="#72766C" font-weight="400" text-anchor="middle">首段待合成文本</text>
+<circle cx="955" cy="322" r="12" fill="#187C91" stroke="none"/>
+<line x1="955" y1="336" x2="955" y2="344" stroke="#187C91" stroke-width="1.3"/>
+<text x="955" y="368" font-size="18" fill="#187C91" font-weight="600" text-anchor="middle">first_audio · a3</text>
+<text x="955" y="394" font-size="17" fill="#72766C" font-weight="400" text-anchor="middle">首包 PCM 产出</text>
+<circle cx="1125" cy="322" r="12" fill="#187C91" stroke="none"/>
+<line x1="1125" y1="308" x2="1125" y2="278" stroke="#187C91" stroke-width="1.3"/>
+<text x="1125" y="260" font-size="18" fill="#187C91" font-weight="600" text-anchor="middle">audio_sent · a4</text>
+<text x="1125" y="286" font-size="17" fill="#72766C" font-weight="400" text-anchor="middle">已交 WebSocket</text>
+<circle cx="1295" cy="322" r="12" fill="#187C91" stroke="none"/>
+<line x1="1295" y1="336" x2="1295" y2="344" stroke="#187C91" stroke-width="1.3"/>
+<text x="1295" y="368" font-size="18" fill="#187C91" font-weight="600" text-anchor="middle">手机收首包</text>
+<text x="1295" y="394" font-size="17" fill="#72766C" font-weight="400" text-anchor="middle">Dart 收到音频</text>
+<circle cx="1465" cy="322" r="12" fill="#AF713D" stroke="none"/>
+<line x1="1465" y1="308" x2="1465" y2="278" stroke="#AF713D" stroke-width="1.3"/>
+<text x="1465" y="260" font-size="18" fill="#AF713D" font-weight="600" text-anchor="middle">真实首声</text>
+<text x="1465" y="286" font-size="17" fill="#72766C" font-weight="400" text-anchor="middle">扬声器 / 耳机</text>
+<text x="1380" y="359" font-size="16" fill="#72766C" font-weight="400" text-anchor="middle">原生入队</text>
+<rect x="425" y="431" width="720" height="68" rx="12" fill="#F1EDF6" stroke="#F1EDF6" stroke-width="1"/>
+<text x="448" y="458" font-size="22" fill="#7E6397" font-weight="600" text-anchor="start">服务端时钟：以 accepted 为零点</text>
+<text x="448" y="485" font-size="18" fill="#72766C" font-weight="400" text-anchor="start">涵盖本轮入队、线程协调、检索、生成及下行前的排队</text>
+<line x1="445" y1="416" x2="1125" y2="416" stroke="#7E6397" stroke-width="3"/>
+<line x1="445" y1="406" x2="445" y2="426" stroke="#7E6397" stroke-width="3"/>
+<line x1="1125" y1="406" x2="1125" y2="426" stroke="#7E6397" stroke-width="3"/>
+<rect x="665" y="520" width="650" height="68" rx="12" fill="#E8F3F4" stroke="#E8F3F4" stroke-width="1"/>
+<text x="687" y="547" font-size="21" fill="#187C91" font-weight="600" text-anchor="start">手机时钟：收到 response.started 才启动</text>
+<text x="687" y="574" font-size="18" fill="#72766C" font-weight="400" text-anchor="start">记录首字 / 首包 / 原生入队；与服务端窗口不能直接相减</text>
+<rect x="60" y="431" width="330" height="157" rx="14" fill="#FCF0E4" stroke="#FCF0E4" stroke-width="1"/>
+<text x="82" y="462" font-size="23" fill="#AF713D" font-weight="600" text-anchor="start">当前没有覆盖</text>
+<text x="82" y="498" font-size="19" fill="#72766C" font-weight="400" text-anchor="start">停说 → ASR final 的完整时间</text>
+<text x="82" y="529" font-size="19" fill="#72766C" font-weight="400" text-anchor="start">网络下行 → 硬件实际出声</text>
+<text x="82" y="560" font-size="19" fill="#72766C" font-weight="400" text-anchor="start">原生入队 ≠ 声学首声</text>
+<rect x="60" y="616" width="1480" height="111" rx="16" fill="#EEF0E8" stroke="#EEF0E8" stroke-width="1"/>
+<text x="85" y="649" font-size="23" fill="#6D755F" font-weight="600" text-anchor="start">TTS 与 Agent 并行：tts_ready 是并发里程碑</text>
+<text x="85" y="684" font-size="21" fill="#72766C" font-weight="400" text-anchor="start">首包时刻取决于“连接已就绪”与“首段文本已到达”两者；不能把 tts_ready_ms 再串行相加。</text>
+<text x="60" y="781" font-size="27" fill="#242721" font-weight="600" text-anchor="start">能从现有字段计算什么</text>
+<rect x="60" y="804" width="718" height="264" rx="14" fill="#FFFFFF" stroke="#DDE2DB" stroke-width="1"/>
+<rect x="80" y="823" width="131" height="34" rx="17" fill="#F1EDF6" stroke="#F1EDF6" stroke-width="1"/>
+<text x="145.5" y="846" font-size="18" fill="#7E6397" font-weight="500" text-anchor="middle">服务端字段</text>
+<text x="82" y="883" font-size="20" fill="#242721" font-weight="400" text-anchor="start">首字：first_text_ms = a1 − a0</text>
+<text x="82" y="919" font-size="20" fill="#242721" font-weight="400" text-anchor="start">首段：first_speech_ms = a2 − a0</text>
+<text x="82" y="955" font-size="20" fill="#242721" font-weight="400" text-anchor="start">首包：first_audio_ms = a3 − a0</text>
+<text x="82" y="991" font-size="20" fill="#242721" font-weight="400" text-anchor="start">发送：first_audio_sent_ms = a4 − a0</text>
+<text x="82" y="1027" font-size="20" fill="#242721" font-weight="400" text-anchor="start">首字到首包：text_to_audio_ms = a3 − a1</text>
+<rect x="802" y="804" width="738" height="264" rx="14" fill="#FFFFFF" stroke="#DDE2DB" stroke-width="1"/>
+<rect x="822" y="823" width="131" height="34" rx="17" fill="#E8F3F4" stroke="#E8F3F4" stroke-width="1"/>
+<text x="887.5" y="846" font-size="18" fill="#187C91" font-weight="500" text-anchor="middle">手机侧字段</text>
+<text x="824" y="883" font-size="20" fill="#242721" font-weight="400" text-anchor="start">first_text_ms：response.started → text.delta</text>
+<text x="824" y="919" font-size="20" fill="#242721" font-weight="400" text-anchor="start">first_audio_received_ms：→ Dart 收到首包</text>
+<text x="824" y="955" font-size="20" fill="#242721" font-weight="400" text-anchor="start">native_enqueue_ms：音频桥 enqueue 调用耗时</text>
+<text x="824" y="991" font-size="20" fill="#242721" font-weight="400" text-anchor="start">text_to_audio_ms：同一设备首字 → 首包</text>
+<text x="824" y="1027" font-size="20" fill="#242721" font-weight="400" text-anchor="start">缺失：原生首帧渲染 / 声学首声时间点</text>
+<text x="60" y="1120" font-size="27" fill="#242721" font-weight="600" text-anchor="start">代码参数 / 超时策略</text>
+<text x="60" y="1154" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">这些值表达缓冲与保护条件，并非实测延时或端到端 SLA。</text>
+<line x1="60" y1="1176" x2="1540" y2="1176" stroke="#DDE2DB" stroke-width="2"/>
+<text x="60" y="1215" font-size="23" fill="#6D755F" font-weight="600" text-anchor="start">句末与文本缓冲</text>
+<text x="60" y="1255" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">VAD 静音默认 500 ms</text>
+<text x="60" y="1288" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">首段 24 字 / 约 180 ms 刷出</text>
+<text x="60" y="1321" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">后续 ≤160 字 / 约 400 ms 刷出</text>
+<text x="570" y="1215" font-size="23" fill="#187C91" font-weight="600" text-anchor="start">音频设备</text>
+<text x="570" y="1255" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">Android 采集块 40 ms</text>
+<text x="570" y="1288" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">Android 12+ 请求 40 ms 起播阈值</text>
+<text x="570" y="1321" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">iOS 首选 I/O 20 ms；tap 随硬件率</text>
+<text x="1080" y="1215" font-size="23" fill="#AF713D" font-weight="600" text-anchor="start">TTS 首包保护</text>
+<text x="1080" y="1255" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">单段首包期限最多 5 s</text>
+<text x="1080" y="1288" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">未下发音频时最多尝试 3 次</text>
+<text x="1080" y="1321" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">已发部分 PCM 不自动重播</text>
+<rect x="60" y="1373" width="1480" height="89" rx="14" fill="#FCF0E4" stroke="#FCF0E4" stroke-width="1"/>
+<text x="83" y="1407" font-size="23" fill="#AF713D" font-weight="600" text-anchor="start">历史 HTTP 样本：首字均值 1.376 s（n = 3，2026-10-26）</text>
+<text x="83" y="1440" font-size="20" fill="#72766C" font-weight="400" text-anchor="start">约为检索 275 ms + 主模型 1065 ms + 其他 36 ms；不含 ASR、TTS 和声学，不是本次语音实测。</text>
+<text x="60" y="1490" font-size="17" fill="#72766C" font-weight="400" text-anchor="start">证据：voice/session.py · Flutter voice_session_controller.dart · 原生音频桥 · docs/maintenance/Chat_Latency_Optimization.md</text>
+</g></svg>

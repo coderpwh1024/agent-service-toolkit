@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1370" viewBox="0 0 1600 1370">
+<rect width="1600" height="1370" fill="#FCFBF8"/>
+<text x="64" y="57" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="600" text-anchor="start" letter-spacing="3">ARCHITECTURE  /  01</text>
+<text x="64" y="112" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="38" fill="#242B2D" font-weight="600" text-anchor="start">以 Mem0 为中心的系统技术架构</text>
+<text x="64" y="148" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">两个交互入口，共享业务与数据；Flutter 负责实时音频终端，后端掌握模型、工具和权限。</text>
+<line x1="64" y1="1305" x2="1536" y2="1305" stroke="#DCE1DC" stroke-width="1"/>
+<text x="64" y="1338" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15" fill="#697378" font-weight="400" text-anchor="start">基于当前工作区源码 · 2026-10-27 · 图中开关表示可配置能力，不代表线上已启用</text>
+<text x="1536" y="1338" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="16" fill="#227D83" font-weight="600" text-anchor="end">01</text>
+<circle cx="79" cy="188" r="15" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<text x="79" y="193" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#FFFFFF" font-weight="600" text-anchor="middle">A</text>
+<text x="105" y="195" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#227D83" font-weight="600" text-anchor="start">用户交互层</text>
+<rect x="64" y="219" width="600" height="152" rx="16" fill="#E9F4F2" stroke="#227D83" stroke-width="1.5"/>
+<circle cx="109" cy="264" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<rect x="103" y="249" width="12" height="22" rx="6" fill="none" stroke="#227D83" stroke-width="2"/>
+<path d="M 97 264 v 4 a 12 12 0 0 0 24 0 v -4 M 109 280 v 5 M 102 285 h 14" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="150" y="258" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#242B2D" font-weight="600" text-anchor="start">Flutter · agent-voice-app</text>
+<text x="150" y="293" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">Dart 页面 / 会话控制器 / WebSocket</text>
+<text x="150" y="322" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">Android Kotlin · iOS Swift 原生采集、AEC 与播放</text>
+<rect x="470" y="232" width="164" height="29" rx="14" fill="#D6EBE8" stroke="none" stroke-width="0"/>
+<text x="484" y="252" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="600" text-anchor="start">实时语音主入口</text>
+<rect x="694" y="219" width="450" height="152" rx="16" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<circle cx="739" cy="264" r="25" fill="#EFF1E8" stroke="none" stroke-width="1.5"/>
+<path d="M 739 255 Q 728 249 724 254 V 277 Q 730 273 739 278 Q 748 273 754 277 V 254 Q 748 249 739 255 V 278" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="780" y="258" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#242B2D" font-weight="600" text-anchor="start">Streamlit</text>
+<text x="780" y="293" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">录音文件 ASR → HTTP / SSE</text>
+<text x="780" y="322" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">完整回答结束后合成 WAV</text>
+<rect x="1174" y="219" width="362" height="152" rx="16" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<circle cx="1219" cy="264" r="25" fill="#F1EDF6" stroke="none" stroke-width="1.5"/>
+<circle cx="1219" cy="264" r="13" fill="none" stroke="#79628F" stroke-width="2"/>
+<circle cx="1219" cy="264" r="5" fill="none" stroke="#79628F" stroke-width="2"/>
+<line x1="1219" y1="245" x2="1219" y2="251" stroke="#79628F" stroke-width="2"/>
+<line x1="1219" y1="277" x2="1219" y2="283" stroke="#79628F" stroke-width="2"/>
+<line x1="1200" y1="264" x2="1206" y2="264" stroke="#79628F" stroke-width="2"/>
+<line x1="1232" y1="264" x2="1238" y2="264" stroke="#79628F" stroke-width="2"/>
+<line x1="1205" y1="250" x2="1210" y2="255" stroke="#79628F" stroke-width="2"/>
+<line x1="1228" y1="273" x2="1233" y2="278" stroke="#79628F" stroke-width="2"/>
+<line x1="1205" y1="278" x2="1210" y2="273" stroke="#79628F" stroke-width="2"/>
+<line x1="1228" y1="255" x2="1233" y2="250" stroke="#79628F" stroke-width="2"/>
+<text x="1260" y="258" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="23" fill="#242B2D" font-weight="600" text-anchor="start">AG-UI / API 客户端</text>
+<text x="1198" y="303" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">AG-UI 独立协议适配</text>
+<text x="1198" y="332" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">复用身份、线程归属与运行锁</text>
+<path d="M 364 371 L 364 409" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="359,400 369,400 364,409" fill="#227D83"/>
+<path d="M 919 371 L 919 409" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="914,400 924,400 919,409" fill="#6D755F"/>
+<path d="M 1355 371 L 1355 409" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="1350,400 1360,400 1355,409" fill="#6D755F"/>
+<rect x="64" y="409" width="1472" height="86" rx="16" fill="#242B2D" stroke="#242B2D" stroke-width="1.5"/>
+<circle cx="109" cy="452" r="25" fill="#3A4B4C" stroke="none" stroke-width="1.5"/>
+<path d="M 109 436 L 123 442 V 453 Q 123 463 109 470 Q 95 463 95 453 V 442 Z M 102 452 l 5 5 10 -11" fill="none" stroke="#E9F4F2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="153" y="446" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#FFFFFF" font-weight="600" text-anchor="start">FastAPI 统一访问边界</text>
+<text x="153" y="476" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#E2E9E6" font-weight="400" text-anchor="start">Bearer / App Token  ·  user_id 绑定  ·  thread / run 所有权  ·  PostgreSQL 线程运行锁</text>
+<path d="M 800 495 L 800 541" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="795,532 805,532 800,541" fill="#227D83"/>
+<circle cx="79" cy="538" r="15" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<text x="79" y="543" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#FFFFFF" font-weight="600" text-anchor="middle">B</text>
+<text x="105" y="545" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#227D83" font-weight="600" text-anchor="start">运行与编排</text>
+<rect x="64" y="571" width="356" height="222" rx="16" fill="#E9F4F2" stroke="#227D83" stroke-width="1.5"/>
+<circle cx="109" cy="615" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<rect x="103" y="600" width="12" height="22" rx="6" fill="none" stroke="#227D83" stroke-width="2"/>
+<path d="M 97 615 v 4 a 12 12 0 0 0 24 0 v -4 M 109 631 v 5 M 102 636 h 14" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="149" y="620" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">实时语音适配</text>
+<text x="88" y="667" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">/voice/sessions/{id}/ws</text>
+<text x="88" y="697" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">百炼实时 ASR → 最终转写</text>
+<text x="88" y="727" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">文本分段 → 百炼流式 TTS</text>
+<text x="88" y="757" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">上行 16 kHz / 下行 24 kHz</text>
+<rect x="460" y="571" width="644" height="222" rx="20" fill="#FFFFFF" stroke="#227D83" stroke-width="2.5"/>
+<circle cx="505" cy="615" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="497" cy="605" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="513" cy="605" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="492" cy="619" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="505" cy="615" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="518" cy="619" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="500" cy="629" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="512" cy="629" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<line x1="497" y1="605" x2="505" y2="615" stroke="#227D83" stroke-width="1.8"/>
+<line x1="513" y1="605" x2="505" y2="615" stroke="#227D83" stroke-width="1.8"/>
+<line x1="492" y1="619" x2="505" y2="615" stroke="#227D83" stroke-width="1.8"/>
+<line x1="505" y1="615" x2="518" y2="619" stroke="#227D83" stroke-width="1.8"/>
+<line x1="505" y1="615" x2="500" y2="629" stroke="#227D83" stroke-width="1.8"/>
+<line x1="505" y1="615" x2="512" y2="629" stroke="#227D83" stroke-width="1.8"/>
+<text x="545" y="620" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="29" fill="#242B2D" font-weight="600" text-anchor="start">mem0-chatbot</text>
+<rect x="878" y="589" width="194" height="29" rx="14" fill="#E9F4F2" stroke="none" stroke-width="0"/>
+<text x="892" y="609" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="600" text-anchor="start">默认业务 Agent</text>
+<text x="484" y="665" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">graph_events：共享 Agent 事件 → SSE / 实时语音</text>
+<text x="484" y="696" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">邮件与记忆命令先分流；普通对话可委派研究或加载视频</text>
+<text x="484" y="727" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">聊天 LLM：百炼 / 其他供应商；默认模型由配置决定</text>
+<rect x="484" y="750" width="590" height="29" rx="14" fill="#EFF1E8" stroke="none" stroke-width="0"/>
+<text x="498" y="770" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#6D755F" font-weight="600" text-anchor="start">其他注册 Agent 为并列入口，不是 Mem0 子 Agent</text>
+<rect x="1144" y="571" width="392" height="222" rx="16" fill="#F1EDF6" stroke="#79628F" stroke-width="1.5"/>
+<circle cx="1189" cy="615" r="25" fill="#F1EDF6" stroke="none" stroke-width="1.5"/>
+<circle cx="1189" cy="615" r="13" fill="none" stroke="#79628F" stroke-width="2"/>
+<circle cx="1189" cy="615" r="5" fill="none" stroke="#79628F" stroke-width="2"/>
+<line x1="1189" y1="596" x2="1189" y2="602" stroke="#79628F" stroke-width="2"/>
+<line x1="1189" y1="628" x2="1189" y2="634" stroke="#79628F" stroke-width="2"/>
+<line x1="1170" y1="615" x2="1176" y2="615" stroke="#79628F" stroke-width="2"/>
+<line x1="1202" y1="615" x2="1208" y2="615" stroke="#79628F" stroke-width="2"/>
+<line x1="1175" y1="601" x2="1180" y2="606" stroke="#79628F" stroke-width="2"/>
+<line x1="1198" y1="624" x2="1203" y2="629" stroke="#79628F" stroke-width="2"/>
+<line x1="1175" y1="629" x2="1180" y2="624" stroke="#79628F" stroke-width="2"/>
+<line x1="1198" y1="606" x2="1203" y2="601" stroke="#79628F" stroke-width="2"/>
+<text x="1229" y="620" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">Nacos 管理</text>
+<text x="1168" y="666" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">普通配置：模型 / 存储 / 功能开关</text>
+<text x="1168" y="696" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">6 条版本化 Mem0 Prompts</text>
+<text x="1168" y="726" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">2 个 Skill 包：邮件 / 视频</text>
+<text x="1168" y="756" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">启动加载；远程脚本不执行</text>
+<path d="M 420 676 L 460 676" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="451,671 451,681 460,676" fill="#227D83"/>
+<path d="M 1144 676 L 1104 676" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="7 6"/>
+<polygon points="1113,671 1113,681 1104,676" fill="#79628F"/>
+<path d="M 782 793 L 782 827" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="777,818 787,818 782,827" fill="#227D83"/>
+<line x1="284" y1="827" x2="1300" y2="827" stroke="#227D83" stroke-width="2"/>
+<path d="M 284 827 L 284 857" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="279,848 289,848 284,857" fill="#227D83"/>
+<path d="M 800 827 L 800 857" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="795,848 805,848 800,857" fill="#227D83"/>
+<path d="M 1300 827 L 1300 857" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="1295,848 1305,848 1300,857" fill="#227D83"/>
+<rect x="64" y="857" width="440" height="184" rx="16" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<circle cx="109" cy="900" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="108" cy="899" r="13" fill="none" stroke="#227D83" stroke-width="2"/>
+<line x1="118" y1="909" x2="127" y2="918" stroke="#227D83" stroke-width="3"/>
+<path d="M 95 899 h 26 M 108 886 q -10 13 0 26 q 10 -13 0 -26" fill="none" stroke="#227D83" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="150" y="906" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">研究子 Agent</text>
+<text x="88" y="950" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">mem0_research · 无独立检查点</text>
+<text x="88" y="979" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">WebSearch + 可选 Safeguard + 摘要</text>
+<text x="88" y="1008" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">结果回主 Agent，内部流式输出隐藏</text>
+<rect x="534" y="857" width="500" height="184" rx="16" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<circle cx="579" cy="900" r="25" fill="#F1EDF6" stroke="none" stroke-width="1.5"/>
+<rect x="564" y="890" width="23" height="23" rx="4" fill="none" stroke="#79628F" stroke-width="2"/>
+<path d="M 587 898 l 10 -6 v 20 l -10 -6" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="620" y="906" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">视频 Skill</text>
+<text x="558" y="950" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">load_video_skill → video_operation</text>
+<text x="558" y="979" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">HappyHorse / Wan 3.0 异步任务</text>
+<text x="558" y="1008" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">PostgreSQL 任务 → 七牛视频与封面</text>
+<rect x="1064" y="857" width="472" height="184" rx="16" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<circle cx="1109" cy="900" r="25" fill="#EFF1E8" stroke="none" stroke-width="1.5"/>
+<rect x="1093" y="890" width="32" height="24" rx="4" fill="none" stroke="#6D755F" stroke-width="2"/>
+<path d="M 1095 893 l 14 11 14 -11" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1150" y="906" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">邮件 Skill</text>
+<text x="1088" y="950" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">EmailIntent → 受控发送服务</text>
+<text x="1088" y="979" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">当前用户注册邮箱；Redis 去重 / 预约</text>
+<text x="1088" y="1008" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">到期后台投递 → SMTP</text>
+<circle cx="79" cy="1084" r="15" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<text x="79" y="1089" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#FFFFFF" font-weight="600" text-anchor="middle">C</text>
+<text x="105" y="1091" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#227D83" font-weight="600" text-anchor="start">持久化与观测</text>
+<path d="M 782 1041 L 782 1119" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="777,1110 787,1110 782,1119" fill="#6D755F"/>
+<rect x="64" y="1119" width="830" height="136" rx="16" fill="#EFF1E8" stroke="#6D755F" stroke-width="1.5"/>
+<circle cx="109" cy="1161" r="25" fill="#EFF1E8" stroke="none" stroke-width="1.5"/>
+<ellipse cx="109" cy="1151" rx="15" ry="6" fill="none" stroke="#6D755F" stroke-width="2"/>
+<path d="M 94 1151 V 1173 C 94 1181 124 1181 124 1173 V 1151 M 94 1162 C 94 1170 124 1170 124 1162" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="150" y="1165" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">PostgreSQL + pgvector</text>
+<text x="150" y="1201" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">checkpoints / Store · mem0_chat · mem0_records</text>
+<text x="150" y="1230" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">voice_sessions / voice_turns · app_users · 视频任务与上传元数据</text>
+<rect x="924" y="1119" width="278" height="136" rx="16" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<text x="946" y="1160" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">Redis</text>
+<text x="946" y="1197" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">邮箱验证码 / 限额</text>
+<text x="946" y="1226" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">邮件幂等 / 预约队列</text>
+<rect x="1232" y="1119" width="304" height="136" rx="16" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<text x="1254" y="1160" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">可观测性</text>
+<text x="1254" y="1197" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">阶段计时 / 结构化日志</text>
+<text x="1254" y="1226" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">Langfuse / LangSmith 可选</text>
+</svg>

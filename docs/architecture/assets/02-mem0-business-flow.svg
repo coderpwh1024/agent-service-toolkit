@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1390" viewBox="0 0 1600 1390">
+<rect width="1600" height="1390" fill="#FCFBF8"/>
+<text x="64" y="57" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="600" text-anchor="start" letter-spacing="3">ARCHITECTURE  /  02</text>
+<text x="64" y="112" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="38" fill="#242B2D" font-weight="600" text-anchor="start">Mem0 业务交互：先路由，再回答，最后记忆</text>
+<text x="64" y="148" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">按 mem0_chatbot.py 的真实执行顺序展开；Skill、子 Agent 和确定性管理流程分别标识。</text>
+<line x1="64" y1="1325" x2="1536" y2="1325" stroke="#DCE1DC" stroke-width="1"/>
+<text x="64" y="1358" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15" fill="#697378" font-weight="400" text-anchor="start">基于当前工作区源码 · 2026-10-27 · 图中开关表示可配置能力，不代表线上已启用</text>
+<text x="1536" y="1358" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="16" fill="#227D83" font-weight="600" text-anchor="end">02</text>
+<rect x="64" y="198" width="338" height="114" rx="16" fill="#E9F4F2" stroke="#227D83" stroke-width="1.5"/>
+<rect x="82" y="213" width="45" height="29" rx="14" fill="#E9F4F2" stroke="none" stroke-width="0"/>
+<text x="96" y="233" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="600" text-anchor="start">01</text>
+<text x="82" y="265" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">绑定用户与线程</text>
+<text x="82" y="293" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">恢复 previous 对话状态</text>
+<rect x="442" y="198" width="338" height="114" rx="16" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<rect x="460" y="213" width="45" height="29" rx="14" fill="#E9F4F2" stroke="none" stroke-width="0"/>
+<text x="474" y="233" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="600" text-anchor="start">02</text>
+<text x="460" y="265" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">邮件命令优先</text>
+<text x="460" y="293" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">EmailIntent 结构化识别</text>
+<rect x="820" y="198" width="338" height="114" rx="16" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<rect x="838" y="213" width="45" height="29" rx="14" fill="#E9F4F2" stroke="none" stroke-width="0"/>
+<text x="852" y="233" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="600" text-anchor="start">03</text>
+<text x="838" y="265" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">记忆管理命令</text>
+<text x="838" y="293" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">MemoryIntent / 选择 / 确认</text>
+<rect x="1198" y="198" width="338" height="114" rx="16" fill="#E9F4F2" stroke="#227D83" stroke-width="1.5"/>
+<rect x="1216" y="213" width="45" height="29" rx="14" fill="#E9F4F2" stroke="none" stroke-width="0"/>
+<text x="1230" y="233" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="600" text-anchor="start">04</text>
+<text x="1216" y="265" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">长期记忆检索</text>
+<text x="1216" y="293" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">user_id + agent_id 范围</text>
+<path d="M 402 255 L 442 255" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="433,250 433,260 442,255" fill="#227D83"/>
+<path d="M 780 255 L 820 255" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="811,250 811,260 820,255" fill="#227D83"/>
+<path d="M 1158 255 L 1198 255" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="1189,250 1189,260 1198,255" fill="#227D83"/>
+<text x="402" y="237" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="12" fill="#242B2D" font-weight="400" text-anchor="start"></text>
+<text x="781" y="234" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="400" text-anchor="middle">继续</text>
+<text x="1160" y="234" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="400" text-anchor="middle">继续</text>
+<path d="M 611 312 L 611 350" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="606,341 616,341 611,350" fill="#6D755F"/>
+<path d="M 989 312 L 989 350" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="984,341 994,341 989,350" fill="#79628F"/>
+<rect x="442" y="350" width="338" height="157" rx="16" fill="#EFF1E8" stroke="#6D755F" stroke-width="1.5"/>
+<circle cx="483" cy="392" r="25" fill="#EFF1E8" stroke="none" stroke-width="1.5"/>
+<rect x="467" y="382" width="32" height="24" rx="4" fill="none" stroke="#6D755F" stroke-width="2"/>
+<path d="M 469 385 l 14 11 14 -11" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="522" y="399" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="23" fill="#242B2D" font-weight="600" text-anchor="start">邮件 Skill</text>
+<text x="463" y="439" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#242B2D" font-weight="400" text-anchor="start">草稿 / 即时发送 / Redis 预约</text>
+<text x="463" y="466" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#242B2D" font-weight="400" text-anchor="start">服务绑定本人邮箱与幂等键</text>
+<text x="463" y="493" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#242B2D" font-weight="400" text-anchor="start">直接返回结果，跳过自动提取</text>
+<rect x="820" y="350" width="338" height="157" rx="16" fill="#F1EDF6" stroke="#79628F" stroke-width="1.5"/>
+<circle cx="861" cy="392" r="25" fill="#F1EDF6" stroke="none" stroke-width="1.5"/>
+<path d="M 861 376 L 875 382 V 393 Q 875 403 861 410 Q 847 403 847 393 V 382 Z M 854 392 l 5 5 10 -11" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="900" y="399" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="23" fill="#242B2D" font-weight="600" text-anchor="start">受控记忆管理</text>
+<text x="841" y="439" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#242B2D" font-weight="400" text-anchor="start">查询 / 修改 / 删除 / 清空</text>
+<text x="841" y="466" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#242B2D" font-weight="400" text-anchor="start">自然语言写操作预览后确认</text>
+<text x="841" y="493" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#242B2D" font-weight="400" text-anchor="start">直接返回结果，跳过自动提取</text>
+<path d="M 1367 312 L 1367 551 L 800 551 L 800 583" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="795,574 805,574 800,583" fill="#227D83"/>
+<text x="1205" y="535" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="16" fill="#227D83" font-weight="400" text-anchor="end">检索成功、空结果或受控失败状态</text>
+<rect x="439" y="583" width="722" height="108" rx="20" fill="#242B2D" stroke="#242B2D" stroke-width="1.5"/>
+<circle cx="483" cy="628" r="25" fill="#3A4B4C" stroke="none" stroke-width="1.5"/>
+<circle cx="475" cy="618" r="3" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="491" cy="618" r="3" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="470" cy="632" r="3" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="483" cy="628" r="3" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="496" cy="632" r="3" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="478" cy="642" r="3" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="490" cy="642" r="3" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<line x1="475" y1="618" x2="483" y2="628" stroke="#E9F4F2" stroke-width="1.8"/>
+<line x1="491" y1="618" x2="483" y2="628" stroke="#E9F4F2" stroke-width="1.8"/>
+<line x1="470" y1="632" x2="483" y2="628" stroke="#E9F4F2" stroke-width="1.8"/>
+<line x1="483" y1="628" x2="496" y2="632" stroke="#E9F4F2" stroke-width="1.8"/>
+<line x1="483" y1="628" x2="478" y2="642" stroke="#E9F4F2" stroke-width="1.8"/>
+<line x1="483" y1="628" x2="490" y2="642" stroke="#E9F4F2" stroke-width="1.8"/>
+<text x="527" y="624" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#FFFFFF" font-weight="600" text-anchor="start">主对话模型：读取本轮上下文，选择一个能力</text>
+<text x="527" y="661" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#DCE7E3" font-weight="400" text-anchor="start">最近 20 条 Human / AI + 不可信记忆资料 + 运行时状态</text>
+<path d="M 800 691 L 800 728" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="795,719 805,719 800,728" fill="#227D83"/>
+<line x1="284" y1="728" x2="1300" y2="728" stroke="#227D83" stroke-width="2"/>
+<path d="M 284 728 L 284 770" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="279,761 289,761 284,770" fill="#227D83"/>
+<path d="M 800 728 L 800 770" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="795,761 805,761 800,770" fill="#227D83"/>
+<path d="M 1300 728 L 1300 770" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="1295,761 1305,761 1300,770" fill="#227D83"/>
+<rect x="64" y="770" width="440" height="225" rx="16" fill="#E9F4F2" stroke="#227D83" stroke-width="1.5"/>
+<circle cx="109" cy="814" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="101" cy="804" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="117" cy="804" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="96" cy="818" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="109" cy="814" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="122" cy="818" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="104" cy="828" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="116" cy="828" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<line x1="101" y1="804" x2="109" y2="814" stroke="#227D83" stroke-width="1.8"/>
+<line x1="117" y1="804" x2="109" y2="814" stroke="#227D83" stroke-width="1.8"/>
+<line x1="96" y1="818" x2="109" y2="814" stroke="#227D83" stroke-width="1.8"/>
+<line x1="109" y1="814" x2="122" y2="818" stroke="#227D83" stroke-width="1.8"/>
+<line x1="109" y1="814" x2="104" y2="828" stroke="#227D83" stroke-width="1.8"/>
+<line x1="109" y1="814" x2="116" y2="828" stroke="#227D83" stroke-width="1.8"/>
+<text x="150" y="820" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#242B2D" font-weight="600" text-anchor="start">普通对话</text>
+<text x="88" y="865" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">无工具选择 → 主模型直接流式回答</text>
+<text x="88" y="896" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">日常聊天、稳定知识与情绪交流</text>
+<text x="88" y="927" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">不触发独立研究子图</text>
+<text x="88" y="958" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#242B2D" font-weight="400" text-anchor="start">文本 token 可并行进入实时 TTS</text>
+<rect x="534" y="770" width="500" height="225" rx="16" fill="#F1EDF6" stroke="#79628F" stroke-width="1.5"/>
+<circle cx="579" cy="814" r="25" fill="#F1EDF6" stroke="none" stroke-width="1.5"/>
+<circle cx="578" cy="813" r="13" fill="none" stroke="#79628F" stroke-width="2"/>
+<line x1="588" y1="823" x2="597" y2="832" stroke="#79628F" stroke-width="3"/>
+<path d="M 565 813 h 26 M 578 800 q -10 13 0 26 q 10 -13 0 -26" fill="none" stroke="#79628F" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="620" y="820" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#242B2D" font-weight="600" text-anchor="start">研究委派</text>
+<text x="558" y="865" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">research_assistant 工具 → mem0_research</text>
+<text x="558" y="896" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">可选安全审核 → WebSearch → 证据摘要</text>
+<text x="558" y="927" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">主模型再组织最终回答；每轮最多一次</text>
+<text x="558" y="958" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">没有结果 / 失败时返回明确状态</text>
+<rect x="1064" y="770" width="472" height="225" rx="16" fill="#EFF1E8" stroke="#6D755F" stroke-width="1.5"/>
+<circle cx="1109" cy="814" r="25" fill="#EFF1E8" stroke="none" stroke-width="1.5"/>
+<rect x="1094" y="804" width="23" height="23" rx="4" fill="none" stroke="#6D755F" stroke-width="2"/>
+<path d="M 1117 812 l 10 -6 v 20 l -10 -6" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1150" y="820" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">按需加载视频 Skill</text>
+<text x="1088" y="865" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">load_video_skill → 读取技能与上下文</text>
+<text x="1088" y="896" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">同一主模型 → video_operation</text>
+<text x="1088" y="927" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">受控 create / edit / list / count 等操作</text>
+<text x="1088" y="958" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">运行时直接回复；不是独立子 Agent</text>
+<path d="M 284 995 L 284 1042" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="279,1033 289,1033 284,1042" fill="#227D83"/>
+<path d="M 800 995 L 800 1042" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="795,1033 805,1033 800,1042" fill="#79628F"/>
+<rect x="64" y="1042" width="970" height="124" rx="18" fill="#FFFFFF" stroke="#227D83" stroke-width="1.5"/>
+<circle cx="109" cy="1087" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<ellipse cx="109" cy="1077" rx="15" ry="6" fill="none" stroke="#227D83" stroke-width="2"/>
+<path d="M 94 1077 V 1099 C 94 1107 124 1107 124 1099 V 1077 M 94 1088 C 94 1096 124 1096 124 1088" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="150" y="1093" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#242B2D" font-weight="600" text-anchor="start">提取本轮最新用户事实 → Mem0 additive 新增</text>
+<text x="150" y="1128" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">回答生成后 await remember；不是后台异步记忆队列。无事实可新增 0 条。</text>
+<path d="M 1300 995 L 1300 1042" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="1295,1033 1305,1033 1300,1042" fill="#6D755F"/>
+<rect x="1064" y="1042" width="472" height="124" rx="18" fill="#FFFFFF" stroke="#6D755F" stroke-width="1.5"/>
+<text x="1088" y="1085" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="24" fill="#242B2D" font-weight="600" text-anchor="start">视频分支提前返回</text>
+<text x="1088" y="1121" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">不把工具执行结果提取为用户事实</text>
+<text x="1088" y="1149" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">邮件 / 记忆管理分支同样提前返回</text>
+<path d="M 549 1166 L 549 1205" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="544,1196 554,1196 549,1205" fill="#227D83"/>
+<path d="M 1300 1166 L 1300 1205" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="1295,1196 1305,1196 1300,1205" fill="#6D755F"/>
+<rect x="64" y="1205" width="1472" height="94" rx="18" fill="#242B2D" stroke="#242B2D" stroke-width="1.5"/>
+<circle cx="109" cy="1252" r="25" fill="#3A4B4C" stroke="none" stroke-width="1.5"/>
+<path d="M 109 1243 Q 98 1237 94 1242 V 1265 Q 100 1261 109 1266 Q 118 1261 124 1265 V 1242 Q 118 1237 109 1243 V 1266" fill="none" stroke="#E9F4F2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="151" y="1244" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#FFFFFF" font-weight="600" text-anchor="start">保存根对话检查点</text>
+<text x="151" y="1279" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#DFE7E2" font-weight="400" text-anchor="start">用户消息 + 最终回复 + memory / email / video 对话状态；业务分支均保留对话记录。</text>
+</svg>

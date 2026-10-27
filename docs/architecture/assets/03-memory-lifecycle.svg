@@ -1,0 +1,169 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1480" viewBox="0 0 1600 1480">
+<rect width="1600" height="1480" fill="#FCFBF8"/>
+<text x="64" y="57" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#227D83" font-weight="600" text-anchor="start" letter-spacing="3">ARCHITECTURE  /  03</text>
+<text x="64" y="112" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="38" fill="#242B2D" font-weight="600" text-anchor="start">记忆不是聊天记录：三类数据，两个生命周期</text>
+<text x="64" y="148" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#697378" font-weight="400" text-anchor="start">对话按 thread_id 持久化；长期事实按 user_id + agent_id 复用；提取参考保持线程隔离。</text>
+<line x1="64" y1="1415" x2="1536" y2="1415" stroke="#DCE1DC" stroke-width="1"/>
+<text x="64" y="1448" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15" fill="#697378" font-weight="400" text-anchor="start">基于当前工作区源码 · 2026-10-27 · 图中开关表示可配置能力，不代表线上已启用</text>
+<text x="1536" y="1448" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="16" fill="#227D83" font-weight="600" text-anchor="end">03</text>
+<rect x="64" y="195" width="464" height="266" rx="20" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<rect x="64" y="195" width="464" height="7" rx="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="109" cy="243" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<path d="M 109 234 Q 98 228 94 233 V 256 Q 100 252 109 257 Q 118 252 124 256 V 233 Q 118 228 109 234 V 257" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="84" y="307" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="26" fill="#242B2D" font-weight="600" text-anchor="start">线程对话状态</text>
+<text x="84" y="340" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#227D83" font-weight="500" text-anchor="start">LangGraph PostgreSQL checkpoints</text>
+<text x="84" y="382" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">完整用户 / 助手消息与对话状态</text>
+<text x="84" y="411" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">本轮提示词仅选择最近 20 条 Human / AI</text>
+<text x="84" y="440" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">历史列表与按日记录由 checkpoint 派生</text>
+<rect x="568" y="195" width="464" height="266" rx="20" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<rect x="568" y="195" width="464" height="7" rx="3" fill="#6D755F" stroke="none" stroke-width="1.5"/>
+<circle cx="613" cy="243" r="25" fill="#EFF1E8" stroke="none" stroke-width="1.5"/>
+<circle cx="605" cy="233" r="3" fill="#6D755F" stroke="none" stroke-width="1.5"/>
+<circle cx="621" cy="233" r="3" fill="#6D755F" stroke="none" stroke-width="1.5"/>
+<circle cx="600" cy="247" r="3" fill="#6D755F" stroke="none" stroke-width="1.5"/>
+<circle cx="613" cy="243" r="3" fill="#6D755F" stroke="none" stroke-width="1.5"/>
+<circle cx="626" cy="247" r="3" fill="#6D755F" stroke="none" stroke-width="1.5"/>
+<circle cx="608" cy="257" r="3" fill="#6D755F" stroke="none" stroke-width="1.5"/>
+<circle cx="620" cy="257" r="3" fill="#6D755F" stroke="none" stroke-width="1.5"/>
+<line x1="605" y1="233" x2="613" y2="243" stroke="#6D755F" stroke-width="1.8"/>
+<line x1="621" y1="233" x2="613" y2="243" stroke="#6D755F" stroke-width="1.8"/>
+<line x1="600" y1="247" x2="613" y2="243" stroke="#6D755F" stroke-width="1.8"/>
+<line x1="613" y1="243" x2="626" y2="247" stroke="#6D755F" stroke-width="1.8"/>
+<line x1="613" y1="243" x2="608" y2="257" stroke="#6D755F" stroke-width="1.8"/>
+<line x1="613" y1="243" x2="620" y2="257" stroke="#6D755F" stroke-width="1.8"/>
+<text x="588" y="307" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="26" fill="#242B2D" font-weight="600" text-anchor="start">跨会话长期事实</text>
+<text x="588" y="340" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#6D755F" font-weight="500" text-anchor="start">pgvector · 默认 collection: mem0_chat</text>
+<text x="588" y="382" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">user_id + agent_id = mem0-chatbot</text>
+<text x="588" y="411" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">同一用户跨 thread 检索；embedding 默认 1024 维</text>
+<text x="588" y="440" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">不是每一条聊天，也不是所有工具结果</text>
+<rect x="1072" y="195" width="464" height="266" rx="20" fill="#FFFFFF" stroke="#DCE1DC" stroke-width="1.5"/>
+<rect x="1072" y="195" width="464" height="7" rx="3" fill="#79628F" stroke="none" stroke-width="1.5"/>
+<circle cx="1117" cy="243" r="25" fill="#F1EDF6" stroke="none" stroke-width="1.5"/>
+<ellipse cx="1117" cy="233" rx="15" ry="6" fill="none" stroke="#79628F" stroke-width="2"/>
+<path d="M 1102 233 V 255 C 1102 263 1132 263 1132 255 V 233 M 1102 244 C 1102 252 1132 252 1132 244" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1092" y="307" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="26" fill="#242B2D" font-weight="600" text-anchor="start">事实变更与提取参考</text>
+<text x="1092" y="340" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#79628F" font-weight="500" text-anchor="start">PostgreSQL · mem0_records</text>
+<text x="1092" y="382" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">history：ADD / UPDATE / DELETE 变更事件</text>
+<text x="1092" y="411" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">context：近 10 条提取参考，按 thread 隔离</text>
+<text x="1092" y="440" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">清空事实仍保留聊天与记忆变更历史</text>
+<circle cx="79" cy="510" r="15" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<text x="79" y="515" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#FFFFFF" font-weight="600" text-anchor="middle">A</text>
+<text x="105" y="517" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#227D83" font-weight="600" text-anchor="start">自动事实提取 · 回答生成之后</text>
+<rect x="1090" y="493" width="446" height="29" rx="14" fill="#EFF1E8" stroke="none" stroke-width="0"/>
+<text x="1104" y="513" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#6D755F" font-weight="600" text-anchor="start">SDK 2.2.1：additive 新增</text>
+<circle cx="170" cy="605" r="45" fill="#E9F4F2" stroke="#227D83" stroke-width="1.5"/>
+<circle cx="170" cy="605" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<path d="M 170 596 Q 159 590 155 595 V 618 Q 161 614 170 619 Q 179 614 185 618 V 595 Q 179 590 170 596 V 619" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="170" y="692" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="21" fill="#242B2D" font-weight="600" text-anchor="middle">1  最新用户消息</text>
+<text x="64" y="735" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">新事实来源只传本轮 user</text>
+<text x="64" y="762" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">不传本轮助手输出</text>
+<path d="M 217 605 L 269 605" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="260,600 260,610 269,605" fill="#227D83"/>
+<circle cx="418" cy="605" r="45" fill="#E9F4F2" stroke="#227D83" stroke-width="1.5"/>
+<circle cx="418" cy="605" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="417" cy="604" r="13" fill="none" stroke="#227D83" stroke-width="2"/>
+<line x1="427" y1="614" x2="436" y2="623" stroke="#227D83" stroke-width="3"/>
+<path d="M 404 604 h 26 M 417 591 q -10 13 0 26 q 10 -13 0 -26" fill="none" stroke="#227D83" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="418" y="692" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="21" fill="#242B2D" font-weight="600" text-anchor="middle">2  准备提取上下文</text>
+<text x="312" y="735" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">近期 ≤10 条 / 默认 ≤6000 字符</text>
+<text x="312" y="762" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">检索已有相关事实 top 10</text>
+<path d="M 465 605 L 517 605" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="508,600 508,610 517,605" fill="#227D83"/>
+<circle cx="666" cy="605" r="45" fill="#F1EDF6" stroke="#79628F" stroke-width="1.5"/>
+<circle cx="666" cy="605" r="25" fill="#F1EDF6" stroke="none" stroke-width="1.5"/>
+<circle cx="658" cy="595" r="3" fill="#79628F" stroke="none" stroke-width="1.5"/>
+<circle cx="674" cy="595" r="3" fill="#79628F" stroke="none" stroke-width="1.5"/>
+<circle cx="653" cy="609" r="3" fill="#79628F" stroke="none" stroke-width="1.5"/>
+<circle cx="666" cy="605" r="3" fill="#79628F" stroke="none" stroke-width="1.5"/>
+<circle cx="679" cy="609" r="3" fill="#79628F" stroke="none" stroke-width="1.5"/>
+<circle cx="661" cy="619" r="3" fill="#79628F" stroke="none" stroke-width="1.5"/>
+<circle cx="673" cy="619" r="3" fill="#79628F" stroke="none" stroke-width="1.5"/>
+<line x1="658" y1="595" x2="666" y2="605" stroke="#79628F" stroke-width="1.8"/>
+<line x1="674" y1="595" x2="666" y2="605" stroke="#79628F" stroke-width="1.8"/>
+<line x1="653" y1="609" x2="666" y2="605" stroke="#79628F" stroke-width="1.8"/>
+<line x1="666" y1="605" x2="679" y2="609" stroke="#79628F" stroke-width="1.8"/>
+<line x1="666" y1="605" x2="661" y2="619" stroke="#79628F" stroke-width="1.8"/>
+<line x1="666" y1="605" x2="673" y2="619" stroke="#79628F" stroke-width="1.8"/>
+<text x="666" y="692" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="21" fill="#242B2D" font-weight="600" text-anchor="middle">3  单次 LLM 提取</text>
+<text x="560" y="735" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">Nacos 已加载提取指令</text>
+<text x="560" y="762" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">输出 memory: [{text: …}]</text>
+<path d="M 713 605 L 765 605" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="756,600 756,610 765,605" fill="#79628F"/>
+<circle cx="914" cy="605" r="45" fill="#F1EDF6" stroke="#79628F" stroke-width="1.5"/>
+<circle cx="914" cy="605" r="25" fill="#F1EDF6" stroke="none" stroke-width="1.5"/>
+<path d="M 914 589 L 928 595 V 606 Q 928 616 914 623 Q 900 616 900 606 V 595 Z M 907 605 l 5 5 10 -11" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="914" y="692" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="21" fill="#242B2D" font-weight="600" text-anchor="middle">4  结构与文本校验</text>
+<text x="808" y="735" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">ValidatedExtractionLlm</text>
+<text x="808" y="762" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">非法 JSON 不伪装空成功</text>
+<path d="M 961 605 L 1013 605" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="1004,600 1004,610 1013,605" fill="#79628F"/>
+<circle cx="1162" cy="605" r="45" fill="#EFF1E8" stroke="#6D755F" stroke-width="1.5"/>
+<circle cx="1162" cy="605" r="25" fill="#EFF1E8" stroke="none" stroke-width="1.5"/>
+<circle cx="1162" cy="605" r="13" fill="none" stroke="#6D755F" stroke-width="2"/>
+<circle cx="1162" cy="605" r="5" fill="none" stroke="#6D755F" stroke-width="2"/>
+<line x1="1162" y1="586" x2="1162" y2="592" stroke="#6D755F" stroke-width="2"/>
+<line x1="1162" y1="618" x2="1162" y2="624" stroke="#6D755F" stroke-width="2"/>
+<line x1="1143" y1="605" x2="1149" y2="605" stroke="#6D755F" stroke-width="2"/>
+<line x1="1175" y1="605" x2="1181" y2="605" stroke="#6D755F" stroke-width="2"/>
+<line x1="1148" y1="591" x2="1153" y2="596" stroke="#6D755F" stroke-width="2"/>
+<line x1="1171" y1="614" x2="1176" y2="619" stroke="#6D755F" stroke-width="2"/>
+<line x1="1148" y1="619" x2="1153" y2="614" stroke="#6D755F" stroke-width="2"/>
+<line x1="1171" y1="596" x2="1176" y2="591" stroke="#6D755F" stroke-width="2"/>
+<text x="1162" y="692" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="21" fill="#242B2D" font-weight="600" text-anchor="middle">5  嵌入与去重</text>
+<text x="1056" y="735" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">批量 embedding</text>
+<text x="1056" y="762" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">MD5 比对既有候选与本批</text>
+<path d="M 1209 605 L 1261 605" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="1252,600 1252,610 1261,605" fill="#6D755F"/>
+<circle cx="1410" cy="605" r="45" fill="#EFF1E8" stroke="#6D755F" stroke-width="1.5"/>
+<circle cx="1410" cy="605" r="25" fill="#EFF1E8" stroke="none" stroke-width="1.5"/>
+<ellipse cx="1410" cy="595" rx="15" ry="6" fill="none" stroke="#6D755F" stroke-width="2"/>
+<path d="M 1395 595 V 617 C 1395 625 1425 625 1425 617 V 595 M 1395 606 C 1395 614 1425 614 1425 606" fill="none" stroke="#6D755F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="1410" y="692" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="21" fill="#242B2D" font-weight="600" text-anchor="middle">6  存入新事实</text>
+<text x="1304" y="735" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">pgvector INSERT</text>
+<text x="1304" y="762" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="15.5" fill="#697378" font-weight="400" text-anchor="start">写 ADD history / context</text>
+<rect x="64" y="802" width="1472" height="76" rx="12" fill="#F9F1E4" stroke="#EBD9BE" stroke-width="1.5"/>
+<text x="88" y="834" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="22" fill="#A2763F" font-weight="600" text-anchor="start">自动提取 ≠ 自动改删旧事实</text>
+<text x="88" y="862" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#A2763F" font-weight="400" text-anchor="start">当前 SDK 走新增流程；去重限于相关既有候选和当前批次。没有新事实可合法返回 0 条，不能据 saved 判断新增数量。</text>
+<circle cx="79" cy="927" r="15" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<text x="79" y="932" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#FFFFFF" font-weight="600" text-anchor="middle">B</text>
+<text x="105" y="934" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#227D83" font-weight="600" text-anchor="start">下一轮检索与个性化回答</text>
+<rect x="64" y="963" width="742" height="164" rx="16" fill="#E9F4F2" stroke="#227D83" stroke-width="1.5"/>
+<circle cx="109" cy="1006" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="108" cy="1005" r="13" fill="none" stroke="#227D83" stroke-width="2"/>
+<line x1="118" y1="1015" x2="127" y2="1024" stroke="#227D83" stroke-width="3"/>
+<path d="M 95 1005 h 26 M 108 992 q -10 13 0 26 q 10 -13 0 -26" fill="none" stroke="#227D83" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="150" y="1012" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#242B2D" font-weight="600" text-anchor="start">先检索，再生成</text>
+<text x="88" y="1058" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17.5" fill="#242B2D" font-weight="400" text-anchor="start">最新用户输入 → embedding / SDK 检索排序 → 默认 top 5、阈值 0.3</text>
+<text x="88" y="1087" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17.5" fill="#242B2D" font-weight="400" text-anchor="start">配置 rerank 时先取更多候选；失败回退原顺序</text>
+<text x="88" y="1116" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17.5" fill="#242B2D" font-weight="400" text-anchor="start">以 untrusted_user_memories 标签加入提示词，不能覆盖系统规则</text>
+<path d="M 806 1044 L 849 1044" fill="none" stroke="#227D83" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<polygon points="840,1039 840,1049 849,1044" fill="#227D83"/>
+<rect x="849" y="963" width="687" height="164" rx="16" fill="#FFFFFF" stroke="#227D83" stroke-width="1.5"/>
+<circle cx="894" cy="1006" r="25" fill="#E9F4F2" stroke="none" stroke-width="1.5"/>
+<circle cx="886" cy="996" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="902" cy="996" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="881" cy="1010" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="894" cy="1006" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="907" cy="1010" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="889" cy="1020" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<circle cx="901" cy="1020" r="3" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<line x1="886" y1="996" x2="894" y2="1006" stroke="#227D83" stroke-width="1.8"/>
+<line x1="902" y1="996" x2="894" y2="1006" stroke="#227D83" stroke-width="1.8"/>
+<line x1="881" y1="1010" x2="894" y2="1006" stroke="#227D83" stroke-width="1.8"/>
+<line x1="894" y1="1006" x2="907" y2="1010" stroke="#227D83" stroke-width="1.8"/>
+<line x1="894" y1="1006" x2="889" y2="1020" stroke="#227D83" stroke-width="1.8"/>
+<line x1="894" y1="1006" x2="901" y2="1020" stroke="#227D83" stroke-width="1.8"/>
+<text x="935" y="1012" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#242B2D" font-weight="600" text-anchor="start">主模型得到有边界的参考</text>
+<text x="873" y="1058" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17.5" fill="#697378" font-weight="400" text-anchor="start">事实可跨会话复用；指代上下文按 source_thread_id 隔离</text>
+<text x="873" y="1087" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17.5" fill="#697378" font-weight="400" text-anchor="start">带 research_status 的历史助手消息跳过后续提取参考</text>
+<text x="873" y="1116" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17.5" fill="#697378" font-weight="400" text-anchor="start">遇到已完成的修改 / 删除 / 清空标记，向前提取参考停止</text>
+<circle cx="79" cy="1176" r="15" fill="#227D83" stroke="none" stroke-width="1.5"/>
+<text x="79" y="1181" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="14" fill="#FFFFFF" font-weight="600" text-anchor="middle">C</text>
+<text x="105" y="1183" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="19" fill="#227D83" font-weight="600" text-anchor="start">人工管理 · 独立于自动提取</text>
+<rect x="64" y="1212" width="1472" height="161" rx="16" fill="#FFFFFF" stroke="#79628F" stroke-width="1.5"/>
+<circle cx="109" cy="1257" r="25" fill="#F1EDF6" stroke="none" stroke-width="1.5"/>
+<path d="M 109 1241 L 123 1247 V 1258 Q 123 1268 109 1275 Q 95 1268 95 1258 V 1247 Z M 102 1257 l 5 5 10 -11" fill="none" stroke="#79628F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<text x="150" y="1261" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="25" fill="#242B2D" font-weight="600" text-anchor="start">自然语言修改 / 删除 / 清空</text>
+<text x="150" y="1302" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="18" fill="#242B2D" font-weight="400" text-anchor="start">意图解析 → 本人候选 → 预览与用户确认 → 用户 advisory lock 内复核内容 / updated_at 或快照 → 真实变更</text>
+<text x="150" y="1338" font-family="PingFang SC, Noto Sans SC, Microsoft YaHei, sans-serif" font-size="17" fill="#697378" font-weight="400" text-anchor="start">成功后清除旧提取上下文，保留 checkpoint 和变更历史。REST 管理接口另走认证、归属和参数校验，不共用口头确认。</text>
+</svg>
