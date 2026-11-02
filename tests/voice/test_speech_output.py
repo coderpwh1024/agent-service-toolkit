@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 import pytest
 
@@ -81,3 +82,48 @@ def test_backlogged_sentences_after_the_opening_share_a_tts_request():
         "先说第一句。",
         "第二句和第三句，应该连续播报。最后一句。",
     ]
+
+
+@pytest.mark.parametrize(
+    ("source", "spoken"),
+    [
+        ("请访问 https://www.baidu.com 获取详情。", "请访问获取详情。"),
+        ("www.baidu.com", ""),
+        ("这是[百度官网](https://www.baidu.com)。", "这是百度官网。"),
+        ("这是一张![猫咪图片](https://example.com/cat.png)。", "这是一张猫咪图片。"),
+        ("我很开心🙂，谢谢你❤️。", "我很开心，谢谢你。"),
+        ('看看<img src="https://example.com/cat.png">这张图。', "看看这张图。"),
+    ],
+)
+def test_speech_omits_visual_markup_and_raw_links(source, spoken):
+    assert "".join(SpeechText().feed(source, final=True)) == spoken
+
+
+def test_partial_url_and_markdown_link_wait_for_more_text():
+    speech = SpeechText()
+    phrases = speech.feed("请访问 https:", flush=True)
+    phrases += speech.feed("//www.baidu.com 看介绍。", final=True)
+    assert "".join(phrases) == "请访问看介绍。"
+
+    speech = SpeechText()
+    phrases = speech.feed("这是[百度官网](https:", flush=True)
+    phrases += speech.feed("//www.baidu.com)的介绍。", final=True)
+    assert "".join(phrases) == "这是百度官网的介绍。"
+
+
+@pytest.mark.parametrize(
+    ("source", "spoken"),
+    [
+        ("请访问 https://www.baidu.com 看介绍。", "请访问看介绍。"),
+        ("请看 www.baidu.com 的页面。", "请看的页面。"),
+        ("这是[百度官网](https://www.baidu.com)的介绍。", "这是百度官网的介绍。"),
+        ('看看<img src="https://example.com/cat.png">这张图。', "看看这张图。"),
+    ],
+)
+def test_visual_markup_is_safe_across_stream_splits(source, spoken):
+    for offset in range(1, len(source)):
+        speech = SpeechText()
+        phrases = speech.feed(source[:offset], flush=True)
+        phrases += speech.feed(source[offset:], final=True)
+        actual = re.sub(r"\s+", "", "".join(phrases)).rstrip("。")
+        assert actual == spoken.rstrip("。"), offset
