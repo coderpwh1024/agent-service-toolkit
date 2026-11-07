@@ -3,7 +3,8 @@ name = "agent-voice-server"
 version = "0.2.0"
 description = "Realtime voice, user, chat, email and video backend for Agent Voice App"
 readme = "README.md"
-authors = [{ name = "Joshua Carroll", email = "carroll.joshk@gmail.com" }]
+authors = [{ name = "coderpwh" }]
+maintainers = [{ name = "coderpwh" }]
 classifiers = [
     "Development Status :: 4 - Beta",
     "License :: OSI Approved :: MIT License",

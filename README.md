@@ -2,6 +2,8 @@
 
 基于 **FastAPI · LangGraph · Mem0 · PostgreSQL/pgvector** 的对话与实时语音后端，为 [Agent Voice App](https://github.com/coderpwh1024/agent-voice-app) 和 Streamlit 客户端提供服务。
 
+由 [coderpwh](https://github.com/coderpwh1024) 开发和维护，采用 [MIT 许可证](LICENSE)。
+
 后端仓库为 [agent-voice-server](https://github.com/coderpwh1024/agent-voice-server)，与前端 `agent-voice-app` 位于相邻目录。克隆后端后进入同名目录运行：
 
 ```sh

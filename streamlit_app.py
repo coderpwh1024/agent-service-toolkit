@@ -228,9 +228,7 @@ async def main() -> None:
             # Display user ID (for debugging or user information)
             st.text_input("用户标识（只读）", value=user_id, disabled=True)
 
-        st.caption(
-            "由 [Joshua](https://www.linkedin.com/in/joshua-k-carroll/) 在奥克兰用 :material/favorite: 打造"
-        )
+        st.caption("由 [coderpwh](https://github.com/coderpwh1024) 开发和维护")
 
     # Draw existing messages
     messages: list[ChatMessage] = st.session_state.messages
