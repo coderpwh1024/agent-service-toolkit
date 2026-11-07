@@ -5,8 +5,6 @@ so it can be used with AG-UI compatible frontends like CopilotKit. The
 LangGraph -> AG-UI event translation is handled by the official `ag-ui-langgraph`
 package; this module only wires it into the service's agent registry, auth, and
 tracing.
-
-See docs/AGUI.md for usage, including how to connect a client.
 """
 
 import logging

@@ -112,7 +112,7 @@ streamlit_app.py         开发聊天界面
 
 ## 配置与运行
 
-项目支持 Python 3.12–3.14，固定 uv 版本见 `deploy/uv-version`。按照 [环境配置](docs/Environment_Configuration.md) 准备 Nacos、PostgreSQL 和对应模型配置后运行：
+项目支持 Python 3.12–3.14，固定 uv 版本见 `deploy/uv-version`。参考 `.env.example` 和 `config/environments/` 准备 Nacos、PostgreSQL 和对应模型配置后运行：
 
 ```sh
 uv sync --frozen
@@ -127,7 +127,7 @@ uv run streamlit run streamlit_app.py
 
 运行时聊天、记忆 Prompt 与邮件 / 视频 Skill 由 Nacos 加载。密钥放在配置中心或忽略的环境覆盖文件中，不提交到仓库。
 
-## 验证与文档
+## 验证
 
 ```sh
 uv run ruff format --check .
@@ -140,13 +140,3 @@ uv run pytest
 pytest 默认使用 `importlib` 收集模式，避免不同测试目录内同名文件发生模块冲突。Docker 集成测试需显式传入 `--run-docker`；真实模型、SMTP、视频与对象存储仍需相应外部服务和凭据。
 
 冒烟脚本使用 `tests/smoke/server.py` 注入测试专用 Prompt，并关闭外部业务能力，只对接隔离的测试数据库和所选追踪服务。正式启动入口仍从 Nacos 加载 Prompt，不提供本地替代规则。
-
-- [实时语音 API](docs/Voice_API.md)
-- [Mem0 与记忆管理](docs/Mem0_Memory.md)
-- [邮件 Skill](docs/Email_Skill.md)
-- [视频 API 与 Skill](docs/Video_API.md)
-- [用户认证与凭据边界](docs/Accounts_and_Credentials.md)
-- [文件上传 API](docs/File_Upload_API.md)
-- [AG-UI](docs/AGUI.md)
-- [阿里云百炼](docs/Alibaba_Bailian.md)
-- [Linux 部署](docs/Linux_Deployment.md) / [无 Docker 部署](docs/Linux_NoDocker_Deployment.md)

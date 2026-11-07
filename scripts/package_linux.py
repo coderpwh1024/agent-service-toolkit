@@ -24,7 +24,6 @@ PACKAGE_FILES = (
     "deploy/nginx/agent-voice-server.conf",
     "deploy/systemd/agent-service.service",
     "deploy/systemd/agent-streamlit.service",
-    "docs/Linux_NoDocker_Deployment.md",
 )
 
 
