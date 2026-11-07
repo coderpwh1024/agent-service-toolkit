@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from voice.providers.alibaba_tts import AlibabaTTS
+from app.services.voice.providers.alibaba_tts import AlibabaTTS
 
 
 def tts_response(audio: dict[str, str]) -> Mock:
@@ -52,8 +52,8 @@ def test_generate_downloads_wav_from_bailian_response():
     response = tts_response({"url": "https://example.com/generated.wav"})
     download = Mock(content=b"fake wav data")
     with (
-        patch("voice.providers.alibaba_tts.httpx.post", return_value=response) as post,
-        patch("voice.providers.alibaba_tts.httpx.get", return_value=download) as get,
+        patch("app.services.voice.providers.alibaba_tts.httpx.post", return_value=response) as post,
+        patch("app.services.voice.providers.alibaba_tts.httpx.get", return_value=download) as get,
     ):
         result = AlibabaTTS(api_key="test-key").generate("你好，欢迎体验百炼语音")
 
@@ -82,8 +82,8 @@ def test_generate_accepts_embedded_base64_audio():
     encoded = base64.b64encode(b"embedded wav data").decode("ascii")
     response = tts_response({"data": f"data:audio/wav;base64,{encoded}"})
     with (
-        patch("voice.providers.alibaba_tts.httpx.post", return_value=response),
-        patch("voice.providers.alibaba_tts.httpx.get") as get,
+        patch("app.services.voice.providers.alibaba_tts.httpx.post", return_value=response),
+        patch("app.services.voice.providers.alibaba_tts.httpx.get") as get,
     ):
         result = AlibabaTTS(api_key="test-key").generate("Hello Bailian")
     assert result == b"embedded wav data"
@@ -91,7 +91,9 @@ def test_generate_accepts_embedded_base64_audio():
 
 
 def test_generate_api_error_returns_none():
-    with patch("voice.providers.alibaba_tts.httpx.post", side_effect=RuntimeError("API error")):
+    with patch(
+        "app.services.voice.providers.alibaba_tts.httpx.post", side_effect=RuntimeError("API error")
+    ):
         result = AlibabaTTS(api_key="test-key").generate("Hello Bailian")
     assert result is None
 

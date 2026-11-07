@@ -9,18 +9,18 @@ from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableLambda
 from langgraph.checkpoint.memory import MemorySaver
 
-from agents import memory_commands as commands
-from memory.mem0_service import Mem0Service, MemoryConflictError, MemoryNotFoundError
-from schema.memory import MemoryHistory, MemoryHistoryEntry, MemoryList, MemoryRecord
-from schema.memory_commands import (
+import app.agents.memory_commands as commands
+from app.schemas.memory import MemoryHistory, MemoryHistoryEntry, MemoryList, MemoryRecord
+from app.schemas.memory_commands import (
     MemoryDialogue,
     MemoryIntent,
     MemoryMutationResult,
     MemorySnapshot,
     MemoryTarget,
 )
-from service.agent_runner import graph_events
-from service.utils import messages_from_checkpoint
+from app.services.agent_runner import graph_events
+from app.services.memory.mem0_service import Mem0Service, MemoryConflictError, MemoryNotFoundError
+from app.services.messages import messages_from_checkpoint
 
 
 class StructuredFakeModel(FakeListChatModel):
@@ -295,7 +295,7 @@ async def test_unsupported_model_or_disabled_memory_fails_closed(conversation):
 async def test_structured_outputs_are_hidden_and_checkpoint_restores_confirmation(monkeypatch):
     import importlib
 
-    module = importlib.import_module("agents.mem0_chatbot")
+    module = importlib.import_module("app.agents.mem0_chat")
     record = MemoryRecord(id=uuid4(), memory="我喜欢茶", user_id="alice", agent_id="mem0-chatbot")
     memory = AsyncMock(spec=Mem0Service)
     memory.search_memory_records.return_value = MemoryList(memories=[record])
@@ -310,7 +310,7 @@ async def test_structured_outputs_are_hidden_and_checkpoint_restores_confirmatio
     )
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
     monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
-    graph = module.mem0_chatbot.copy()
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
     config = {"configurable": {"user_id": "alice", "thread_id": "thread"}}
     events = [
@@ -328,7 +328,7 @@ async def test_structured_outputs_are_hidden_and_checkpoint_restores_confirmatio
     final = next(event.content for event in events if event.type == "message")
     assert final.response_metadata["memory_status"] == "confirmation_required"
     assert "matching_indices" not in final.content
-    resumed = module.mem0_chatbot.copy()
+    resumed = module.mem0_chat.copy()
     resumed.checkpointer = graph.checkpointer
     result = await resumed.ainvoke({"messages": [HumanMessage(content="确认删除")]}, config)
     assert result["messages"][0].response_metadata["memory_status"] == "deleted"
@@ -354,7 +354,7 @@ async def test_model_cannot_select_nonexistent_memory_indices():
 async def test_confirmation_checkpoint_cannot_be_reused_by_another_user(monkeypatch):
     import importlib
 
-    module = importlib.import_module("agents.mem0_chatbot")
+    module = importlib.import_module("app.agents.mem0_chat")
     record = MemoryRecord(id=uuid4(), memory="tea", user_id="alice", agent_id="mem0-chatbot")
     memory = AsyncMock(spec=Mem0Service)
     memory.search_memory_records.return_value = MemoryList(memories=[record])
@@ -366,7 +366,7 @@ async def test_confirmation_checkpoint_cannot_be_reused_by_another_user(monkeypa
     )
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
     monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
-    graph = module.mem0_chatbot.copy()
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
     config = {"configurable": {"user_id": "alice", "thread_id": "thread"}}
     await graph.ainvoke({"messages": [HumanMessage(content="删除tea的记忆")]}, config)
@@ -380,13 +380,13 @@ async def test_confirmation_checkpoint_cannot_be_reused_by_another_user(monkeypa
 async def test_cancelled_delivery_context_is_not_reextracted_as_a_memory(monkeypatch):
     import importlib
 
-    module = importlib.import_module("agents.mem0_chatbot")
+    module = importlib.import_module("app.agents.mem0_chat")
     memory = AsyncMock(spec=Mem0Service)
     memory.search.return_value = []
     model = FakeListChatModel(responses=["你好。"])
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
     monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
-    graph = module.mem0_chatbot.copy()
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
     await graph.ainvoke(
         {

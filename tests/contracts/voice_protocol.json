@@ -1,0 +1,410 @@
+{
+  "$defs": {
+    "ApprovalInput": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "approval.submit",
+          "title": "Type",
+          "type": "string"
+        },
+        "interrupt_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Interrupt Id",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value"
+        }
+      },
+      "required": [
+        "event_id",
+        "type",
+        "interrupt_id",
+        "value"
+      ],
+      "title": "ApprovalInput",
+      "type": "object"
+    },
+    "AudioMetrics": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "audio.metrics",
+          "title": "Type",
+          "type": "string"
+        },
+        "frames": {
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Frames",
+          "type": "integer"
+        },
+        "rms_dbfs": {
+          "maximum": 0,
+          "minimum": -120,
+          "title": "Rms Dbfs",
+          "type": "number"
+        },
+        "peak_dbfs": {
+          "maximum": 0,
+          "minimum": -120,
+          "title": "Peak Dbfs",
+          "type": "number"
+        },
+        "clipped_samples": {
+          "maximum": 10000000,
+          "minimum": 0,
+          "title": "Clipped Samples",
+          "type": "integer"
+        },
+        "aec_enabled": {
+          "title": "Aec Enabled",
+          "type": "boolean"
+        },
+        "noise_suppression_enabled": {
+          "title": "Noise Suppression Enabled",
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "standby",
+            "conversation"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "type",
+        "frames",
+        "rms_dbfs",
+        "peak_dbfs",
+        "clipped_samples",
+        "aec_enabled",
+        "noise_suppression_enabled",
+        "mode"
+      ],
+      "title": "AudioMetrics",
+      "type": "object"
+    },
+    "CancelResponse": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "response.cancel",
+          "title": "Type",
+          "type": "string"
+        },
+        "response_id": {
+          "format": "uuid",
+          "title": "Response Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "type",
+        "response_id"
+      ],
+      "title": "CancelResponse",
+      "type": "object"
+    },
+    "CloseSession": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "session.close",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "type"
+      ],
+      "title": "CloseSession",
+      "type": "object"
+    },
+    "CommitInput": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "input.commit",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "type"
+      ],
+      "title": "CommitInput",
+      "type": "object"
+    },
+    "Configure": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "session.configure",
+          "title": "Type",
+          "type": "string"
+        },
+        "protocol_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "input_format": {
+          "const": "pcm16_16000_mono",
+          "default": "pcm16_16000_mono",
+          "title": "Input Format",
+          "type": "string"
+        },
+        "output_format": {
+          "const": "pcm16_24000_mono",
+          "default": "pcm16_24000_mono",
+          "title": "Output Format",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "type"
+      ],
+      "title": "Configure",
+      "type": "object"
+    },
+    "Ping": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "ping",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "type"
+      ],
+      "title": "Ping",
+      "type": "object"
+    },
+    "PlaybackFinished": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "playback.finished",
+          "title": "Type",
+          "type": "string"
+        },
+        "response_id": {
+          "format": "uuid",
+          "title": "Response Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "type",
+        "response_id"
+      ],
+      "title": "PlaybackFinished",
+      "type": "object"
+    },
+    "PlaybackProgress": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "playback.progress",
+          "title": "Type",
+          "type": "string"
+        },
+        "response_id": {
+          "format": "uuid",
+          "title": "Response Id",
+          "type": "string"
+        },
+        "segment_index": {
+          "minimum": 1,
+          "title": "Segment Index",
+          "type": "integer"
+        },
+        "played_samples": {
+          "minimum": 0,
+          "title": "Played Samples",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "event_id",
+        "type",
+        "response_id",
+        "segment_index",
+        "played_samples"
+      ],
+      "title": "PlaybackProgress",
+      "type": "object"
+    },
+    "SpeechHint": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "input.speech_hint",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "type"
+      ],
+      "title": "SpeechHint",
+      "type": "object"
+    },
+    "TextInput": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Event Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "input.text",
+          "title": "Type",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 6000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "type",
+        "text"
+      ],
+      "title": "TextInput",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "approval.submit": "#/$defs/ApprovalInput",
+      "audio.metrics": "#/$defs/AudioMetrics",
+      "input.commit": "#/$defs/CommitInput",
+      "input.speech_hint": "#/$defs/SpeechHint",
+      "input.text": "#/$defs/TextInput",
+      "ping": "#/$defs/Ping",
+      "playback.finished": "#/$defs/PlaybackFinished",
+      "playback.progress": "#/$defs/PlaybackProgress",
+      "response.cancel": "#/$defs/CancelResponse",
+      "session.close": "#/$defs/CloseSession",
+      "session.configure": "#/$defs/Configure"
+    },
+    "propertyName": "type"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/Configure"
+    },
+    {
+      "$ref": "#/$defs/TextInput"
+    },
+    {
+      "$ref": "#/$defs/CommitInput"
+    },
+    {
+      "$ref": "#/$defs/CancelResponse"
+    },
+    {
+      "$ref": "#/$defs/SpeechHint"
+    },
+    {
+      "$ref": "#/$defs/AudioMetrics"
+    },
+    {
+      "$ref": "#/$defs/PlaybackProgress"
+    },
+    {
+      "$ref": "#/$defs/PlaybackFinished"
+    },
+    {
+      "$ref": "#/$defs/ApprovalInput"
+    },
+    {
+      "$ref": "#/$defs/Ping"
+    },
+    {
+      "$ref": "#/$defs/CloseSession"
+    }
+  ]
+}

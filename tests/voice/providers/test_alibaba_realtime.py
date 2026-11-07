@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from core import settings
-from voice.providers.alibaba_realtime import AlibabaRealtime
+from app.core import settings
+from app.services.voice.providers.alibaba_realtime import AlibabaRealtime
 
 
 @pytest.mark.asyncio

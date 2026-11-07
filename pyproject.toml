@@ -17,14 +17,10 @@ requires-python = ">=3.12,<3.15"
 
 dependencies = [
     "aiosqlite >=0.22.1",
-    "docx2txt ~=0.8",
-    "duckduckgo-search>=8.1.1",
     "fastapi ~=0.139.0",
     "httpx ~=0.28.1",
     "jiter ~=0.16.0",
-    "langchain ~=1.3.11",
     "langchain-core ~=1.4.8",
-    "langchain-community ~=0.4.2",
     "langchain-anthropic ~=1.4.8",
     "langchain-aws ~=1.6.1",
     "langchain-google-genai ~=4.2.6",
@@ -32,15 +28,12 @@ dependencies = [
     "langchain-groq ~=1.1.3",
     "langchain-ollama ~=1.1.0",
     "langchain-openai ~=1.3.3",
-    "langchain-text-splitters ~=1.1.2",
     "langfuse ~=4.12",
     "langgraph ~=1.2.7",
     "langgraph-checkpoint-mongodb ~=0.4.0",
     "langgraph-checkpoint-postgres~=3.1.1",
     "langgraph-checkpoint-sqlite ~=3.1.0",
-    "langgraph-supervisor ~=0.0.31",
     "langsmith ~=0.10.2",
-    "numexpr ~=2.14.1",
     "numpy ~=2.5.0",
     "onnxruntime ~= 1.27.0",
     "pandas ~=3.0.3",
@@ -49,8 +42,6 @@ dependencies = [
     "pydantic ~=2.13.4",
     "pydantic-settings ~=2.14.2",
     "email-validator ~=2.3.0",
-    "pypdf ~=6.14.2",
-    "pyowm ~=3.5.0",
     "python-dotenv ~=1.2.2",
     "setuptools ~=83.0.0",
     "streamlit ~=1.59.1",
@@ -59,8 +50,6 @@ dependencies = [
     "websockets ~=15.0.1",
     "pyjwt ~=2.13.0",
     "redis >=6.4,<8",
-    "langchain-mcp-adapters>=0.3.0",
-    "ddgs>=9.14.4",
     "ag-ui-langgraph~=0.0.42",
     "nacos-sdk-python~=3.2.0",
     "pyyaml~=6.0.3",
@@ -74,6 +63,12 @@ dependencies = [
 # Policy and override procedure: .claude/skills/dependency-refresh/SKILL.md
 [tool.uv]
 exclude-newer = "14 days"
+
+[tool.setuptools.packages.find]
+include = ["app*", "client*"]
+
+[tool.setuptools.package-data]
+"app.models" = ["sql/*.sql"]
 
 [dependency-groups]
 dev = [
@@ -107,8 +102,9 @@ target-version = "py312"
 extend-select = ["I", "U"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["."]
 asyncio_default_fixture_loop_scope = "function"
+addopts = ["--import-mode=importlib"]
 
 [tool.pytest_env]
 OPENAI_API_KEY = "sk-fake-openai-key"
@@ -125,8 +121,9 @@ plugins.md041.enabled = false
 plugins.md024.siblings_only = true
 
 [tool.pyrefly]
-project-includes = ["src"]
-project-excludes = ["src/streamlit_app.py"]
+project-includes = ["app", "client"]
+search-path = ["."]
+project-excludes = ["streamlit_app.py"]
 preset = "default"
 
 [tool.pyrefly.errors]

@@ -8,11 +8,11 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 
-from core import settings
-from core.skills import SkillDefinition
-from schema.video import VideoCreate, VideoTask, VideoTaskPage
-from schema.video_skill import VideoSkillDialogue, VideoSkillIntent
-from skills.video import execute_video_skill, video_skill_reference
+from app.core import settings
+from app.core.skills import SkillDefinition
+from app.schemas.video import VideoCreate, VideoTask, VideoTaskPage
+from app.schemas.video_skill import VideoSkillDialogue, VideoSkillIntent
+from app.services.skills.video import execute_video_skill, video_skill_reference
 
 
 def task(record_id=123, **changes):
@@ -40,7 +40,7 @@ def config():
 
 @pytest.fixture
 def video_skill(monkeypatch):
-    from video import runtime
+    from app.services.video import runtime
 
     monkeypatch.setattr(settings, "VIDEO_ENABLED", True)
     monkeypatch.setattr(settings, "VIDEO_SKILL_ENABLED", True)
@@ -652,14 +652,14 @@ async def test_authentication_failure_does_not_access_service(video_skill):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
+@pytest.mark.parametrize("agent_name", ["mem0_chat"])
 async def test_agents_use_skill_for_counts_without_old_keywords(
     video_skill, monkeypatch, agent_name
 ):
     service, model = video_skill
-    module = importlib.import_module(f"agents.{agent_name}")
+    module = importlib.import_module(f"app.agents.{agent_name}")
     monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
-    if agent_name == "mem0_chatbot":
+    if agent_name == "mem0_chat":
         monkeypatch.setattr(module, "get_mem0_service", lambda: None)
     graph = getattr(module, agent_name).copy()
     graph.checkpointer = MemorySaver()

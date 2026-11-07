@@ -5,9 +5,9 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from core import settings
-from memory.mem0_history import PostgresHistory
-from memory.mem0_service import AGENT_ID, Mem0Service
+from app.core import settings
+from app.repositories.mem0_history import PostgresHistory
+from app.services.memory.mem0_service import AGENT_ID, Mem0Service
 
 
 @pytest.mark.asyncio
@@ -97,7 +97,7 @@ async def test_cancellation_retains_worker_capacity():
 async def test_lifecycle_initialization_and_cleanup(monkeypatch, failure):
     from pydantic import SecretStr
 
-    from memory import mem0_service
+    from app.services.memory import mem0_service
 
     monkeypatch.setattr(settings, "MEM0_ENABLED", True)
     monkeypatch.setattr(settings, "MEM0_API_KEY", SecretStr("test"))
@@ -136,7 +136,7 @@ async def test_lifecycle_initialization_and_cleanup(monkeypatch, failure):
 async def test_lifecycle_closes_reranker_on_build_failure(monkeypatch):
     from pydantic import SecretStr
 
-    from memory import mem0_service
+    from app.services.memory import mem0_service
 
     monkeypatch.setattr(settings, "MEM0_ENABLED", True)
     monkeypatch.setattr(settings, "MEM0_API_KEY", SecretStr("test"))
@@ -158,7 +158,7 @@ async def test_lifecycle_closes_reranker_on_build_failure(monkeypatch):
 
 
 def test_enabled_memory_requires_key(monkeypatch):
-    from core.settings import Settings
+    from app.core.settings import Settings
 
     config = Settings(
         _env_file=None,

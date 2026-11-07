@@ -2,7 +2,7 @@
 
 项目默认支持阿里云百炼的千问 3.8 Max，模型 ID 为 `qwen3.8-max`。百炼通过 OpenAI 兼容的 Chat API 接入，因此不需要额外安装 SDK。
 
-RAG 使用 `qwen3.7-text-embedding` 生成向量，与聊天和语音复用同一个账号。
+Mem0 的事实提取与向量检索配置见 [Mem0 说明](Mem0_Memory.md)，聊天和语音供应商接入保持不变。
 
 ## 配置
 

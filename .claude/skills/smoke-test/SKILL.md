@@ -2,7 +2,7 @@
 name: smoke-test
 description: >-
   运行并解读 scripts/smoke_test.sh，按需检查 CI 和默认 docker compose 未覆盖的
-  可选依赖项：Postgres 和 MongoDB 检查点存储器、AG-UI 端点以及 LangFuse 追踪。
+  可选依赖项：Postgres 检查点存储器、AG-UI 端点以及 LangFuse 追踪。
   当改动涉及内存/检查点存储层、服务启动/健康检查、AG-UI 适配器、LangFuse 追踪，
   或提升了其中某项依赖的版本，并希望无需等待完整 CI 即可确认真实集成仍正常工作时使用。
   在判断某项变更是否有必要执行此类检查时也应使用。
@@ -11,7 +11,7 @@ description: >-
 # 可选依赖项冒烟测试
 
 `scripts/smoke_test.sh` 用于测试本项目中未纳入快速单元测试套件或默认 CI 路径的部分，
-因为它们需要真实的基础设施：**Postgres** 和 **MongoDB** 检查点存储器、**AG-UI**
+因为它们需要真实的基础设施：**Postgres** 检查点存储器、**AG-UI**
 端点以及 **LangFuse** 追踪。脚本会在 Docker 中启动真实依赖项，让服务连接该依赖项，
 执行端到端集成验证，然后清理所有资源。
 
@@ -29,9 +29,9 @@ CI 覆盖的任何内容。
 
 | 变更内容 | 运行目标 |
 | --- | --- |
-| `src/memory/*`、`initialize_database`、存储器类或检查点存储器接线 | `postgres` 和/或 `mongo` |
-| `langgraph-checkpoint-postgres` / `-mongodb`、`pymongo`、`psycopg` 版本 | `postgres` / `mongo` |
-| `src/service/agui.py`、AG-UI 适配器或 `ag-ui-*` 依赖项 | `agui` |
+| `app/services/memory/*`、`app/core/database.py`、`initialize_database`、存储器类或检查点存储器接线 | `postgres` |
+| `langgraph-checkpoint-postgres`、`psycopg` 版本 | `postgres` |
+| `app/api/agui.py`、AG-UI 适配器或 `ag-ui-*` 依赖项 | `agui` |
 | LangFuse 追踪（`CallbackHandler` 接线、`/health` 认证检查）或 `langfuse` 依赖项 | `langfuse` |
 | 广泛涉及服务启动、生命周期或 `/health` | 最相关的一到两个目标 |
 | 无特定变更，仅做定期发布前可信度检查 | `all` |
@@ -42,8 +42,8 @@ LangFuse 技术栈的 `all`，不要习惯性地运行它。
 ## 运行方式
 
 ```sh
-./scripts/smoke_test.sh                 # 默认：postgres、mongo、agui
-./scripts/smoke_test.sh mongo           # 单个目标
+./scripts/smoke_test.sh                 # 默认：postgres、agui
+./scripts/smoke_test.sh postgres        # 单个目标
 ./scripts/smoke_test.sh postgres agui   # 部分目标
 ./scripts/smoke_test.sh langfuse        # 重量级：约 5GB 技术栈，单独运行
 ./scripts/smoke_test.sh all             # 全部目标，包括 langfuse
@@ -57,14 +57,13 @@ LangFuse 技术栈的 `all`，不要习惯性地运行它。
 
 该设计的核心在于：**API 测试通过并不能证明预期依赖项确实被使用。** 持久化测试只检查
 两次调用之间的历史记录是否保留，任何正常工作的检查点存储器（包括 SQLite）都能满足
-这一条件。因此，如果 `DATABASE_TYPE=mongo` 因环境变量丢失或回退逻辑而未能生效，
-pytest 步骤仍会通过，但 Mongo 完全没有被访问。
+这一条件。因此还需直接查询 PostgreSQL，确认本次线程确实写入了目标数据库。
+当前生产启动只支持 PostgreSQL，不允许回退到 SQLite、MongoDB 或内存。
 
 正因如此，每个目标都会执行**第二项独立检查**，确认特定依赖项确实被使用。真正应当
 信任的是以下输出行：
 
 - `✓ verified: N postgres checkpoint rows for this run's thread`
-- `✓ verified: N mongo checkpoint documents for this run's thread`
 - `✓ verified: N LangFuse traces recorded for this run`
 - `✓ verified: AG-UI streamed a complete run with the expected response`
 
@@ -95,9 +94,8 @@ pytest 步骤仍会通过，但 Mongo 完全没有被访问。
   （Chainguard）。在出口受限的环境中，应将 **`cgr.dev`** 加入网络允许列表，否则拉取
   请求会返回 403。（如果之后另一个主机的拉取仍返回 403，请添加错误信息中指出的主机；
   某些注册表会从独立 CDN 提供 blob。）
-- **`pkill -f run_service.py` 会终止当前 shell。** `-f` 匹配完整命令行，而命令文本本身
-  包含该字符串，所以会匹配到自身。需要释放 8080 端口时，请改用
-  `fuser -k 8080/tcp`。
+- **不要用 `pkill -f` 匹配启动命令。** `-f` 匹配完整命令行，而命令文本本身
+  包含该字符串，所以会匹配到自身。应保存启动时的 `$!`，只终止自己启动的服务 PID。
 - **长时间在前台运行的 `sleep` 循环可能被沙箱终止。** 运行脚本或等待脚本时，应在后台
   启动（`nohup … &`）并轮询日志文件，不要在前台阻塞。
 - **`docker compose exec` 需要 `.env`，而 `docker exec` 不需要。** 基于宿主机的流程

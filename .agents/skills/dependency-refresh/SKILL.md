@@ -4,7 +4,7 @@ description: >-
   为本仓库执行依赖项与版本刷新：更新 pyproject.toml/uv.lock 中的 Python 库、Docker
   基础镜像、GitHub Actions 固定版本、uv CLI 版本（CI + README + Dockerfile）、支持的
   Python 版本范围，以及 compose 和冒烟测试使用的基础设施镜像
-  （postgres/mongo/LangFuse）。当用户要求“更新依赖项”“提升版本”或“执行依赖项刷新”，
+  （postgres/LangFuse）。当用户要求“更新依赖项”“提升版本”或“执行依赖项刷新”，
   或每月定时执行 dependency-refresh 时使用。此操作手册自成一体；历史状态（暂缓的
   主版本、冷却日期）记录在上一次刷新 PR 中，步骤 0 会说明如何找到它。
 ---
@@ -97,7 +97,7 @@ somepkg = "0 days"  # 安全修复 CVE-XXXX；发布超过 14 天后删除
 **2. 关键依赖项的三个月主版本冷却期（通过流程强制执行）。** 关键依赖项是指主版本
 升级一旦出问题，处理成本高昂或难以回退的依赖项：
 
-- **基础设施镜像：** `postgres`、`mongo`（compose/冒烟测试）。主版本可能更改磁盘
+- **基础设施镜像：** `postgres`（compose/冒烟测试）。主版本可能更改磁盘
   数据格式。
 - **应用平台：** `streamlit`、`fastapi`、`pydantic`。
 - **智能体核心技术栈：** `langgraph` + `langchain`，以及与之耦合的
@@ -124,7 +124,7 @@ somepkg = "0 days"  # 安全修复 CVE-XXXX；发布超过 14 天后删除
 | 支持的 Python 范围与分类器 | `pyproject.toml` → `requires-python`、`classifiers` |
 | GitHub Actions 版本（`actions/checkout`、`setup-python`、`setup-uv`、`docker/*`、`codecov-action` 等） | `.github/workflows/*.yml`（`uses:`） |
 | `uv` CLI 版本：**共四处，需保持同步** | `.github/workflows/test.yml`（两个 `setup-uv` 步骤的 `version:`）、`docker/Dockerfile.app` + `docker/Dockerfile.service`（`pip install uv==`）、`README.md` 快速入门（`curl .../uv/<version>/install.sh`） |
-| compose 与冒烟测试使用的基础设施镜像 | `compose.yaml`（`postgres:` 标签）、`docker/compose.mongo.yaml`（`mongo:` 标签）、`scripts/smoke_test.sh`（`LANGFUSE_REF`） |
+| compose 与冒烟测试使用的基础设施镜像 | `compose.yaml`（`postgres:` 标签）、`scripts/smoke_test.sh`（`LANGFUSE_REF`） |
 
 ## 工作流程
 

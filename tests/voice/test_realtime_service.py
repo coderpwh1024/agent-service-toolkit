@@ -22,10 +22,10 @@ from langgraph.types import interrupt
 from pydantic import SecretStr
 from starlette.websockets import WebSocketDisconnect
 
-from core import settings
-from schema.voice import ZERO_UUID, VoiceOption, VoiceTurn, decode_audio, encode_audio
-from service import app
-from voice.providers.errors import SpeechProviderError
+from app.core import settings
+from app.main import app
+from app.schemas.voice import ZERO_UUID, VoiceOption, VoiceTurn, decode_audio, encode_audio
+from app.services.voice.providers.errors import SpeechProviderError
 
 
 class MemoryRepository:
@@ -236,8 +236,9 @@ def build_chatbot(responses=None, sleep=0):
 
 @pytest.fixture
 def voice_env(monkeypatch):
-    from service import agui, service
-    from service import voice as voice_routes
+    import app.api.agui as agui
+    import app.api.chats as service
+    import app.api.voice as voice_routes
 
     repo = MemoryRepository()
     agents = {"chatbot": build_chatbot()}
@@ -277,6 +278,18 @@ def create(client, headers, **body):
     response = client.post("/voice/sessions", headers=headers, json=body)
     assert response.status_code == 200, response.text
     return response.json()["data"]
+
+
+def test_unknown_voice_agent_preserves_error_response(voice_env, monkeypatch):
+    import app.api.voice as voice_routes
+    from app.api.dependencies import get_agent
+
+    client, repo, agents, headers = voice_env
+    monkeypatch.setattr(voice_routes, "get_agent", get_agent)
+    response = client.post("/voice/sessions", headers=headers(), json={"agent_id": "unknown-agent"})
+    assert response.status_code == 404
+    assert response.json() == {"code": 404, "message": "Agent not found", "data": None}
+    assert not repo.sessions
 
 
 def test_model_upgrade_advertises_bound_voices_and_rejects_stale_selection(voice_env, monkeypatch):
@@ -402,7 +415,7 @@ def test_legacy_voice_turn_infers_audio_status(status, interrupted, error_code, 
 
 
 def test_slow_tts_applies_backpressure_without_truncating_audio(voice_env, monkeypatch):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, agents, headers = voice_env
     response = "".join(f"这是第{index}句。" for index in range(1, 21))
@@ -439,9 +452,9 @@ def test_slow_tts_applies_backpressure_without_truncating_audio(voice_env, monke
 def test_audio_starts_while_model_is_still_generating_and_reports_latency(
     voice_env, monkeypatch, enable_thinking
 ):
-    import voice.session as voice_session
-    from service import voice as voice_routes
-    from service.agent_runner import AgentEvent
+    import app.api.voice as voice_routes
+    import app.api.voice_connection as voice_session
+    from app.services.agent_runner import AgentEvent
 
     client, _, _, headers = voice_env
     signals = []
@@ -497,7 +510,7 @@ def test_audio_starts_while_model_is_still_generating_and_reports_latency(
 @pytest.mark.parametrize("failure", ["before_audio", "after_audio", "persistent"])
 @pytest.mark.parametrize("error_type", [TimeoutError, SpeechProviderError])
 def test_tts_failure_retries_only_undelivered_segments(voice_env, monkeypatch, failure, error_type):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     connections = []
     attempts = []
@@ -552,7 +565,7 @@ def test_tts_failure_retries_only_undelivered_segments(voice_env, monkeypatch, f
 
 
 def test_tts_failure_finishes_without_deadlock_or_false_success(voice_env, monkeypatch):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, agents, headers = voice_env
     agents["chatbot"] = build_chatbot(["".join(f"这是第{index}句。" for index in range(1, 21))])
@@ -582,9 +595,9 @@ def test_tts_failure_finishes_without_deadlock_or_false_success(voice_env, monke
 
 
 def test_standalone_punctuation_does_not_truncate_the_rest_of_a_reply(voice_env, monkeypatch):
-    import voice.session as voice_session
-    from service import voice as voice_routes
-    from service.agent_runner import AgentEvent
+    import app.api.voice as voice_routes
+    import app.api.voice_connection as voice_session
+    from app.services.agent_runner import AgentEvent
 
     first_audio = asyncio.Event()
 
@@ -629,8 +642,8 @@ def test_standalone_punctuation_does_not_truncate_the_rest_of_a_reply(voice_env,
 def test_nacos_voice_order_controls_capabilities_and_session_default(
     voice_env, monkeypatch, source: str, lingxin_first: bool
 ) -> None:
-    from core.settings import Settings
-    from service.nacos import apply_remote_settings
+    from app.core.nacos import apply_remote_settings
+    from app.core.settings import Settings
 
     client, _, _, headers = voice_env
     model = "qwen-audio-3.1-tts-flash"
@@ -700,7 +713,7 @@ def test_voice_capabilities_expose_compatible_ids_and_display_metadata(voice_env
 def test_wake_session_validates_metadata_and_confirms_transcript(
     voice_env, monkeypatch, transcript
 ):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, _, headers = voice_env
     monkeypatch.setattr(WakeSpeech, "transcript", transcript)
@@ -752,7 +765,7 @@ def test_wake_session_validates_metadata_and_confirms_transcript(
 
 @pytest.mark.parametrize("transcript", ["小美小美", "小美，小美，小美！", "小美，小美，嗯"])
 def test_wake_without_command_only_speaks_greeting(voice_env, monkeypatch, transcript):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, _, headers = voice_env
     monkeypatch.setattr(WakeSpeech, "transcript", transcript)
@@ -801,7 +814,7 @@ def test_wake_without_command_only_speaks_greeting(voice_env, monkeypatch, trans
 def test_split_wake_and_extra_calls_greet_once_and_preserve_following_command(
     voice_env, monkeypatch
 ):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, _, headers = voice_env
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", SegmentedWakeSpeech)
@@ -844,7 +857,7 @@ def test_split_wake_and_extra_calls_greet_once_and_preserve_following_command(
 
 @pytest.mark.parametrize("transcript", [None, "小美"])
 def test_wake_confirmation_timeout_closes_without_greeting(voice_env, monkeypatch, transcript):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, _, headers = voice_env
     monkeypatch.setattr(settings, "VOICE_WAKE_CONFIRM_SECONDS", 2)
@@ -864,7 +877,7 @@ def test_wake_confirmation_timeout_closes_without_greeting(voice_env, monkeypatc
 
 
 def test_wake_greeting_tts_failure_keeps_session_usable(voice_env, monkeypatch):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, _, headers = voice_env
     monkeypatch.setattr(WakeSpeech, "transcript", "小美小美")
@@ -892,7 +905,7 @@ def test_wake_greeting_tts_failure_keeps_session_usable(voice_env, monkeypatch):
     ["嗯", "呢", "那", "。", ".", "...", "．", "，？！", "；：", "——", "“”", "（ ）", "嗯。"],
 )
 def test_playback_echo_filler_does_not_cancel_or_start_a_turn(voice_env, monkeypatch, filler):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, _, headers = voice_env
     monkeypatch.setattr(EchoFillerSpeech, "second_transcript", filler)
@@ -934,7 +947,7 @@ def test_playback_echo_filler_does_not_cancel_or_start_a_turn(voice_env, monkeyp
 
 @pytest.mark.parametrize("text", ["你好。", "C++ 的 1.5 版本怎么用？", "嗯，帮我查天气。"])
 def test_punctuation_noise_is_ignored_before_meaningful_speech(voice_env, monkeypatch, text):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     class PartialSpeech(SegmentedWakeSpeech):
         async def append_audio(self, ws, pcm):
@@ -978,7 +991,7 @@ def test_punctuation_noise_is_ignored_before_meaningful_speech(voice_env, monkey
 
 
 def test_punctuation_noise_does_not_reject_or_erase_a_split_wake(voice_env, monkeypatch):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, _, headers = voice_env
     monkeypatch.setattr(SegmentedWakeSpeech, "transcripts", (".", "小美", "。", "小美"))
@@ -1015,7 +1028,7 @@ def test_punctuation_noise_does_not_reject_or_erase_a_split_wake(voice_env, monk
 
 
 def test_meaningful_speech_still_interrupts_playback(voice_env, monkeypatch):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, _, headers = voice_env
     monkeypatch.setattr(EchoFillerSpeech, "second_transcript", "请暂停播放")
@@ -1055,7 +1068,7 @@ def test_meaningful_speech_still_interrupts_playback(voice_env, monkeypatch):
 
 
 def test_rejected_wake_closes_session_and_releases_user_capacity(voice_env, monkeypatch):
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
 
     client, repo, _, headers = voice_env
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", RejectedWakeSpeech)
@@ -1302,7 +1315,7 @@ def test_expired_session_cannot_connect(voice_env):
 
 @pytest.mark.asyncio
 async def test_voice_lifespan_requires_both_backend_secrets(monkeypatch):
-    from service.voice import voice_lifespan
+    from app.lifecycle import voice_lifespan
 
     monkeypatch.setattr(settings, "VOICE_ENABLED", True)
     monkeypatch.setattr(settings, "AUTH_SECRET", SecretStr("admin"))
@@ -1318,11 +1331,18 @@ async def test_voice_lifespan_requires_both_backend_secrets(monkeypatch):
             pass
 
 
-def test_mem0_agent_shares_text_and_voice_memory(voice_env, monkeypatch):
+@pytest.mark.parametrize("agent_id", ["mem0-chatbot", "chatbot"])
+def test_mem0_agent_shares_text_and_voice_memory(voice_env, monkeypatch, agent_id):
     import importlib
     from unittest.mock import AsyncMock, Mock
 
-    module = importlib.import_module("agents.mem0_chatbot")
+    import app.agents.runtime as runtime
+    import app.api.agui as agui
+    import app.api.chats as service
+    import app.api.voice as voice_routes
+    from app.api.dependencies import get_agent
+
+    module = importlib.import_module("app.agents.mem0_chat")
     client, repo, agents, headers = voice_env
     memory = Mock(search=AsyncMock(return_value=["喜欢茶"]), remember=AsyncMock())
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
@@ -1333,13 +1353,16 @@ def test_mem0_agent_shares_text_and_voice_memory(voice_env, monkeypatch):
             responses=["记得你喜欢茶。", "记得你喜欢茶。"], sleep=0.001
         ),
     )
-    graph = module.mem0_chatbot.copy()
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
-    agents["mem0-chatbot"] = graph
+    monkeypatch.setattr(runtime, "mem0_chat", graph)
+    for route_module in (service, voice_routes, agui):
+        monkeypatch.setattr(route_module, "get_agent", get_agent)
     auth = headers()
-    response = client.post("/mem0-chatbot/invoke", headers=auth, json={"message": "我喜欢茶"})
+    response = client.post(f"/{agent_id}/invoke", headers=auth, json={"message": "我喜欢茶"})
     assert response.status_code == 200
-    session = create(client, auth, agent_id="mem0-chatbot")
+    session = create(client, auth, **({"agent_id": agent_id} if agent_id != "chatbot" else {}))
+    assert session["agent_id"] == agent_id
     with connect(client, session, auth) as ws:
         configure(ws)
         event(ws, "input.text", text="我喜欢什么？")
@@ -1356,9 +1379,16 @@ def test_mem0_agent_shares_text_and_voice_memory(voice_env, monkeypatch):
     capabilities = client.get("/voice/capabilities", headers=auth).json()["data"]
     agent = next(a for a in capabilities["agents"] if a["id"] == "mem0-chatbot")
     assert agent["speech_mode"] == "streaming" and agent["cancel_execution"]
+    other_agent = "chatbot" if agent_id == "mem0-chatbot" else "mem0-chatbot"
+    assert (
+        client.post(
+            f"/{other_agent}/history", headers=auth, json={"thread_id": session["thread_id"]}
+        ).status_code
+        == 403
+    )
 
 
-@pytest.mark.parametrize("agent_id", ["mem0-chatbot"])
+@pytest.mark.parametrize("agent_id", ["mem0-chatbot", "chatbot"])
 def test_mem0_cancel_invalidates_audio(voice_env, agent_id):
     client, repo, agents, headers = voice_env
     agents[agent_id] = build_chatbot(["第一句话。" + "后续内容" * 100, "新的回答。"], sleep=0.003)
@@ -1382,157 +1412,6 @@ def test_mem0_cancel_invalidates_audio(voice_env, agent_id):
     assert turns[0].interrupted and turns[0].execution_status == "cancelled"
 
 
-def test_audio_transcript_delegates_web_research_once_and_speaks_only_final_answer(
-    voice_env, monkeypatch
-):
-    import importlib
-
-    from agents.safeguard import SafeguardOutput, SafetyAssessment
-    from service import voice as voice_routes
-
-    module = importlib.import_module("agents.mem0_chatbot")
-    research = importlib.import_module("agents.research_assistant")
-    client, repo, agents, headers = voice_env
-
-    class SearchSpeech(FakeSpeech):
-        async def append_audio(self, ws, pcm):
-            for _ in range(2):
-                await self.events.put(
-                    {
-                        "type": "conversation.item.input_audio_transcription.completed",
-                        "item_id": "search-audio",
-                        "transcript": "帮我联网查一下最新的公开消息",
-                    }
-                )
-
-    class SearchModel(FakeMessagesListChatModel):
-        def bind_tools(self, tools, **kwargs):
-            return self
-
-    model = SearchModel(
-        responses=[
-            AIMessage(
-                content="",
-                tool_calls=[
-                    {
-                        "name": "research_assistant",
-                        "args": {"query": "最新的公开消息"},
-                        "id": "search-1",
-                    }
-                ],
-            ),
-            AIMessage(content="查到了，这是最新消息。[来源](https://example.com/news)"),
-        ]
-    )
-    memory = Mock(search=AsyncMock(return_value=[]), remember=AsyncMock())
-    search = AsyncMock(
-        return_value=(
-            "内部网页摘要",
-            [{"title": "消息", "link": "https://example.com/news", "snippet": "公开证据"}],
-        )
-    )
-    monkeypatch.setattr(voice_routes, "AlibabaRealtime", SearchSpeech)
-    monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
-    monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
-    monkeypatch.setattr(
-        research, "get_model", lambda *_, **kwargs: FakeListChatModel(responses=["内部研究结论"])
-    )
-    monkeypatch.setattr(research.BoundedWebSearch, "_arun", search)
-    monkeypatch.setattr(
-        research.Safeguard,
-        "ainvoke",
-        AsyncMock(return_value=SafeguardOutput(safety_assessment=SafetyAssessment.SAFE)),
-    )
-    graph = module.mem0_chatbot.copy()
-    graph.checkpointer = MemorySaver()
-    agents["mem0-chatbot"] = graph
-    auth = headers()
-    session = create(client, auth, agent_id="mem0-chatbot")
-    with connect(client, session, auth) as ws:
-        ready = configure(ws)
-        ws.send_bytes(
-            encode_audio(b"\0\0" * 320, ready["connection_id"], str(ZERO_UUID), 0, 0, kind=1)
-        )
-        seen = read_until(ws, "response.done")
-        spoken = "".join(e["text"] for e in seen if e["type"] == "text.delta")
-        assert spoken == "查到了，这是最新消息。[来源](https://example.com/news)"
-        assert any(e["type"] == "audio" for e in seen)
-        assert "内部" not in spoken and "tool_calls" not in spoken
-        event(ws, "session.close")
-        read_until(ws, "session.closed")
-    search.assert_awaited_once()
-    memory.remember.assert_awaited_once()
-    assert len(repo.records) == 1
-
-
-def test_voice_cancel_stops_research_and_allows_next_turn(voice_env, monkeypatch):
-    import importlib
-    from threading import Event
-
-    from agents.safeguard import SafeguardOutput, SafetyAssessment
-
-    module = importlib.import_module("agents.mem0_chatbot")
-    research = importlib.import_module("agents.research_assistant")
-    client, repo, agents, headers = voice_env
-    started, cancelled = Event(), Event()
-
-    class SearchModel(FakeMessagesListChatModel):
-        def bind_tools(self, tools, **kwargs):
-            return self
-
-    async def search(self, query, **kwargs):
-        started.set()
-        try:
-            await asyncio.Event().wait()
-        finally:
-            cancelled.set()
-
-    model = SearchModel(
-        responses=[
-            AIMessage(
-                content="",
-                tool_calls=[
-                    {"name": "research_assistant", "args": {"query": "公开问题"}, "id": "search-1"}
-                ],
-            ),
-            AIMessage(content="新的回答。"),
-        ]
-    )
-    memory = Mock(search=AsyncMock(return_value=[]), remember=AsyncMock())
-    monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
-    monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
-    monkeypatch.setattr(research.BoundedWebSearch, "_arun", search)
-    monkeypatch.setattr(
-        research.Safeguard,
-        "ainvoke",
-        AsyncMock(return_value=SafeguardOutput(safety_assessment=SafetyAssessment.SAFE)),
-    )
-    graph = module.mem0_chatbot.copy()
-    graph.checkpointer = MemorySaver()
-    agents["mem0-chatbot"] = graph
-    auth = headers()
-    session = create(client, auth, agent_id="mem0-chatbot")
-    with connect(client, session, auth) as ws:
-        configure(ws)
-        event(ws, "input.text", text="帮我联网查询")
-        beginning = read_until(ws, "response.started")[-1]
-        assert started.wait(2)
-        event(ws, "response.cancel", response_id=beginning["response_id"])
-        read_until(ws, "response.cancelled")
-        assert cancelled.wait(2)
-        event(ws, "input.text", text="不用查了，你好")
-        seen = read_until(ws, "response.done")
-        if seen[-1]["response_id"] == beginning["response_id"]:
-            seen += read_until(ws, "response.done")
-        assert "".join(e["text"] for e in seen if e["type"] == "text.delta") == "新的回答。"
-        assert any(e["type"] == "audio" for e in seen)
-        event(ws, "session.close")
-        read_until(ws, "session.closed")
-    assert memory.remember.await_count == 1
-    turns = list(repo.records.values())
-    assert turns[0].execution_status == "cancelled" and turns[0].interrupted
-
-
 @pytest.mark.parametrize(
     "action,confirmation,status",
     [
@@ -1547,12 +1426,12 @@ def test_audio_transcripts_manage_memories_and_speak_results(
 ):
     import importlib
 
-    from memory.mem0_service import Mem0Service
-    from schema.memory import MemoryList, MemoryRecord
-    from schema.memory_commands import MemoryMutationResult
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
+    from app.schemas.memory import MemoryList, MemoryRecord
+    from app.schemas.memory_commands import MemoryMutationResult
+    from app.services.memory.mem0_service import Mem0Service
 
-    module = importlib.import_module("agents.mem0_chatbot")
+    module = importlib.import_module("app.agents.mem0_chat")
     client, repo, agents, headers = voice_env
     command = "把喜欢茶的记忆改成我喜欢咖啡" if action == "update" else "删除喜欢茶的记忆"
 
@@ -1604,7 +1483,7 @@ def test_audio_transcripts_manage_memories_and_speak_results(
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
     monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", CommandSpeech)
-    graph = module.mem0_chatbot.copy()
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
     agents["mem0-chatbot"] = graph
     auth = headers()
@@ -1650,9 +1529,9 @@ def test_audio_transcripts_manage_memories_and_speak_results(
 def test_cancelled_memory_preview_does_not_mutate_or_stream_planning_json(voice_env, monkeypatch):
     import importlib
 
-    from memory.mem0_service import Mem0Service
+    from app.services.memory.mem0_service import Mem0Service
 
-    module = importlib.import_module("agents.mem0_chatbot")
+    module = importlib.import_module("app.agents.mem0_chat")
     client, _, agents, headers = voice_env
 
     class SlowPlanningModel(FakeListChatModel):
@@ -1665,7 +1544,7 @@ def test_cancelled_memory_preview_does_not_mutate_or_stream_planning_json(voice_
     memory = AsyncMock(spec=Mem0Service)
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
     monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
-    graph = module.mem0_chatbot.copy()
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
     agents["mem0-chatbot"] = graph
     auth = headers()
@@ -1694,12 +1573,12 @@ def test_cancelled_memory_preview_does_not_mutate_or_stream_planning_json(voice_
 def test_audio_memory_queries_and_bulk_deletion(voice_env, monkeypatch, operation):
     import importlib
 
-    from memory.mem0_service import Mem0Service
-    from schema.memory import MemoryList, MemoryRecord
-    from schema.memory_commands import MemoryMutationResult, MemorySnapshot
-    from service import voice as voice_routes
+    import app.api.voice as voice_routes
+    from app.schemas.memory import MemoryList, MemoryRecord
+    from app.schemas.memory_commands import MemoryMutationResult, MemorySnapshot
+    from app.services.memory.mem0_service import Mem0Service
 
-    module = importlib.import_module("agents.mem0_chatbot")
+    module = importlib.import_module("app.agents.mem0_chat")
     client, repo, agents, headers = voice_env
     scenarios = {
         "count": (["我的记忆总共有多少条"], [{"action": "count"}], ["103 条"]),
@@ -1760,7 +1639,7 @@ def test_audio_memory_queries_and_bulk_deletion(voice_env, monkeypatch, operatio
     monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
     monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", CommandSpeech)
-    graph = module.mem0_chatbot.copy()
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
     agents["mem0-chatbot"] = graph
     auth = headers()
@@ -1797,19 +1676,19 @@ def test_audio_memory_queries_and_bulk_deletion(voice_env, monkeypatch, operatio
             assert mutation.revision == "snapshot"
 
 
-@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
+@pytest.mark.parametrize("agent_id", ["mem0-chatbot", "chatbot"])
 @pytest.mark.parametrize("delivery_status", ["sent", "unknown", "scheduled"])
 def test_audio_transcript_sends_email_and_speaks_actual_result(
-    voice_env, monkeypatch, agent_name, delivery_status
+    voice_env, monkeypatch, agent_id, delivery_status
 ):
     import importlib
 
-    from core.skills import EMAIL_SKILL_NAME, EmailSkill
-    from schema.email_skill import EmailSendResult
-    from service import voice as voice_routes
-    from skills import email
+    import app.api.voice as voice_routes
+    from app.core.skills import EMAIL_SKILL_NAME, EmailSkill
+    from app.schemas.email_skill import EmailSendResult
+    from app.services.skills import email
 
-    module = importlib.import_module(f"agents.{agent_name}")
+    module = importlib.import_module("app.agents.mem0_chat")
     client, repo, agents, headers = voice_env
 
     class EmailSpeech(FakeSpeech):
@@ -1849,11 +1728,9 @@ def test_audio_transcript_sends_email_and_speaks_actual_result(
         intent.update(timing="scheduled", send_at=target.isoformat())
     model = EmailModel(responses=[json.dumps(intent, ensure_ascii=False)])
     monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
-    if agent_name == "mem0_chatbot":
-        monkeypatch.setattr(module, "get_mem0_service", lambda: None)
-    graph = getattr(module, agent_name).copy()
+    monkeypatch.setattr(module, "get_mem0_service", lambda: None)
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
-    agent_id = agent_name.replace("_", "-")
     agents[agent_id] = graph
     auth = headers("7")
     session = create(client, auth, agent_id=agent_id)
@@ -1882,8 +1759,8 @@ def test_audio_transcript_sends_email_and_speaks_actual_result(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("wake_activation", [True, False])
 async def test_audio_pacing_accounts_for_declared_wake_preroll(wake_activation):
-    from schema.voice import VoiceSession
-    from voice.session import VoiceConnection
+    from app.api.voice_connection import VoiceConnection
+    from app.schemas.voice import VoiceSession
 
     session = VoiceSession(
         user_id="synthetic-wake",
@@ -1932,14 +1809,14 @@ def test_wake_preroll_can_cover_a_slow_double_call(voice_env, monkeypatch):
     assert rejected.status_code == 422
 
 
-@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
-def test_audio_video_requests_remain_ordinary_chat(voice_env, monkeypatch, agent_name):
+@pytest.mark.parametrize("agent_id", ["mem0-chatbot", "chatbot"])
+def test_audio_video_requests_remain_ordinary_chat(voice_env, monkeypatch, agent_id):
     import importlib
 
-    from service import voice as voice_routes
-    from video import runtime
+    import app.api.voice as voice_routes
+    from app.services.video import runtime
 
-    module = importlib.import_module(f"agents.{agent_name}")
+    module = importlib.import_module("app.agents.mem0_chat")
     client, repo, agents, headers = voice_env
 
     class VideoSpeech(FakeSpeech):
@@ -1967,11 +1844,9 @@ def test_audio_video_requests_remain_ordinary_chat(voice_env, monkeypatch, agent
     monkeypatch.setattr(voice_routes, "AlibabaRealtime", VideoSpeech)
     model = FakeListChatModel(responses=["普通聊天回答。", "继续普通聊天。"])
     monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
-    if agent_name == "mem0_chatbot":
-        monkeypatch.setattr(module, "get_mem0_service", lambda: None)
-    graph = getattr(module, agent_name).copy()
+    monkeypatch.setattr(module, "get_mem0_service", lambda: None)
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
-    agent_id = agent_name.replace("_", "-")
     agents[agent_id] = graph
     auth = headers("7")
     session = create(client, auth, agent_id=agent_id)
@@ -1996,19 +1871,19 @@ def test_audio_video_requests_remain_ordinary_chat(voice_env, monkeypatch, agent
     assert len(repo.records) == 2
 
 
-@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
+@pytest.mark.parametrize("agent_id", ["mem0-chatbot", "chatbot"])
 def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
-    voice_env, monkeypatch, agent_name
+    voice_env, monkeypatch, agent_id
 ):
     import importlib
 
-    from core.skills import SkillDefinition
-    from schema.video import VideoTask, VideoTaskPage
-    from service import voice as voice_routes
-    from video import runtime
+    import app.api.voice as voice_routes
+    from app.core.skills import SkillDefinition
+    from app.schemas.video import VideoTask, VideoTaskPage
+    from app.services.video import runtime
 
     client, repo, agents, headers = voice_env
-    module = importlib.import_module(f"agents.{agent_name}")
+    module = importlib.import_module("app.agents.mem0_chat")
     transcripts = ["生成五秒海边视频", "找海边有海鸥的视频", "查询第二条", "把刚才视频改成水墨风格"]
 
     class VideoSpeech(FakeSpeech):
@@ -2027,8 +1902,6 @@ def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
                         "transcript": transcript,
                     }
                 )
-
-    from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 
     class VideoModel(FakeMessagesListChatModel):
         def bind_tools(self, tools, **kwargs):
@@ -2096,11 +1969,9 @@ def test_audio_triggers_managed_video_skill_for_create_list_detail_and_edit(
         ]
     )
     monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
-    if agent_name == "mem0_chatbot":
-        monkeypatch.setattr(module, "get_mem0_service", lambda: None)
-    graph = getattr(module, agent_name).copy()
+    monkeypatch.setattr(module, "get_mem0_service", lambda: None)
+    graph = module.mem0_chat.copy()
     graph.checkpointer = MemorySaver()
-    agent_id = agent_name.replace("_", "-")
     agents[agent_id] = graph
     auth = headers("7")
     session = create(client, auth, agent_id=agent_id)

@@ -14,6 +14,7 @@ PACKAGE_FILES = (
     "pyproject.toml",
     "uv.lock",
     "README.md",
+    "streamlit_app.py",
     "LICENSE",
     "scripts/package_linux.py",
     "deploy/uv-version",
@@ -43,7 +44,8 @@ def build_archive(root: Path, destination: Path, requirements: str) -> None:
     paths = [root / name for name in PACKAGE_FILES]
     paths.extend(
         path
-        for path in sorted((root / "src").rglob("*"))
+        for package in ("app", "client")
+        for path in sorted((root / package).rglob("*"))
         if path.suffix in {".py", ".sql"}
         and not any(
             part.startswith(".") or part == "__pycache__" for part in path.relative_to(root).parts

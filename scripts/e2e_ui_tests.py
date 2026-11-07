@@ -58,12 +58,9 @@ CLOUD_CHROMIUM = "/opt/pw-browsers/chromium"
 # A simple, no-tool agent keeps the message thread deterministic (exactly one
 # assistant message per turn) so count-based waits are reliable regardless of the
 # model behind it. Scenarios that specifically test agent selection override this.
-CHAT_AGENT = "chatbot"
+CHAT_AGENT = "mem0-chatbot"
 
-# The resume scenario needs full multi-turn history to survive a checkpoint round
-# trip. The @entrypoint-style chatbot only exposes its last reply via /history, so
-# use a StateGraph agent (whose messages channel accumulates every turn) instead.
-HISTORY_AGENT = "research-assistant"
+HISTORY_AGENT = "mem0-chatbot"
 
 WAKE_TIMEOUT_S = 180
 RESPONSE_TIMEOUT_S = 120

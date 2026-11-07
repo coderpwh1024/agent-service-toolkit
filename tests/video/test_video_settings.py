@@ -1,7 +1,7 @@
 import pytest
 from pydantic import SecretStr
 
-from core.settings import Settings
+from app.core.settings import Settings
 
 
 def configured():
@@ -63,7 +63,7 @@ def test_invalid_endpoint_is_rejected(url):
 
 
 def test_nacos_video_settings():
-    from service.nacos import apply_remote_settings
+    from app.core.nacos import apply_remote_settings
 
     settings = configured()
     apply_remote_settings(

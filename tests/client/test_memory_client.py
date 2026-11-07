@@ -5,8 +5,8 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
+from app.schemas.memory import MemoryDeleteResult, MemoryHistory, MemoryList, MemoryRecord
 from client import AgentClient, AgentClientError
-from schema.memory import MemoryDeleteResult, MemoryHistory, MemoryList, MemoryRecord
 
 MEMORY_ID = "00000000-0000-0000-0000-000000000001"
 RECORD = {"id": MEMORY_ID, "memory": "coffee", "user_id": "alice", "agent_id": "mem0-chatbot"}

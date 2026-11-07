@@ -1,6 +1,6 @@
 # Mem0 对话记忆
 
-`mem0-chatbot` 位于 agent 列表首位，也是文字聊天的默认 agent。它沿用 `chatbot.py` 的 LangGraph functional API、模型选择和 PostgreSQL 会话检查点，另用 Mem0 提取用户的长期事实与偏好。已有 `chatbot` 等 agent 的接口保持可用；已有会话继续指定原来的 agent，不要把原 agent 的 thread ID 直接切换给新 agent。
+`mem0-chatbot` 是项目唯一的主 Agent，使用 LangGraph functional API 和 PostgreSQL 会话检查点，并通过 Mem0 提取用户长期事实。`chatbot` 是同一主 Agent 的兼容标识；继续已有线程时保持原标识，不改写数据库所有权或检查点 metadata。
 
 ## 配置与启用
 
@@ -30,43 +30,19 @@ memory:
 
 关闭 Nacos 时使用对应的 `MEM0_ENABLED`、`MEM0_COLLECTION_NAME`、`MEM0_LLM_MODEL`、`MEM0_API_KEY`、`MEM0_BASE_URL`、`MEM0_EMBEDDING_MODEL`、`MEM0_EMBEDDING_DIMS`、`MEM0_TOP_K`、`MEM0_THRESHOLD`、`MEM0_RERANK_MODEL`、`MEM0_RERANK_URL`、`MEM0_RERANK_CANDIDATES`、`MEM0_RERANK_TIMEOUT_SECONDS`、`MEM0_TIMEOUT_SECONDS` 和 `MEM0_MAX_CONTEXT_CHARS` 环境变量。密钥字段使用 `SecretStr`。默认 `MEM0_ENABLED=false`，让现有部署可以先完成数据库准备；此时新 agent 只有会话历史，响应中会返回 `memory_status=disabled`。远程配置只在启动时加载，修改后重启服务。
 
-`mem0-chatbot` 的回答上下文最多包含当前线程最近 20 条用户和助手消息，包含本轮用户输入；用户消息和助手消息各算一条，不是 20 轮。系统规则和本轮检索出的长期记忆单独加入，不占这 20 条名额。语音中断后的播放说明使用助手角色，也计入消息窗口。完整聊天检查点和长期记忆继续保留，窗口之外的对话不会从数据库删除；长期事实仍可跨线程检索。原有 `chatbot` Agent 保持原来的上下文行为。
+`mem0-chatbot` 的回答上下文最多包含当前线程最近 20 条用户和助手消息，包含本轮用户输入；用户消息和助手消息各算一条，不是 20 轮。系统规则和本轮检索出的长期记忆单独加入，不占这 20 条名额。语音中断后的播放说明使用助手角色，也计入消息窗口。完整聊天检查点和长期记忆继续保留，窗口之外的对话不会从数据库删除；长期事实仍可跨线程检索。`chatbot` 兼容入口执行相同的主 Agent 逻辑。
 
-邮件和记忆管理指令仍优先处理。普通聊天先检索本人记忆，再由主模型直接回答或选择联网研究、加载视频 Skill；不再运行独立的视频意图识别请求。提示词先放固定角色与工具规则，再放真实历史，末尾放本轮状态、日期、视频状态标记和不可信检索记忆，当前用户消息保持最后一条。完整视频 Skill 和操作参数仍只按需加载。视频结果不作为长期用户事实提取；取消请求会停止正在等待的检索或模型调用，已提交任务仍按原有幂等和查询规则处理。Mem0 同步 SDK 已开始的工作仍按原有规则占用容量直到真正退出。
+邮件和记忆管理指令仍优先处理。普通聊天先检索本人记忆，再由主模型直接回答或加载视频 Skill；不再运行独立的视频意图识别请求。提示词先放固定角色与工具规则，再放真实历史，末尾放本轮状态、日期、视频状态标记和不可信检索记忆，当前用户消息保持最后一条。完整视频 Skill 和操作参数仍只按需加载。视频结果不作为长期用户事实提取；取消请求会停止正在等待的检索或模型调用，已提交任务仍按原有幂等和查询规则处理。Mem0 同步 SDK 已开始的工作仍按原有规则占用容量直到真正退出。
 
 回答模型不再使用应用层的总输入预算：窗口内的消息保留完整正文，检索服务返回的长期记忆全部加入请求，不再因估算字节数而裁剪历史、丢弃检索结果或提前返回 `memory_status=input_too_long`。原有 Nacos `chat_context_tokens` 和环境变量 `MEM0_CHAT_CONTEXT_TOKENS` 仍可按原有类型及范围加载，以兼容已有部署，但不再影响聊天请求。`max_context_chars` 仍限制检索记忆正文总长度，也限制传给提取模型的近期对话正文总长度。供应商模型自身的上下文窗口和接口输入长度限制仍然适用，超限错误沿用现有模型调用失败路径处理。
 
 PostgreSQL 必须安装 pgvector。Compose 使用 `pgvector/pgvector:0.8.2-pg16`，维持 PostgreSQL 16 与原数据卷路径。已有数据库先备份，再按部署方式安装扩展；不要删除数据卷。启动账户需要创建 Mem0 表和 `vector` 扩展的权限；生产环境可由 DBA 提前执行 `CREATE EXTENSION IF NOT EXISTS vector`。新 agent 启用 Mem0 后，数据库、扩展或必要配置不可用会阻止服务启动，避免隐式使用 SQLite 或内存存储。
 
-## 联网研究子智能体
+## 单主 Agent 与旧配置兼容
 
-`mem0-chatbot` 默认可以按需调用 `research-assistant` 的进程内研究子图，不需要 A2A 服务或额外搜索 API Key。首次回答模型请求同时提供 `research_assistant` 工具，由模型决定是否委派；普通聊天不新增专门的路由模型调用。邮件和记忆管理仍先按原流程处理；视频操作由主模型按需加载 Skill。聊天模型需要支持工具调用；不实现 `bind_tools` 的模型保留普通聊天。
+研究、RAG、Supervisor 和 GitHub MCP 等其他 Agent 已移除，主模型不再绑定 `research_assistant` 或调用研究子图。需要实时外部信息时会说明无法联网核实。聊天、记忆、邮件与视频 Skill 的接口和协议保持原有契约。
 
-可在现有 Nacos 配置中增加以下字段，不影响原有 Mem0 参数；未添加时使用这些默认值：
-
-```yaml
-memory:
-  mem0:
-    research:
-      enabled: true
-      timeout_seconds: 90
-      final_timeout_seconds: 15
-      search_timeout_seconds: 60
-```
-
-对应环境变量为 `MEM0_RESEARCH_ENABLED`、`MEM0_RESEARCH_TIMEOUT_SECONDS`、`MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS` 和 `RESEARCH_SEARCH_TIMEOUT_SECONDS`，Compose 同样传入这些字段。Nacos 中的值优先，配置更新后重启后端生效；设置 `enabled: false` 可关闭委派，原有聊天和记忆功能继续工作。长期记忆开关 `MEM0_ENABLED` 与研究开关独立。
-
-用户可输入或说“帮我联网查一下最新的公开消息”。主 agent 将问题和必要条件整理为最多 2000 字符的搜索任务，子图复用 Research 的 WebSearch 和 Safeguard，先搜索一次，再用同一个选定的聊天模型关闭思考、整理证据。省去子图内决定是否搜索的模型调用，每轮最多委派一次、最多返回四条来源。DDGS 默认自动选择搜索后端，需要后端能访问相关外部站点。外部搜索收到模型整理的查询；规则要求不附带全部记忆和无关私密资料，这属于模型约束，不能视为确定性的敏感信息过滤器。
-
-搜索调用默认最多等待 60 秒，包含安全检查、搜索和证据整理的子任务合计最多等待 90 秒，主 agent 的最终回答另限 15 秒。研究子任务范围为 1–120 秒，搜索和最终回答超时范围均为 1–60 秒。研究失败、无结果或超时时直接返回明确提示，不再追加模型调用或伪造联网结论。正常搜索路径包含主 agent 的委派决策、子 agent 的证据整理和主 agent 的最终回答，共三次回答模型调用；启用 Groq 时另有原有安全审核。上述预算不包含原有邮件/记忆/视频识别、记忆检索/提取及首次聊天模型调用，因此不是端到端响应时间承诺。普通聊天的原有流式输出继续保留。
-
-同步搜索在工作线程中执行，每进程最多四个未完成请求；满载时立即报告暂不可用，不建立无界等待队列。异步超时或语音取消不会阻塞事件循环；底层同步请求不能被强制终止，在实际退出前继续占用并发名额，并有原生网络超时。独立 Research agent 的异步 WebSearch 同样受搜索超时和并发限制。
-
-主 agent 保持用户绑定、模型选择、线程所有权和完整对话历史；子图不使用独立持久检查点，任务结果由父工作流管理。子图仅接收当前搜索任务，不接收全部聊天历史或长期记忆。来源取自真实搜索工具返回值，研究摘要与来源以工具结果交回主 agent，不能覆盖系统指令。根聊天历史仅保存用户消息和最终回答；原始工具结果不交给 Mem0 提取，带研究状态的历史助手回复也不作为后续事实提取的参考。
-
-文字 SSE 和实时语音均隐藏子图内部 token、消息及原始网页摘要，只输出主 agent 的最终回答。语音仍使用原 ASR、TTS、输入去重、插话取消与播放确认，不增加客户端协议或切换 agent。最终消息增加 `response_metadata.research_status`，可能为 `success`、`empty`、`timeout`、`unavailable`、`blocked` 或 `invalid`；获得资料时同时提供 `research_sources`（标题、URL、摘要）。`memory_status` 仍沿用原有语义。
-
-INFO 日志记录研究开始、完成状态、来源数量、耗时和取消，不打印搜索问题、网页正文、用户记忆或密钥；失败日志仅记录异常类型。研究调度的工具契约和边界规则随代码维护，不替代下述 Nacos 中的聊天角色及记忆提示词。
+旧 Nacos `memory.mem0.research`、`rag` 和相关环境字段继续按原有类型加载，以免已有部署在启动时因未知配置失败；它们不再产生运行时功能，Compose 与示例不再主动提供研究开关。旧研究回复的 metadata 仍可读取，事实提取继续排除这些历史助手回复。
 
 ## 提示词配置
 
@@ -95,7 +71,7 @@ memory:
       chat_system: my-mem0-chat-system
 ```
 
-没有指定的 Key 仍使用表中的默认名称。关闭 Nacos 时不会自动加载 Mem0 提示词，因此 `mem0-chatbot` 不能运行；其他不依赖这些提示词的 agent 仍可使用。`MEM0_ENABLED=false` 只关闭长期记忆，不免除聊天和记忆意图识别对 Prompt 的要求。提示词只在启动时加载，修改发布版本或标签后需重启服务。测试中使用独立的替身模板，不访问真实配置中心或付费模型。
+没有指定的 Key 仍使用表中的默认名称。关闭 Nacos 时不会自动加载 Mem0 提示词，因此 `mem0-chatbot` 不能运行，兼容入口 `chatbot` 同样需要这些提示词。`MEM0_ENABLED=false` 只关闭长期记忆，不免除聊天和记忆意图识别对 Prompt 的要求。提示词只在启动时加载，修改发布版本或标签后需重启服务。测试中使用独立的替身模板，不访问真实配置中心或付费模型。
 
 发布必须使用 Prompt 管理能力创建版本并发布，使 Prompt 同时可在管理中心查询并由客户端读取。普通配置的 `config-set` 不等同于 Prompt 发布，不能仅往某个特殊分组写入 JSON 来替代版本管理。
 
@@ -115,13 +91,13 @@ memory:
 - 长期事实：Mem0 只处理本轮用户文本，并按认证后绑定的 `user_id` 和固定 `agent_id=mem0-chatbot` 写入与检索。线程 ID 作为来源元数据，不作为过滤范围，因此同一用户可在新会话中回忆旧偏好。
 - 提取上下文与历史：`mem0_records` 保存 Mem0 的变更事件和每个用户/智能体/线程最近十条有效用户消息，使用六个审计字段、BIGINT identity、部分索引及逻辑删除。聊天提取时使用当前线程检查点中最近十条、且不超过 `max_context_chars` 的用户/助手消息作指代参考；助手提问只用于解释本轮用户的明确回答，不作为新事实来源。新线程不会读取旧的跨线程提取缓存，长期事实检索仍按用户和智能体跨线程共享。已有缓存不需要迁移，也不会在启动时删除；记忆管理清理会覆盖旧缓存和所有线程缓存。旧上下文仍保留为逻辑删除记录，应纳入数据库备份与保留期维护。
 
-向量与实体表由 Mem0 SDK 管理，沿用其 UUID 与 JSONB schema，属于第三方表豁免；第一方 `mem0_records` 执行仓库的六字段规范。Mem0 2.2.1 的构造器强制创建 SQLite，项目通过集中在 `memory/mem0_sdk.py` 的版本适配层注入 PostgreSQL history，继续使用 SDK 的提取和搜索算法。依赖精确固定，升级时必须重新验证该适配层与 PostgreSQL 冒烟测试。
+向量与实体表由 Mem0 SDK 管理，沿用其 UUID 与 JSONB schema，属于第三方表豁免；第一方 `mem0_records` 执行仓库的六字段规范。Mem0 2.2.1 的构造器强制创建 SQLite，项目通过集中在 `app/services/memory/mem0_sdk.py` 的版本适配层注入 PostgreSQL history，继续使用 SDK 的提取和搜索算法。依赖精确固定，升级时必须重新验证该适配层与 PostgreSQL 冒烟测试。
 
 检索结果作为带有明确不可信数据标签的 JSON 参考消息传入，不使用系统消息角色，不能覆盖系统规则或用户当前的纠正。提示词要求只从本轮用户输入提取持久事实，不保存密钥、助手猜测和临时请求；无法明确解析指代时不提取。这属于模型约束，不等同于确定性的敏感数据检测。不要主动发送凭据。检索不足时助手应明确说明，不编造记忆。SDK 当前采用增量事实提取，不保证自动删除所有旧偏好；有冲突时当前用户纠正优先，跨会话冲突可能需要再次确认。
 
 ## 自动提取规则
 
-项目附加规则位于 Nacos Prompt 管理中心的 `mem0-fact-extraction-instructions`，使用中文编写。`src/memory/mem0_sdk.py` 的 `build_memory()` 将加载后的规则传入 `custom_instructions`。`src/agents/mem0_chatbot.py` 决定提交本轮最后一条有效用户文本，并通过 `_extraction_context()` 提供历史参考；`src/memory/mem0_history.py` 的 `get_last_messages()` 将参考交给 SDK。这些规则与 `mem0-fact-extraction-system`（从 Mem0 的 `ADDITIVE_EXTRACTION_PROMPT` 提取）共同作用，不是仅凭提示词就能强制执行的过滤器。
+项目附加规则位于 Nacos Prompt 管理中心的 `mem0-fact-extraction-instructions`，使用中文编写。`app/services/memory/mem0_sdk.py` 的 `build_memory()` 将加载后的规则传入 `custom_instructions`。`app/agents/mem0_chat.py` 决定提交本轮最后一条有效用户文本，并通过 `_extraction_context()` 提供历史参考；`app/repositories/mem0_history.py` 的 `get_last_messages()` 将参考交给 SDK。这些规则与 `mem0-fact-extraction-system`（从 Mem0 的 `ADDITIVE_EXTRACTION_PROMPT` 提取）共同作用，不是仅凭提示词就能强制执行的过滤器。
 
 ### 公开资料与项目取舍
 
@@ -321,13 +297,13 @@ result = client.delete_all_memories(user_id="alice")
 
 ## 日志和验证
 
-通过 `python src/run_service.py` 启动时，统一使用标准库 logging 与 JSON formatter。在本地引导配置中设置 `LOG_LEVEL=INFO` 可查看 agent 开始/完成、记忆命中数量、写入数量、耗时与错误类型；`LOG_FORMAT=text` 可切换文本日志。这两个字段不能由 Nacos 覆盖。日志不输出用户消息、检索事实、连接串、密钥或原始音频，并过滤可能输出供应商载荷的 SDK 日志。Mem0 遥测在加载 SDK 前关闭。
+通过 `python -m app` 启动时，统一使用标准库 logging 与 JSON formatter。在本地引导配置中设置 `LOG_LEVEL=INFO` 可查看 agent 开始/完成、记忆命中数量、写入数量、耗时与错误类型；`LOG_FORMAT=text` 可切换文本日志。这两个字段不能由 Nacos 覆盖。日志不输出用户消息、检索事实、连接串、密钥或原始音频，并过滤可能输出供应商载荷的 SDK 日志。Mem0 遥测在加载 SDK 前关闭。
 
 首字延时可结合三类 INFO 日志定位：`Mem0 operation completed operation=search` 记录记忆检索耗时，`Model first output stage=main_initial` 区分主模型首个正文和工具调用，`Agent first text run_id=... duration_ms=... output=token|message` 每轮只记录一次根级可见文本。最后一项从公共事件迭代器开始执行时计时，不包含先前 HTTP 认证、ASR 或 TTS，也不能当作用户说完到听到首音的端到端延时。`Mem0 answer started preparation_ms` 还可定位进入 agent 到回答模型调用前的准备时间；并行阶段的耗时存在重叠，不应直接相加。
 
 ```sh
 uv sync --frozen
-uv run pytest tests/agents/test_mem0_chatbot.py tests/memory/test_mem0_service.py tests/memory/test_mem0_sdk.py tests/memory/test_mem0_management.py tests/memory/test_mem0_history.py tests/service/test_memories.py tests/client/test_memory_client.py tests/voice/test_realtime_service.py -q
+uv run pytest tests/agents/test_mem0_chat.py tests/memory/test_mem0_service.py tests/memory/test_mem0_sdk.py tests/memory/test_mem0_management.py tests/memory/test_mem0_history.py tests/api/test_memories.py tests/client/test_memory_client.py tests/voice/test_realtime_service.py -q
 uv run pytest tests/agents/test_memory_commands.py tests/memory/test_mem0_mutations.py -q
 ./scripts/smoke_test.sh postgres
 ```
@@ -340,16 +316,16 @@ PostgreSQL 冒烟测试使用实际 Mem0 算法、pgvector 和 PostgreSQL histor
 
 ## 首 Token 与缓存观测
 
-普通 HTTP 聊天默认显式关闭 thinking（`CHAT_LLM_ENABLE_THINKING=false`，Nacos `models.chat.enable_thinking`）。需要深度推理时可通过请求 `agent_config.enable_thinking=true` 开启；既有 `voice_enable_thinking` 覆盖优先，语音继续采用独立的 `voice.llm.enable_thinking`。这避免普通文本入口未传参数时沿用供应商默认思考行为。其他 agent 和原始 `get_model()` 默认行为不变。
+普通 HTTP 聊天默认显式关闭 thinking（`CHAT_LLM_ENABLE_THINKING=false`，Nacos `models.chat.enable_thinking`）。需要深度推理时可通过请求 `agent_config.enable_thinking=true` 开启；既有 `voice_enable_thinking` 覆盖优先，语音继续采用独立的 `voice.llm.enable_thinking`。这避免普通文本入口未传参数时沿用供应商默认思考行为。原始 `get_model()` 的默认行为不变。
 
-主模型调用记录 `core.model_metrics` 的首输出与完成日志，阶段为 `main_initial`、`video_operation` 或 `research_final`。文字首 Token 与工具调用首包分别计时，日志包含调用 ID、模型、固定提示词/工具摘要、输入/输出 Token、缓存读取/创建 Token 和总时长。不打印提示词、用户内容、工具参数或响应正文；供应商未返回的用量记为未知，不伪记为零。LangGraph 的 `Agent first text` 继续表示用户可见首字，两者不能混用。
+主模型调用记录 `core.model_metrics` 的首输出与完成日志，阶段为 `main_initial` 或 `video_operation`。文字首 Token 与工具调用首包分别计时，日志包含调用 ID、模型、固定提示词/工具摘要、输入/输出 Token、缓存读取/创建 Token 和总时长。不打印提示词、用户内容、工具参数或响应正文；供应商未返回的用量记为未知，不伪记为零。LangGraph 的 `Agent first text` 继续表示用户可见首字，两者不能混用。
 
 阿里云客户端显式请求流式用量，正文仍即时通过原有 SSE 和语音事件传输。可选的 `models.dashscope.explicit_cache_enabled` 映射为 `DASHSCOPE_EXPLICIT_CACHE_ENABLED`，默认 `false`；Compose 同步传入。启用后只在已注册阿里云模型的固定 System 前缀末端添加 `cache_control`，不把用户记忆、日期、身份或视频草稿标为固定内容。无此能力的模型保持原始消息结构。缓存仍由供应商管理，不是 Redis、Nacos 或 LangGraph 检查点缓存。
 
 只读模型对照可运行以下脚本。它会调用付费模型，但不会执行模型选择的工具，也不会提交邮件、视频或记忆操作。候选文件只供显式评估使用，不是服务的本地提示词回退：
 
 ```sh
-PYTHONPATH=src uv run python scripts/benchmark_chat_latency.py \
+PYTHONPATH=. uv run python scripts/benchmark_chat_latency.py \
   --baseline-prompt /path/to/baseline.txt --candidate-prompt /path/to/candidate.txt \
   --samples 5 --output /path/to/report.json
 ```

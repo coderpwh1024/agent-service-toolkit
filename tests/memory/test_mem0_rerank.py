@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from memory.mem0_rerank import Mem0Reranker
+from app.services.memory.mem0_rerank import Mem0Reranker
 
 
 def test_rerank_uses_provider_indices_and_scores() -> None:

@@ -1,3 +1,4 @@
+# ruff: noqa: E402
 """Lightweight live smoke test against each configured LLM provider.
 
 Sends a minimal one-token prompt to every model in schema.models for providers
@@ -6,13 +7,13 @@ This is a maintainer tool for periodic model-catalog refreshes (see the
 model-refresh skill) -- it is NOT part of the pytest suite, since it makes real
 network calls against provider APIs and costs a small amount of real money.
 
-Usage (run from the repo root; PYTHONPATH=src is required, same as src/run_service.py):
-    PYTHONPATH=src uv run python scripts/check_live_models.py
-    PYTHONPATH=src uv run python scripts/check_live_models.py --provider anthropic google
+Usage (run from the repo root; PYTHONPATH=. is required, same as app/__main__.py):
+    PYTHONPATH=. uv run python scripts/check_live_models.py
+    PYTHONPATH=. uv run python scripts/check_live_models.py --provider anthropic google
 
 If ANTHROPIC_API_KEY itself isn't settable in your environment, put the key under a
 different variable name and point --anthropic-api-key-env at it:
-    PYTHONPATH=src uv run python scripts/check_live_models.py --anthropic-api-key-env MY_VAR
+    PYTHONPATH=. uv run python scripts/check_live_models.py --anthropic-api-key-env MY_VAR
 """
 
 import argparse
@@ -46,9 +47,9 @@ def _remap_anthropic_api_key(argv: list[str]) -> None:
 
 _remap_anthropic_api_key(sys.argv[1:])
 
-from core.llm import get_model  # noqa: E402
-from core.settings import settings  # noqa: E402
-from schema.models import (  # noqa: E402
+from app.core.llm import get_model
+from app.core.settings import settings
+from app.schemas.llm import (
     AlibabaModelName,
     AllModelEnum,
     AnthropicModelName,

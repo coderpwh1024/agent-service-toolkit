@@ -30,9 +30,9 @@
 - **`langchain` 与 `langgraph` 必须同步升级。** 元包将 `langgraph` 限制在较窄范围内，
   因此两者都不能单独升级到超出另一方约束的版本。
 - **`langgraph`、`langgraph-checkpoint` 与各检查点存储器包**应作为一个耦合单元升级。
-  检查点存储器主版本可能改变已存储检查点的兼容性或删除 API（mongodb 存储器删除了
-  异步类，`src/memory/mongodb.py` 对此进行了衔接）。测试套件模拟了真实后端，因此需要
-  手动验证新存储器仍可读取旧检查点。
+  检查点存储器主版本可能改变已存储检查点的兼容性或删除 API。当前服务仅使用
+  `app/core/database.py` 中的 PostgreSQL 实现；SQLite/MongoDB 不是可选启动后端。
+  测试套件模拟了真实后端，因此需要手动验证新存储器仍可读取旧检查点。
 - **LLM SDK 升级具有链式效应：** `langchain-<provider>` 会引入较新的提供商 SDK，
   后者又会提升自身依赖下限（例如 `openai` → `jiter`）。应准备好同步升级整条依赖链。
 - **提供商适配器可能限制共享库的版本**（例如 `langchain-google-vertexai` 限制

@@ -8,8 +8,8 @@ from uuid import uuid4
 import pytest
 from pydantic import SecretStr
 
-from core.settings import Settings
-from memory.mem0_sdk import ValidatedExtractionLlm, build_memory, close_memory
+from app.core.settings import Settings
+from app.services.memory.mem0_sdk import ValidatedExtractionLlm, build_memory, close_memory
 
 
 @pytest.fixture

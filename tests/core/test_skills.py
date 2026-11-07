@@ -4,7 +4,7 @@ from zipfile import ZipFile
 
 import pytest
 
-from core.skills import EMAIL_SKILL_NAME, VIDEO_SKILL_NAME, read_email_skill, read_skill
+from app.core.skills import EMAIL_SKILL_NAME, VIDEO_SKILL_NAME, read_email_skill, read_skill
 
 
 def archive(files: dict[str, str]) -> bytes:

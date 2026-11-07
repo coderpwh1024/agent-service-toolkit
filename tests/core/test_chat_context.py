@@ -2,8 +2,8 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_openai.chat_models.base import _convert_message_to_dict
 
-from core import settings
-from core.chat_context import prepare_chat_prompt
+from app.core import settings
+from app.core.chat_context import prepare_chat_prompt
 
 
 def test_dynamic_context_does_not_change_fixed_prefix_or_mutate_input():

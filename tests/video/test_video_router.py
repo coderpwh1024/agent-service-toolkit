@@ -7,11 +7,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
-from core import settings
-from schema.video import VideoListQuery, VideoMetadataUpdate, VideoTask, VideoTaskPage
-from service.access import create_access_token
-from service.video import router
-from video.service import VideoBusyError, VideoConflictError
+from app.api.video import router
+from app.core import settings
+from app.schemas.video import VideoListQuery, VideoMetadataUpdate, VideoTask, VideoTaskPage
+from app.services.auth import create_access_token
+from app.services.video.service import VideoBusyError, VideoConflictError
 
 
 def test_wan3_uses_existing_create_detail_and_list_routes(client) -> None:
@@ -157,7 +157,7 @@ def test_conflict_and_disabled_feature(client):
 
 
 def test_video_routes_are_registered_in_service():
-    from service import app
+    from app.main import app
 
     schema = app.openapi()
     assert schema["paths"]["/videos"]["post"]["operationId"] == "create_video"

@@ -9,8 +9,8 @@ from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 from pydantic import SecretStr
 
-from core.llm import get_model
-from schema.models import (
+from app.core.llm import get_model
+from app.schemas.llm import (
     AlibabaModelName,
     AnthropicModelName,
     FakeModelName,
@@ -74,7 +74,7 @@ def test_get_model_groq_gpt_oss():
 
 
 def test_get_model_ollama():
-    with patch("core.settings.settings.OLLAMA_MODEL", "llama3.3"):
+    with patch("app.core.settings.settings.OLLAMA_MODEL", "llama3.3"):
         model = get_model(OllamaModelName.OLLAMA_GENERIC)
         assert isinstance(model, ChatOllama)
         assert model.model == "llama3.3"
@@ -89,9 +89,9 @@ _get_model_uncached = get_model.__wrapped__
 @pytest.mark.parametrize("name", list(AlibabaModelName))
 def test_get_model_alibaba_bailian(name):
     with (
-        patch("core.settings.settings.DASHSCOPE_API_KEY", SecretStr("test_key")),
+        patch("app.core.settings.settings.DASHSCOPE_API_KEY", SecretStr("test_key")),
         patch(
-            "core.settings.settings.DASHSCOPE_BASE_URL",
+            "app.core.settings.settings.DASHSCOPE_BASE_URL",
             "https://workspace.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
         ),
     ):
@@ -109,14 +109,14 @@ def test_get_model_alibaba_bailian(name):
 
 
 def test_get_model_alibaba_bailian_requires_key():
-    with patch("core.settings.settings.DASHSCOPE_API_KEY", None):
+    with patch("app.core.settings.settings.DASHSCOPE_API_KEY", None):
         with pytest.raises(ValueError, match="Alibaba Bailian API key must be configured"):
             _get_model_uncached(AlibabaModelName.QWEN_38_MAX)
 
 
 @pytest.mark.parametrize("thinking", [False, True])
 def test_voice_thinking_override_is_explicit_and_does_not_mutate_text_model(thinking):
-    with patch("core.settings.settings.DASHSCOPE_API_KEY", SecretStr("test_key")):
+    with patch("app.core.settings.settings.DASHSCOPE_API_KEY", SecretStr("test_key")):
         text_model = _get_model_uncached(AlibabaModelName.QWEN_38_MAX)
         voice_model = _get_model_uncached(AlibabaModelName.QWEN_38_MAX, enable_thinking=thinking)
 
@@ -131,7 +131,7 @@ def test_voice_thinking_flag_is_not_sent_to_other_providers():
 
 
 def test_get_model_openrouter():
-    with patch("core.settings.settings.OPENROUTER_API_KEY", SecretStr("test_key")):
+    with patch("app.core.settings.settings.OPENROUTER_API_KEY", SecretStr("test_key")):
         model = _get_model_uncached(OpenRouterModelName.GEMINI_36_FLASH)
         assert isinstance(model, ChatOpenAI)
         assert model.model_name == "google/gemini-3.6-flash"
@@ -145,7 +145,7 @@ def test_get_model_openrouter():
 def test_get_model_openrouter_requires_key():
     # An unset key must fail loudly: the openai SDK would otherwise fall back to
     # OPENAI_API_KEY and send it to openrouter.ai.
-    with patch("core.settings.settings.OPENROUTER_API_KEY", None):
+    with patch("app.core.settings.settings.OPENROUTER_API_KEY", None):
         with pytest.raises(ValueError, match="OpenRouter API key must be configured"):
             _get_model_uncached(OpenRouterModelName.GEMINI_36_FLASH)
 

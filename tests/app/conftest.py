@@ -2,8 +2,8 @@ from unittest.mock import patch
 
 import pytest
 
-from schema import AgentInfo, ServiceMetadata
-from schema.models import OpenAIModelName
+from app.schemas import AgentInfo, ServiceMetadata
+from app.schemas.llm import OpenAIModelName
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def mock_agent_client(mock_env):
 
     with (
         patch("client.AgentClient") as mock_agent_client,
-        patch("voice.VoiceManager.from_env", return_value=None),
+        patch("client.voice.VoiceManager.from_env", return_value=None),
     ):
         mock_agent_client_instance = mock_agent_client.return_value
         mock_agent_client_instance.info = mock_info

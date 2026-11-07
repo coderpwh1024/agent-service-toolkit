@@ -6,8 +6,13 @@ from uuid import UUID
 
 import pytest
 
-from memory.mem0_service import AGENT_ID, Mem0Service, MemoryConflictError, MemoryNotFoundError
-from schema.memory_commands import MemoryMutation, MemoryTarget
+from app.schemas.memory_commands import MemoryMutation, MemoryTarget
+from app.services.memory.mem0_service import (
+    AGENT_ID,
+    Mem0Service,
+    MemoryConflictError,
+    MemoryNotFoundError,
+)
 
 MEMORY_ID = "00000000-0000-0000-0000-000000000001"
 

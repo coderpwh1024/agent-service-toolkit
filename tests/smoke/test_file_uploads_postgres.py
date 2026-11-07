@@ -7,8 +7,8 @@ import pytest
 from psycopg.conninfo import make_conninfo
 from psycopg.sql import SQL, Identifier
 
-from memory.postgres import get_postgres_connection_string
-from service.file_uploads import FileRepository
+from app.core.database import get_postgres_connection_string
+from app.repositories.files import FileRepository
 
 
 @pytest.mark.docker

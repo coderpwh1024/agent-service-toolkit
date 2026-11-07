@@ -3,7 +3,7 @@ import re
 
 import pytest
 
-from voice.speech_output import SpeechText
+from app.services.voice.speech_output import SpeechText
 
 
 def test_short_opening_comma_does_not_hide_later_sentence_boundary():

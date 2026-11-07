@@ -1,0 +1,5925 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "FastAPI",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health Check",
+        "description": "Health check endpoint.",
+        "operationId": "health_check",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__str__"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/token": {
+      "post": {
+        "summary": "Issue Token",
+        "operationId": "issue_token",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TokenInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/email/code": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Request Email Code",
+        "operationId": "request_email_code",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmailCodeAccepted_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/email/verify": {
+      "post": {
+        "tags": [
+          "authentication"
+        ],
+        "summary": "Verify Email Code",
+        "operationId": "verify_email_code",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailCodeVerify"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmailAuthResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Get Current User",
+        "operationId": "get_current_user",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserProfile_"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "users"
+        ],
+        "summary": "Update Current User",
+        "operationId": "update_current_user",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_update_current_user"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserProfile_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/voice/capabilities": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Capabilities",
+        "operationId": "capabilities",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__Any__"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/voice/protocol": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Protocol",
+        "operationId": "protocol",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__Any__"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/voice/sessions": {
+      "post": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Create Session",
+        "operationId": "create_session",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VoiceSessionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_VoiceSession_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/voice/sessions/{session_id}": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Get Session",
+        "operationId": "get_session",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_VoiceSession_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Close Session",
+        "operationId": "close_session",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__str__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/voice/sessions/{session_id}/turns": {
+      "get": {
+        "tags": [
+          "voice"
+        ],
+        "summary": "Get Turns",
+        "operationId": "get_turns",
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Session Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__Any__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agui/{agent_id}/run": {
+      "post": {
+        "summary": "Agui Run",
+        "description": "Run an agent over the AG-UI protocol, streaming AG-UI events via SSE.\n\nPoint an AG-UI client (e.g. CopilotKit's runtime or HttpAgent) at this endpoint.\nUse the same threadId across runs to continue a conversation - threads are\npersisted in the service's checkpointer and shared with the vanilla API.",
+        "operationId": "agui_run",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunAgentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agui/run": {
+      "post": {
+        "summary": "Agui Run",
+        "description": "Run an agent over the AG-UI protocol, streaming AG-UI events via SSE.\n\nPoint an AG-UI client (e.g. CopilotKit's runtime or HttpAgent) at this endpoint.\nUse the same threadId across runs to continue a conversation - threads are\npersisted in the service's checkpointer and shared with the vanilla API.",
+        "operationId": "agui_run_default",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "mem0-chatbot",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunAgentInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memories": {
+      "get": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "List Memories",
+        "operationId": "list_memories",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MemoryList_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "Delete All Memories",
+        "operationId": "delete_all_memories",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MemoryDeleteResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memories/{memory_id}": {
+      "get": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "Get Memory",
+        "operationId": "get_memory",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MemoryRecord_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "Update Memory",
+        "operationId": "update_memory",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MemoryRecord_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "Delete Memory",
+        "operationId": "delete_memory",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MemoryDeleteResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memories/{memory_id}/history": {
+      "get": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "Memory History",
+        "operationId": "memory_history",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "memory_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Memory Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 9223372036854775807,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_MemoryHistory_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/skills/email/send": {
+      "post": {
+        "tags": [
+          "skills"
+        ],
+        "summary": "Send Current User Email",
+        "operationId": "send_current_user_email",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailSendRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EmailSendResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/videos": {
+      "post": {
+        "tags": [
+          "videos"
+        ],
+        "summary": "Create Video",
+        "operationId": "create_video",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9_-]+$",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_VideoTask_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "videos"
+        ],
+        "summary": "List Videos",
+        "operationId": "list_videos",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Page Size"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/VideoStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "storage_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/VideoStorageStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Storage Status"
+            }
+          },
+          {
+            "name": "model",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "happyhorse-1.1-t2v",
+                    "happyhorse-1.0-t2v",
+                    "happyhorse-1.0-video-edit",
+                    "wan3.0-video",
+                    "wan3.0-video-prime"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Model"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "标题或生成/编辑描述关键词；忽略大小写，空白分隔的关键词须全部匹配",
+              "title": "Q"
+            },
+            "description": "标题或生成/编辑描述关键词；忽略大小写，空白分隔的关键词须全部匹配"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_VideoTaskPage_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/videos/{record_id}": {
+      "get": {
+        "tags": [
+          "videos"
+        ],
+        "summary": "Query Video",
+        "operationId": "query_video",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "exclusiveMinimum": 0,
+              "title": "Record Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_VideoTask_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "videos"
+        ],
+        "summary": "Update Video Metadata",
+        "operationId": "update_video_metadata",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "exclusiveMinimum": 0,
+              "title": "Record Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VideoMetadataUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_VideoTask_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "videos"
+        ],
+        "summary": "Delete Video",
+        "operationId": "delete_video",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "exclusiveMinimum": 0,
+              "title": "Record Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_str__bool__"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/files": {
+      "post": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Upload File",
+        "operationId": "upload_file",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_file"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UploadedFile_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/files/{file_id}/url": {
+      "get": {
+        "tags": [
+          "files"
+        ],
+        "summary": "Get File Url",
+        "operationId": "get_file_url",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "file_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "maximum": 9223372036854775807,
+              "exclusiveMinimum": 0,
+              "title": "File Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UploadedFile_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/info": {
+      "get": {
+        "summary": "Info",
+        "operationId": "info",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ServiceMetadata_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/invoke": {
+      "post": {
+        "summary": "Invoke",
+        "operationId": "invoke",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "mem0-chatbot",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatMessage_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{agent_id}/invoke": {
+      "post": {
+        "summary": "Invoke",
+        "operationId": "invoke_with_agent_id",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatMessage_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stream": {
+      "post": {
+        "summary": "Stream",
+        "description": "Stream an agent's response to a user input, including intermediate messages and tokens.\n\nIf agent_id is not provided, the default agent will be used.\nUse thread_id to persist and continue a multi-turn conversation. run_id kwarg\nis also attached to all messages for recording feedback.\nUse user_id to persist and continue a conversation across multiple threads.\n\nSet `stream_tokens=false` to return intermediate messages but not token-by-token.",
+        "operationId": "stream",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "mem0-chatbot",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server Sent Event Response",
+            "content": {
+              "text/event-stream": {
+                "example": "data: {'type': 'token', 'content': 'Hello'}\n\ndata: {'type': 'token', 'content': ' World'}\n\ndata: [DONE]\n\n",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{agent_id}/stream": {
+      "post": {
+        "summary": "Stream",
+        "description": "Stream an agent's response to a user input, including intermediate messages and tokens.\n\nIf agent_id is not provided, the default agent will be used.\nUse thread_id to persist and continue a multi-turn conversation. run_id kwarg\nis also attached to all messages for recording feedback.\nUse user_id to persist and continue a conversation across multiple threads.\n\nSet `stream_tokens=false` to return intermediate messages but not token-by-token.",
+        "operationId": "stream_with_agent_id",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StreamInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Server Sent Event Response",
+            "content": {
+              "text/event-stream": {
+                "example": "data: {'type': 'token', 'content': 'Hello'}\n\ndata: {'type': 'token', 'content': ' World'}\n\ndata: [DONE]\n\n",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/feedback": {
+      "post": {
+        "summary": "Feedback",
+        "description": "Record feedback for a run to LangSmith.\n\nThis is a simple wrapper for the LangSmith create_feedback API, so the\ncredentials can be stored and managed in the service rather than the client.\nSee: https://api.smith.langchain.com/redoc#tag/feedback/operation/create_feedback_api_v1_feedback_post",
+        "operationId": "feedback",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Feedback"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_FeedbackResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/history": {
+      "post": {
+        "summary": "History",
+        "description": "Get chat history for a thread and agent.\n\nIf agent_id is not provided, the default agent will be used.",
+        "operationId": "history",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "mem0-chatbot",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatHistoryInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatHistory_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{agent_id}/history": {
+      "post": {
+        "summary": "History",
+        "description": "Get chat history for a thread and agent.\n\nIf agent_id is not provided, the default agent will be used.",
+        "operationId": "history_with_agent_id",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatHistoryInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatHistory_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/threads": {
+      "get": {
+        "summary": "Threads",
+        "description": "List a user's conversation threads for an agent, most recently updated first.\n\nApp access tokens are bound to their authenticated user. Trusted service\ncredentials may query an explicit user_id for administrative integrations.",
+        "operationId": "threads",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "mem0-chatbot",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserThreads_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{agent_id}/threads": {
+      "get": {
+        "summary": "Threads",
+        "description": "List a user's conversation threads for an agent, most recently updated first.\n\nApp access tokens are bound to their authenticated user. Trusted service\ncredentials may query an explicit user_id for administrative integrations.",
+        "operationId": "threads_with_agent_id",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_UserThreads_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-records": {
+      "get": {
+        "summary": "Chat Records",
+        "description": "List the latest 30 UTC calendar days containing chat activity.",
+        "operationId": "chat_records",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "mem0-chatbot",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatRecordList_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{agent_id}/chat-records": {
+      "get": {
+        "summary": "Chat Records",
+        "description": "List the latest 30 UTC calendar days containing chat activity.",
+        "operationId": "chat_records_with_agent_id",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatRecordList_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-records/{record_date}": {
+      "get": {
+        "summary": "Chat Record Detail",
+        "description": "Return messages added to conversations on one UTC calendar day.",
+        "operationId": "chat_record_detail",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "record_date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Record Date"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "mem0-chatbot",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatRecordDetail_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/{agent_id}/chat-records/{record_date}": {
+      "get": {
+        "summary": "Chat Record Detail",
+        "description": "Return messages added to conversations on one UTC calendar day.",
+        "operationId": "chat_record_detail_with_agent_id",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "record_date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "Record Date"
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ChatRecordDetail_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AWSModelName": {
+        "type": "string",
+        "enum": [
+          "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+          "global.anthropic.claude-sonnet-5"
+        ],
+        "title": "AWSModelName",
+        "description": "https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html"
+      },
+      "ActivityMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "const": "activity",
+            "title": "Role",
+            "default": "activity"
+          },
+          "activityType": {
+            "type": "string",
+            "title": "Activitytype"
+          },
+          "content": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Content"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "activityType",
+          "content"
+        ],
+        "title": "ActivityMessage",
+        "description": "An activity progress message emitted between chat messages."
+      },
+      "AgentInfo": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "Agent key.",
+            "examples": [
+              "research-assistant"
+            ]
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "description": "Description of the agent.",
+            "examples": [
+              "A research assistant for generating research papers."
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "description"
+        ],
+        "title": "AgentInfo",
+        "description": "Info about an available agent."
+      },
+      "AlibabaModelName": {
+        "type": "string",
+        "enum": [
+          "qwen3.8-max"
+        ],
+        "title": "AlibabaModelName",
+        "description": "https://help.aliyun.com/zh/model-studio/getting-started/models"
+      },
+      "AllModelEnum": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/AlibabaModelName"
+          },
+          {
+            "$ref": "#/components/schemas/OpenAIModelName"
+          },
+          {
+            "$ref": "#/components/schemas/OpenAICompatibleName"
+          },
+          {
+            "$ref": "#/components/schemas/AzureOpenAIModelName"
+          },
+          {
+            "$ref": "#/components/schemas/DeepseekModelName"
+          },
+          {
+            "$ref": "#/components/schemas/AnthropicModelName"
+          },
+          {
+            "$ref": "#/components/schemas/GoogleModelName"
+          },
+          {
+            "$ref": "#/components/schemas/VertexAIModelName"
+          },
+          {
+            "$ref": "#/components/schemas/GroqModelName"
+          },
+          {
+            "$ref": "#/components/schemas/AWSModelName"
+          },
+          {
+            "$ref": "#/components/schemas/OllamaModelName"
+          },
+          {
+            "$ref": "#/components/schemas/OpenRouterModelName"
+          },
+          {
+            "$ref": "#/components/schemas/FakeModelName"
+          }
+        ]
+      },
+      "AnthropicModelName": {
+        "type": "string",
+        "enum": [
+          "claude-haiku-4-5",
+          "claude-sonnet-4-5",
+          "claude-sonnet-5"
+        ],
+        "title": "AnthropicModelName",
+        "description": "https://platform.claude.com/docs/en/docs/about-claude/models"
+      },
+      "ApiResponse_ChatHistory_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatHistory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[ChatHistory]"
+      },
+      "ApiResponse_ChatMessage_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatMessage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[ChatMessage]"
+      },
+      "ApiResponse_ChatRecordDetail_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatRecordDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[ChatRecordDetail]"
+      },
+      "ApiResponse_ChatRecordList_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatRecordList"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[ChatRecordList]"
+      },
+      "ApiResponse_EmailAuthResponse_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailAuthResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[EmailAuthResponse]"
+      },
+      "ApiResponse_EmailCodeAccepted_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailCodeAccepted"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[EmailCodeAccepted]"
+      },
+      "ApiResponse_EmailSendResult_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EmailSendResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[EmailSendResult]"
+      },
+      "ApiResponse_FeedbackResponse_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[FeedbackResponse]"
+      },
+      "ApiResponse_MemoryDeleteResult_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryDeleteResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[MemoryDeleteResult]"
+      },
+      "ApiResponse_MemoryHistory_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryHistory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[MemoryHistory]"
+      },
+      "ApiResponse_MemoryList_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryList"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[MemoryList]"
+      },
+      "ApiResponse_MemoryRecord_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[MemoryRecord]"
+      },
+      "ApiResponse_ServiceMetadata_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ServiceMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[ServiceMetadata]"
+      },
+      "ApiResponse_UploadedFile_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UploadedFile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[UploadedFile]"
+      },
+      "ApiResponse_UserProfile_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[UserProfile]"
+      },
+      "ApiResponse_UserThreads_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserThreads"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[UserThreads]"
+      },
+      "ApiResponse_VideoTaskPage_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoTaskPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[VideoTaskPage]"
+      },
+      "ApiResponse_VideoTask_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoTask"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[VideoTask]"
+      },
+      "ApiResponse_VoiceSession_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VoiceSession"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[VoiceSession]"
+      },
+      "ApiResponse_dict_str__Any__": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[dict[str, Any]]"
+      },
+      "ApiResponse_dict_str__bool__": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "boolean"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[dict[str, bool]]"
+      },
+      "ApiResponse_dict_str__str__": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ApiResponse[dict[str, str]]"
+      },
+      "AssistantMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "const": "assistant",
+            "title": "Role",
+            "default": "assistant"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          },
+          "toolCalls": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolCall-Input"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toolcalls"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "AssistantMessage",
+        "description": "An assistant message."
+      },
+      "AudioInputContent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "audio",
+            "title": "Type",
+            "default": "audio"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InputContentDataSource"
+              },
+              {
+                "$ref": "#/components/schemas/InputContentUrlSource"
+              }
+            ],
+            "title": "Source",
+            "discriminator": {
+              "propertyName": "type",
+              "mapping": {
+                "data": "#/components/schemas/InputContentDataSource",
+                "url": "#/components/schemas/InputContentUrlSource"
+              }
+            }
+          },
+          "metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "AudioInputContent",
+        "description": "An audio input content fragment."
+      },
+      "AudioQualitySummary": {
+        "properties": {
+          "reports": {
+            "type": "integer",
+            "title": "Reports",
+            "default": 0
+          },
+          "frames": {
+            "type": "integer",
+            "title": "Frames",
+            "default": 0
+          },
+          "clipped_samples": {
+            "type": "integer",
+            "title": "Clipped Samples",
+            "default": 0
+          },
+          "rms_dbfs_sum": {
+            "type": "number",
+            "title": "Rms Dbfs Sum",
+            "default": 0
+          },
+          "peak_dbfs": {
+            "type": "number",
+            "title": "Peak Dbfs",
+            "default": -120
+          },
+          "aec_enabled": {
+            "type": "boolean",
+            "title": "Aec Enabled",
+            "default": false
+          },
+          "noise_suppression_enabled": {
+            "type": "boolean",
+            "title": "Noise Suppression Enabled",
+            "default": false
+          }
+        },
+        "type": "object",
+        "title": "AudioQualitySummary"
+      },
+      "AzureOpenAIModelName": {
+        "type": "string",
+        "enum": [
+          "azure-gpt-5",
+          "azure-gpt-5-mini"
+        ],
+        "title": "AzureOpenAIModelName",
+        "description": "https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/models-sold-directly-by-azure"
+      },
+      "BinaryInputContent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "binary",
+            "title": "Type",
+            "default": "binary"
+          },
+          "mimeType": {
+            "type": "string",
+            "title": "Mimetype"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "mimeType"
+        ],
+        "title": "BinaryInputContent",
+        "description": "A deprecated binary payload reference in a multimodal user message."
+      },
+      "Body_update_current_user": {
+        "properties": {
+          "nickname": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nickname"
+          },
+          "image": {
+            "anyOf": [
+              {
+                "type": "string",
+                "contentMediaType": "application/octet-stream"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "title": "Body_update_current_user"
+      },
+      "Body_upload_file": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_file"
+      },
+      "ChatHistory": {
+        "properties": {
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "type": "array",
+            "title": "Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "messages"
+        ],
+        "title": "ChatHistory"
+      },
+      "ChatHistoryInput": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "Thread ID to persist and continue a multi-turn conversation.",
+            "examples": [
+              "847c6285-8fc9-4560-a83f-4e6285809254"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id"
+        ],
+        "title": "ChatHistoryInput",
+        "description": "Input for retrieving chat history."
+      },
+      "ChatMessage": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "human",
+              "ai",
+              "tool",
+              "custom"
+            ],
+            "title": "Type",
+            "description": "Role of the message.",
+            "examples": [
+              "human",
+              "ai",
+              "tool",
+              "custom"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "Content of the message.",
+            "examples": [
+              "Hello, world!"
+            ]
+          },
+          "tool_calls": {
+            "items": {
+              "$ref": "#/components/schemas/ToolCall-Output"
+            },
+            "type": "array",
+            "title": "Tool Calls",
+            "description": "Tool calls in the message.",
+            "default": []
+          },
+          "tool_call_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Call Id",
+            "description": "Tool call that this message is responding to.",
+            "examples": [
+              "call_Jja7J89XsjrOLA5r!MEOW!SL"
+            ]
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id",
+            "description": "Run ID of the message.",
+            "examples": [
+              "847c6285-8fc9-4560-a83f-4e6285809254"
+            ]
+          },
+          "response_metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Response Metadata",
+            "description": "Response metadata. For example: response headers, logprobs, token counts.",
+            "default": {}
+          },
+          "custom_data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Custom Data",
+            "description": "Custom message data.",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "content"
+        ],
+        "title": "ChatMessage",
+        "description": "Message in a chat."
+      },
+      "ChatRecordDay": {
+        "properties": {
+          "record_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Record Date",
+            "description": "UTC calendar date containing chat activity.",
+            "examples": [
+              "2026-10-13"
+            ]
+          },
+          "latest_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Latest At",
+            "description": "Timestamp of the latest chat activity on this date.",
+            "examples": [
+              "2026-10-13T08:30:00+00:00"
+            ]
+          },
+          "conversation_count": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Conversation Count",
+            "description": "Number of conversations with activity on this date."
+          }
+        },
+        "type": "object",
+        "required": [
+          "record_date",
+          "latest_at",
+          "conversation_count"
+        ],
+        "title": "ChatRecordDay",
+        "description": "Summary of chat activity on one UTC calendar day."
+      },
+      "ChatRecordDetail": {
+        "properties": {
+          "record_date": {
+            "type": "string",
+            "format": "date",
+            "title": "Record Date"
+          },
+          "conversations": {
+            "items": {
+              "$ref": "#/components/schemas/DailyChatConversation"
+            },
+            "type": "array",
+            "title": "Conversations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "record_date",
+          "conversations"
+        ],
+        "title": "ChatRecordDetail",
+        "description": "Conversation content for one UTC calendar day."
+      },
+      "ChatRecordList": {
+        "properties": {
+          "records": {
+            "items": {
+              "$ref": "#/components/schemas/ChatRecordDay"
+            },
+            "type": "array",
+            "title": "Records"
+          }
+        },
+        "type": "object",
+        "required": [
+          "records"
+        ],
+        "title": "ChatRecordList",
+        "description": "Daily chat activity from the latest 30 UTC calendar days."
+      },
+      "Context": {
+        "properties": {
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "description",
+          "value"
+        ],
+        "title": "Context",
+        "description": "Additional context for the agent."
+      },
+      "DailyChatConversation": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "Thread ID of the conversation."
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id",
+            "description": "Agent used by the conversation."
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Latest activity timestamp on this date."
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Conversation title derived from its first human message."
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessage"
+            },
+            "type": "array",
+            "title": "Messages",
+            "description": "Messages added to the conversation on this date."
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "agent_id",
+          "updated_at",
+          "messages"
+        ],
+        "title": "DailyChatConversation",
+        "description": "Messages added to a conversation on one UTC calendar day."
+      },
+      "DeepseekModelName": {
+        "type": "string",
+        "enum": [
+          "deepseek-v4-flash",
+          "deepseek-v4-pro"
+        ],
+        "title": "DeepseekModelName",
+        "description": "https://api-docs.deepseek.com/quick_start/pricing"
+      },
+      "DeveloperMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "const": "developer",
+            "title": "Role",
+            "default": "developer"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "content"
+        ],
+        "title": "DeveloperMessage",
+        "description": "A developer message."
+      },
+      "DocumentInputContent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "document",
+            "title": "Type",
+            "default": "document"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InputContentDataSource"
+              },
+              {
+                "$ref": "#/components/schemas/InputContentUrlSource"
+              }
+            ],
+            "title": "Source",
+            "discriminator": {
+              "propertyName": "type",
+              "mapping": {
+                "data": "#/components/schemas/InputContentDataSource",
+                "url": "#/components/schemas/InputContentUrlSource"
+              }
+            }
+          },
+          "metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "DocumentInputContent",
+        "description": "A document input content fragment."
+      },
+      "EmailAuthResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "expires_at": {
+            "type": "integer",
+            "title": "Expires At"
+          },
+          "is_new_user": {
+            "type": "boolean",
+            "title": "Is New User"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserProfile"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_at",
+          "is_new_user",
+          "user"
+        ],
+        "title": "EmailAuthResponse"
+      },
+      "EmailCodeAccepted": {
+        "properties": {
+          "expires_in_seconds": {
+            "type": "integer",
+            "title": "Expires In Seconds",
+            "default": 180
+          }
+        },
+        "type": "object",
+        "title": "EmailCodeAccepted"
+      },
+      "EmailCodeRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email",
+            "title": "Email"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "EmailCodeRequest"
+      },
+      "EmailCodeVerify": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "maxLength": 320,
+            "format": "email",
+            "title": "Email"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "title": "Code"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "email",
+          "code"
+        ],
+        "title": "EmailCodeVerify"
+      },
+      "EmailSendRequest": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Subject"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 20000,
+            "minLength": 1,
+            "title": "Body"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "send_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Send At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject",
+          "body",
+          "request_id"
+        ],
+        "title": "EmailSendRequest"
+      },
+      "EmailSendResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "sent",
+              "duplicate",
+              "unknown",
+              "scheduled"
+            ],
+            "title": "Status"
+          },
+          "send_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Send At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "EmailSendResult"
+      },
+      "FakeModelName": {
+        "type": "string",
+        "enum": [
+          "fake"
+        ],
+        "title": "FakeModelName",
+        "description": "Fake model for testing."
+      },
+      "Feedback": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id",
+            "description": "Run ID to record feedback for.",
+            "examples": [
+              "847c6285-8fc9-4560-a83f-4e6285809254"
+            ]
+          },
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "Feedback key.",
+            "examples": [
+              "human-feedback-stars"
+            ]
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "Feedback score.",
+            "examples": [
+              0.8
+            ]
+          },
+          "kwargs": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Kwargs",
+            "description": "Additional feedback kwargs, passed to LangSmith.",
+            "default": {},
+            "examples": [
+              {
+                "comment": "In-line human feedback"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "run_id",
+          "key",
+          "score"
+        ],
+        "title": "Feedback",
+        "description": "Feedback for a run, to record to LangSmith."
+      },
+      "FeedbackResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "success",
+            "title": "Status",
+            "default": "success"
+          }
+        },
+        "type": "object",
+        "title": "FeedbackResponse"
+      },
+      "FunctionCall": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "arguments": {
+            "type": "string",
+            "title": "Arguments"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name",
+          "arguments"
+        ],
+        "title": "FunctionCall",
+        "description": "Name and arguments of a function call."
+      },
+      "GoogleModelName": {
+        "type": "string",
+        "enum": [
+          "gemini-2.5-pro",
+          "gemini-3.1-flash-lite",
+          "gemini-3.5-flash",
+          "gemini-3.5-flash-lite",
+          "gemini-3.6-flash",
+          "gemini-3.1-pro-preview"
+        ],
+        "title": "GoogleModelName",
+        "description": "https://ai.google.dev/gemini-api/docs/models/gemini"
+      },
+      "GroqModelName": {
+        "type": "string",
+        "enum": [
+          "openai/gpt-oss-20b",
+          "openai/gpt-oss-120b",
+          "openai/gpt-oss-safeguard-20b"
+        ],
+        "title": "GroqModelName",
+        "description": "https://console.groq.com/docs/models"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ImageInputContent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "image",
+            "title": "Type",
+            "default": "image"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InputContentDataSource"
+              },
+              {
+                "$ref": "#/components/schemas/InputContentUrlSource"
+              }
+            ],
+            "title": "Source",
+            "discriminator": {
+              "propertyName": "type",
+              "mapping": {
+                "data": "#/components/schemas/InputContentDataSource",
+                "url": "#/components/schemas/InputContentUrlSource"
+              }
+            }
+          },
+          "metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "ImageInputContent",
+        "description": "An image input content fragment."
+      },
+      "InputContentDataSource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "data",
+            "title": "Type",
+            "default": "data"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "mimeType": {
+            "type": "string",
+            "title": "Mimetype"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "value",
+          "mimeType"
+        ],
+        "title": "InputContentDataSource",
+        "description": "Inline base64-encoded source."
+      },
+      "InputContentUrlSource": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "url",
+            "title": "Type",
+            "default": "url"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "mimeType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mimetype"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "value"
+        ],
+        "title": "InputContentUrlSource",
+        "description": "URL-referenced source."
+      },
+      "MemoryDeleteResult": {
+        "properties": {
+          "deleted_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Deleted Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "deleted_count"
+        ],
+        "title": "MemoryDeleteResult"
+      },
+      "MemoryHistory": {
+        "properties": {
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryHistoryEntry"
+            },
+            "type": "array",
+            "title": "History"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "history"
+        ],
+        "title": "MemoryHistory"
+      },
+      "MemoryHistoryEntry": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "memory_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Memory Id"
+          },
+          "event": {
+            "type": "string",
+            "enum": [
+              "ADD",
+              "UPDATE",
+              "DELETE"
+            ],
+            "title": "Event"
+          },
+          "old_memory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Old Memory"
+          },
+          "new_memory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "New Memory"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "memory_id",
+          "event"
+        ],
+        "title": "MemoryHistoryEntry"
+      },
+      "MemoryList": {
+        "properties": {
+          "memories": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryRecord"
+            },
+            "type": "array",
+            "title": "Memories"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "memories"
+        ],
+        "title": "MemoryList"
+      },
+      "MemoryRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "memory": {
+            "type": "string",
+            "title": "Memory"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Metadata"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "memory",
+          "user_id",
+          "agent_id"
+        ],
+        "title": "MemoryRecord"
+      },
+      "MemoryUpdate": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "maxLength": 6000,
+            "minLength": 1,
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "MemoryUpdate"
+      },
+      "OllamaModelName": {
+        "type": "string",
+        "enum": [
+          "ollama"
+        ],
+        "title": "OllamaModelName",
+        "description": "https://ollama.com/search"
+      },
+      "OpenAICompatibleName": {
+        "type": "string",
+        "enum": [
+          "openai-compatible"
+        ],
+        "title": "OpenAICompatibleName",
+        "description": "https://platform.openai.com/docs/guides/text-generation"
+      },
+      "OpenAIModelName": {
+        "type": "string",
+        "enum": [
+          "gpt-5-nano",
+          "gpt-5-mini",
+          "gpt-5.1",
+          "gpt-5.6-luna",
+          "gpt-5.6-terra",
+          "gpt-5.6-sol"
+        ],
+        "title": "OpenAIModelName",
+        "description": "https://platform.openai.com/docs/models"
+      },
+      "OpenRouterModelName": {
+        "type": "string",
+        "enum": [
+          "google/gemini-3.5-flash",
+          "google/gemini-3.6-flash"
+        ],
+        "title": "OpenRouterModelName",
+        "description": "https://openrouter.ai/models"
+      },
+      "ReasoningMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "const": "reasoning",
+            "title": "Role",
+            "default": "reasoning"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "content"
+        ],
+        "title": "ReasoningMessage",
+        "description": "A reasoning message containing the agent's internal reasoning process."
+      },
+      "ResumeEntry": {
+        "properties": {
+          "interruptId": {
+            "type": "string",
+            "title": "Interruptid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "resolved",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "payload": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "interruptId",
+          "status"
+        ],
+        "title": "ResumeEntry",
+        "description": "A per-interrupt response in the resume array of a RunAgentInput."
+      },
+      "RunAgentInput": {
+        "properties": {
+          "threadId": {
+            "type": "string",
+            "title": "Threadid"
+          },
+          "runId": {
+            "type": "string",
+            "title": "Runid"
+          },
+          "parentRunId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentrunid"
+          },
+          "state": {
+            "title": "State"
+          },
+          "messages": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/DeveloperMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/SystemMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/AssistantMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/UserMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ToolMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ActivityMessage"
+                },
+                {
+                  "$ref": "#/components/schemas/ReasoningMessage"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "role",
+                "mapping": {
+                  "activity": "#/components/schemas/ActivityMessage",
+                  "assistant": "#/components/schemas/AssistantMessage",
+                  "developer": "#/components/schemas/DeveloperMessage",
+                  "reasoning": "#/components/schemas/ReasoningMessage",
+                  "system": "#/components/schemas/SystemMessage",
+                  "tool": "#/components/schemas/ToolMessage",
+                  "user": "#/components/schemas/UserMessage"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/Tool"
+            },
+            "type": "array",
+            "title": "Tools"
+          },
+          "context": {
+            "items": {
+              "$ref": "#/components/schemas/Context"
+            },
+            "type": "array",
+            "title": "Context"
+          },
+          "forwardedProps": {
+            "title": "Forwardedprops"
+          },
+          "resume": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ResumeEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "threadId",
+          "runId",
+          "state",
+          "messages",
+          "tools",
+          "context",
+          "forwardedProps"
+        ],
+        "title": "RunAgentInput",
+        "description": "Input for running an agent."
+      },
+      "ServiceMetadata": {
+        "properties": {
+          "agents": {
+            "items": {
+              "$ref": "#/components/schemas/AgentInfo"
+            },
+            "type": "array",
+            "title": "Agents",
+            "description": "List of available agents."
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/AllModelEnum"
+            },
+            "type": "array",
+            "title": "Models",
+            "description": "List of available LLMs."
+          },
+          "default_agent": {
+            "type": "string",
+            "title": "Default Agent",
+            "description": "Default agent used when none is specified.",
+            "examples": [
+              "research-assistant"
+            ]
+          },
+          "default_model": {
+            "$ref": "#/components/schemas/AllModelEnum",
+            "description": "Default model used when none is specified."
+          }
+        },
+        "type": "object",
+        "required": [
+          "agents",
+          "models",
+          "default_agent",
+          "default_model"
+        ],
+        "title": "ServiceMetadata",
+        "description": "Metadata about the service including available agents and models."
+      },
+      "StreamInput": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "User input to the agent.",
+            "examples": [
+              "What is the weather in Tokyo?"
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllModelEnum"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "LLM Model to use for the agent. Defaults to the default model set in the settings of the service.",
+            "examples": [
+              "qwen3.8-max",
+              "claude-haiku-4-5"
+            ]
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id",
+            "description": "Thread ID to persist and continue a multi-turn conversation.",
+            "examples": [
+              "847c6285-8fc9-4560-a83f-4e6285809254"
+            ]
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id",
+            "description": "User ID to persist and continue a conversation across multiple threads.",
+            "examples": [
+              "847c6285-8fc9-4560-a83f-4e6285809254"
+            ]
+          },
+          "agent_config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Agent Config",
+            "description": "Additional configuration to pass through to the agent",
+            "default": {},
+            "examples": [
+              {
+                "spicy_level": 0.8
+              }
+            ]
+          },
+          "stream_tokens": {
+            "type": "boolean",
+            "title": "Stream Tokens",
+            "description": "Whether to stream LLM tokens to the client.",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "StreamInput",
+        "description": "User input for streaming the agent's response."
+      },
+      "SystemMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "const": "system",
+            "title": "Role",
+            "default": "system"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "content"
+        ],
+        "title": "SystemMessage",
+        "description": "A system message."
+      },
+      "TextInputContent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "text",
+            "title": "Type",
+            "default": "text"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "text"
+        ],
+        "title": "TextInputContent",
+        "description": "A text fragment in a multimodal user message."
+      },
+      "ThreadSummary": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id",
+            "description": "Thread ID of the conversation.",
+            "examples": [
+              "847c6285-8fc9-4560-a83f-4e6285809254"
+            ]
+          },
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id",
+            "description": "Agent this thread was run with.",
+            "examples": [
+              "research-assistant"
+            ]
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At",
+            "description": "Timestamp of the most recent checkpoint in this thread.",
+            "examples": [
+              "2024-07-31T20:14:19.804150+00:00"
+            ]
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "Title for the thread, derived from the first human message.",
+            "examples": [
+              "What is the weather in Tokyo?"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "thread_id",
+          "agent_id"
+        ],
+        "title": "ThreadSummary",
+        "description": "Summary of a single conversation thread."
+      },
+      "TokenInput": {
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id"
+        ],
+        "title": "TokenInput"
+      },
+      "Tool": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "parameters": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parameters"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "name",
+          "description"
+        ],
+        "title": "Tool",
+        "description": "A tool definition."
+      },
+      "ToolCall-Input": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "const": "function",
+            "title": "Type",
+            "default": "function"
+          },
+          "function": {
+            "$ref": "#/components/schemas/FunctionCall"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "function"
+        ],
+        "title": "ToolCall",
+        "description": "A tool call, modelled after OpenAI tool calls."
+      },
+      "ToolCall-Output": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "const": "tool_call",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "args",
+          "id"
+        ],
+        "title": "ToolCall",
+        "description": "Represents a request to call a tool."
+      },
+      "ToolMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "const": "tool",
+            "title": "Role",
+            "default": "tool"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "toolCallId": {
+            "type": "string",
+            "title": "Toolcallid"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "content",
+          "toolCallId"
+        ],
+        "title": "ToolMessage",
+        "description": "A tool result message."
+      },
+      "UploadedFile": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Id"
+          },
+          "url": {
+            "type": "string",
+            "maxLength": 2083,
+            "minLength": 1,
+            "format": "uri",
+            "title": "Url"
+          },
+          "original_name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Original Name"
+          },
+          "content_type": {
+            "type": "string",
+            "maxLength": 127,
+            "minLength": 1,
+            "title": "Content Type"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Size Bytes"
+          },
+          "uploaded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Uploaded At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "url",
+          "original_name",
+          "content_type",
+          "size_bytes",
+          "uploaded_at"
+        ],
+        "title": "UploadedFile"
+      },
+      "UserInput": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "description": "User input to the agent.",
+            "examples": [
+              "What is the weather in Tokyo?"
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllModelEnum"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model",
+            "description": "LLM Model to use for the agent. Defaults to the default model set in the settings of the service.",
+            "examples": [
+              "qwen3.8-max",
+              "claude-haiku-4-5"
+            ]
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id",
+            "description": "Thread ID to persist and continue a multi-turn conversation.",
+            "examples": [
+              "847c6285-8fc9-4560-a83f-4e6285809254"
+            ]
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id",
+            "description": "User ID to persist and continue a conversation across multiple threads.",
+            "examples": [
+              "847c6285-8fc9-4560-a83f-4e6285809254"
+            ]
+          },
+          "agent_config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Agent Config",
+            "description": "Additional configuration to pass through to the agent",
+            "default": {},
+            "examples": [
+              {
+                "spicy_level": 0.8
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "UserInput",
+        "description": "Basic user input for the agent."
+      },
+      "UserMessage": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "role": {
+            "type": "string",
+            "const": "user",
+            "title": "Role",
+            "default": "user"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/TextInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ImageInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AudioInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/VideoInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DocumentInputContent"
+                    },
+                    {
+                      "$ref": "#/components/schemas/BinaryInputContent"
+                    }
+                  ],
+                  "discriminator": {
+                    "propertyName": "type",
+                    "mapping": {
+                      "audio": "#/components/schemas/AudioInputContent",
+                      "binary": "#/components/schemas/BinaryInputContent",
+                      "document": "#/components/schemas/DocumentInputContent",
+                      "image": "#/components/schemas/ImageInputContent",
+                      "text": "#/components/schemas/TextInputContent",
+                      "video": "#/components/schemas/VideoInputContent"
+                    }
+                  }
+                },
+                "type": "array"
+              }
+            ],
+            "title": "Content"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "encryptedValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Encryptedvalue"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "id",
+          "content"
+        ],
+        "title": "UserMessage",
+        "description": "A user message supporting text or multimodal content."
+      },
+      "UserProfile": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "nickname",
+          "email"
+        ],
+        "title": "UserProfile"
+      },
+      "UserThreads": {
+        "properties": {
+          "threads": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadSummary"
+            },
+            "type": "array",
+            "title": "Threads"
+          }
+        },
+        "type": "object",
+        "required": [
+          "threads"
+        ],
+        "title": "UserThreads"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VertexAIModelName": {
+        "type": "string",
+        "enum": [
+          "models/gemini-2.5-pro",
+          "models/gemini-3.1-flash-lite",
+          "models/gemini-3.5-flash",
+          "models/gemini-3.5-flash-lite",
+          "models/gemini-3.6-flash",
+          "models/gemini-3.1-pro-preview"
+        ],
+        "title": "VertexAIModelName",
+        "description": "https://cloud.google.com/vertex-ai/generative-ai/docs/models"
+      },
+      "VideoCreate": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "可选展示标题；未指定时从生成描述首句提取，最多 80 字符"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048,
+                "minLength": 1,
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url",
+            "description": "兼容可选的暂存封面；完成后替换为生成视频实际截帧的七牛永久地址"
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 20000,
+            "title": "Prompt",
+            "description": "HappyHorse 必填；万相有首帧时可省略。HappyHorse 最多 2500 中文字、总计 5000 字符；万相最多 20000 字符",
+            "default": ""
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "happyhorse-1.1-t2v",
+              "happyhorse-1.0-t2v",
+              "wan3.0-video",
+              "wan3.0-video-prime"
+            ],
+            "title": "Model",
+            "default": "happyhorse-1.1-t2v"
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "480P",
+              "720P",
+              "1080P"
+            ],
+            "title": "Resolution",
+            "default": "1080P"
+          },
+          "ratio": {
+            "type": "string",
+            "enum": [
+              "16:9",
+              "9:16",
+              "1:1",
+              "4:3",
+              "3:4",
+              "4:5",
+              "5:4",
+              "9:21",
+              "21:9",
+              "adaptive"
+            ],
+            "title": "Ratio",
+            "default": "16:9"
+          },
+          "duration": {
+            "type": "integer",
+            "maximum": 30.0,
+            "minimum": -1.0,
+            "title": "Duration",
+            "description": "HappyHorse：3–15 秒；万相 3.0：2–30 秒或 -1 智能时长",
+            "default": 5
+          },
+          "watermark": {
+            "type": "boolean",
+            "title": "Watermark",
+            "default": false
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2147483647.0,
+                "minimum": -1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed"
+          },
+          "first_frame_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048,
+                "minLength": 1,
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Frame Url",
+            "description": "仅万相：生成首帧的 HTTP(S) 图片 URL，与展示封面无关"
+          },
+          "last_frame_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048,
+                "minLength": 1,
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Frame Url",
+            "description": "仅万相：生成尾帧的 HTTP(S) 图片 URL，必须同时提供首帧"
+          },
+          "audio": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audio",
+            "description": "仅万相：输出是否含音轨；省略时采用供应商默认 true"
+          },
+          "prompt_extend": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Extend",
+            "description": "仅万相：是否智能改写提示词；省略时采用供应商默认 true"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VideoCreate"
+      },
+      "VideoInputContent": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "video",
+            "title": "Type",
+            "default": "video"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/InputContentDataSource"
+              },
+              {
+                "$ref": "#/components/schemas/InputContentUrlSource"
+              }
+            ],
+            "title": "Source",
+            "discriminator": {
+              "propertyName": "type",
+              "mapping": {
+                "data": "#/components/schemas/InputContentDataSource",
+                "url": "#/components/schemas/InputContentUrlSource"
+              }
+            }
+          },
+          "metadata": {
+            "anyOf": [
+              {},
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "source"
+        ],
+        "title": "VideoInputContent",
+        "description": "A video input content fragment."
+      },
+      "VideoMetadataUpdate": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "可选展示标题；未指定时从生成描述首句提取，最多 80 字符"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2048,
+                "minLength": 1,
+                "format": "uri"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url",
+            "description": "已转存视频的新展示封面 HTTP(S) 地址，不修改原始生成请求"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VideoMetadataUpdate"
+      },
+      "VideoStatus": {
+        "type": "string",
+        "enum": [
+          "SUBMITTING",
+          "SUBMISSION_UNKNOWN",
+          "PENDING",
+          "RUNNING",
+          "SUCCEEDED",
+          "FAILED",
+          "CANCELED",
+          "UNKNOWN"
+        ],
+        "title": "VideoStatus"
+      },
+      "VideoStorageStatus": {
+        "type": "string",
+        "enum": [
+          "NOT_READY",
+          "PENDING",
+          "STORED",
+          "FAILED"
+        ],
+        "title": "VideoStorageStatus"
+      },
+      "VideoTask": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "happyhorse-1.1-t2v",
+              "happyhorse-1.0-t2v",
+              "happyhorse-1.0-video-edit",
+              "wan3.0-video",
+              "wan3.0-video-prime"
+            ],
+            "title": "Model",
+            "default": "happyhorse-1.1-t2v"
+          },
+          "first_frame_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Frame Url"
+          },
+          "last_frame_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Frame Url"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title",
+            "description": "用户指定或从生成描述提取的视频标题"
+          },
+          "cover_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cover Url",
+            "description": "视频的展示封面地址；转存完成后可由用户替换"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/VideoStatus"
+          },
+          "storage_status": {
+            "$ref": "#/components/schemas/VideoStorageStatus"
+          },
+          "aliyun_video_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aliyun Video Url"
+          },
+          "qiniu_video_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qiniu Video Url"
+          },
+          "qiniu_object_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qiniu Object Key"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "create_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Create Time"
+          },
+          "update_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Update Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "task_id",
+          "status",
+          "storage_status",
+          "aliyun_video_url",
+          "qiniu_video_url",
+          "qiniu_object_key",
+          "error_code",
+          "create_time",
+          "update_time"
+        ],
+        "title": "VideoTask"
+      },
+      "VideoTaskPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/VideoTask"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Page"
+          },
+          "page_size": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Page Size"
+          },
+          "total_pages": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total Pages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "total_pages"
+        ],
+        "title": "VideoTaskPage"
+      },
+      "VoiceSession": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "title": "Agent Id",
+            "default": "chatbot"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllModelEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "voice": {
+            "type": "string",
+            "title": "Voice"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "zh",
+              "en",
+              "auto"
+            ],
+            "title": "Language",
+            "default": "zh"
+          },
+          "turn_detection": {
+            "type": "string",
+            "enum": [
+              "server_vad",
+              "manual"
+            ],
+            "title": "Turn Detection",
+            "default": "server_vad"
+          },
+          "activation": {
+            "type": "string",
+            "enum": [
+              "tap",
+              "wake_word"
+            ],
+            "title": "Activation",
+            "default": "tap"
+          },
+          "wake_word": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wake Word"
+          },
+          "wake_engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wake Engine"
+          },
+          "pre_roll_samples": {
+            "type": "integer",
+            "title": "Pre Roll Samples",
+            "default": 0
+          },
+          "wake_status": {
+            "type": "string",
+            "enum": [
+              "not_required",
+              "pending",
+              "accepted",
+              "rejected"
+            ],
+            "title": "Wake Status",
+            "default": "not_required"
+          },
+          "audio_quality": {
+            "$ref": "#/components/schemas/AudioQualitySummary"
+          },
+          "session_id": {
+            "type": "string",
+            "title": "Session Id"
+          },
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "connected",
+              "disconnected",
+              "closed"
+            ],
+            "title": "Status",
+            "default": "ready"
+          },
+          "connection_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "protocol_version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Protocol Version",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "voice",
+          "user_id",
+          "expires_at"
+        ],
+        "title": "VoiceSession"
+      },
+      "VoiceSessionInput": {
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Agent Id",
+            "default": "chatbot"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AllModelEnum"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice"
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "zh",
+              "en",
+              "auto"
+            ],
+            "title": "Language",
+            "default": "zh"
+          },
+          "turn_detection": {
+            "type": "string",
+            "enum": [
+              "server_vad",
+              "manual"
+            ],
+            "title": "Turn Detection",
+            "default": "server_vad"
+          },
+          "activation": {
+            "type": "string",
+            "enum": [
+              "tap",
+              "wake_word"
+            ],
+            "title": "Activation",
+            "default": "tap"
+          },
+          "wake_word": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wake Word"
+          },
+          "wake_engine": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wake Engine"
+          },
+          "pre_roll_samples": {
+            "type": "integer",
+            "maximum": 96000.0,
+            "minimum": 0.0,
+            "title": "Pre Roll Samples",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "VoiceSessionInput"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "type": "http",
+        "description": "Provide a trusted AUTH_SECRET or a short-lived app access token.",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

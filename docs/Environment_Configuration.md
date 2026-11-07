@@ -15,7 +15,7 @@ APP_ENV=test
 也可以只对当前命令临时切换，进程环境变量的优先级最高：
 
 ```sh
-APP_ENV=test uv run python src/run_service.py
+APP_ENV=test uv run python -m app
 ```
 
 ## 配置关系总览
@@ -103,7 +103,7 @@ Nacos 3.x 的客户端服务端口是 `8848`，对应的 gRPC 端口是 `9848`�
 | `.env.local` | 否 | 本地环境用户名、密码和注册地址等私密覆盖项 |
 | `.env.test` | 否 | 测试环境用户名、密码和注册地址等私密覆盖项 |
 | `.env.local.example`、`.env.test.example` | 是 | 私密覆盖文件的安全模板，不含真实密码 |
-| Nacos `agent-service-toolkit.yaml` | 外部配置中心 | 模型、认证、Redis、PostgreSQL、SMTP、RAG、语音等应用配置 |
+| Nacos `agent-service-toolkit.yaml` | 外部配置中心 | 模型、认证、Redis、PostgreSQL、SMTP、记忆、语音等应用配置 |
 
 ## 环境选择过程
 
@@ -114,11 +114,11 @@ Nacos 3.x 的客户端服务端口是 `8848`，对应的 gRPC 端口是 `9848`�
 3. 如果两处都没有设置，默认使用 `local`。
 4. 只接受 `local` 和 `test`；其他值会在启动时明确报错。
 
-因此，临时命令 `APP_ENV=test uv run python src/run_service.py` 会覆盖 `.env` 中的 `APP_ENV=local`，但不会修改 `.env` 文件。
+因此，临时命令 `APP_ENV=test uv run python -m app` 会覆盖 `.env` 中的 `APP_ENV=local`，但不会修改 `.env` 文件。
 
 ## 本地 Python 加载顺序
 
-本地运行 `uv run python src/run_service.py` 时，优先级从低到高为：
+本地运行 `uv run python -m app` 时，优先级从低到高为：
 
 ```text
 1. Settings 代码默认值
@@ -131,7 +131,7 @@ Nacos 3.x 的客户端服务端口是 `8848`，对应的 gRPC 端口是 `9848`�
 
 后加载的同名值覆盖先加载的值。例如选择 `test` 后，加载的是 `.env` → `test.env` → `.env.test`；不会加载 `local.env`、`.env.local` 或任何 `*.compose.env`。
 
-Nacos YAML 最后加载模型、认证、Redis、PostgreSQL、SMTP、RAG 和语音等业务配置，但禁止覆盖 `APP_ENV`、全部 `NACOS_*`、`HOST`、`PORT`、`MODE`、`LOG_LEVEL` 和 `GRACEFUL_SHUTDOWN_TIMEOUT` 等引导字段。
+Nacos YAML 最后加载模型、认证、Redis、PostgreSQL、SMTP、记忆和语音等业务配置，但禁止覆盖 `APP_ENV`、全部 `NACOS_*`、`HOST`、`PORT`、`MODE`、`LOG_LEVEL` 和 `GRACEFUL_SHUTDOWN_TIMEOUT` 等引导字段。
 
 ## Docker Compose 加载顺序
 
@@ -182,14 +182,14 @@ AGENT_URL=http://127.0.0.1:8000
 
 ```sh
 # .env 中设置 APP_ENV=local
-uv run python src/run_service.py
+uv run python -m app
 ```
 
 切换到测试环境：
 
 ```sh
 # .env 中设置 APP_ENV=test
-uv run python src/run_service.py
+uv run python -m app
 ```
 
 切换后必须重启服务。当前实现只在进程启动时读取环境配置和 Nacos YAML，不支持运行时热切换。

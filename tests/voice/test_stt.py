@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from voice.stt import SpeechToText
+from app.services.voice.stt import SpeechToText
 
 
 def test_init_with_alibaba_provider():

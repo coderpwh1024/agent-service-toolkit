@@ -6,11 +6,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from pydantic import SecretStr
 
-from core.settings import Settings
-from schema.voice import VoiceSession
-from voice.providers.alibaba_inference import InferenceStream
-from voice.providers.alibaba_realtime import AlibabaRealtime
-from voice.providers.errors import SpeechProviderError
+from app.core.settings import Settings
+from app.schemas.voice import VoiceSession
+from app.services.voice.providers.alibaba_inference import InferenceStream
+from app.services.voice.providers.alibaba_realtime import AlibabaRealtime
+from app.services.voice.providers.errors import SpeechProviderError
 
 
 class Socket:
@@ -70,7 +70,7 @@ async def test_inference_connection_routes_models_without_query_and_closes_on_ex
         finally:
             socket.closed = True
 
-    monkeypatch.setattr("voice.providers.alibaba_realtime.connect", connect)
+    monkeypatch.setattr("app.services.voice.providers.alibaba_realtime.connect", connect)
     provider = AlibabaRealtime(settings())
     async with provider.recognize(session()) as stream:
         await provider.append_audio(stream, b"\0\0" * 320)
@@ -241,7 +241,7 @@ async def test_cancelled_recognition_closes_the_upstream_connection(monkeypatch)
         finally:
             socket.closed = True
 
-    monkeypatch.setattr("voice.providers.alibaba_realtime.connect", connect)
+    monkeypatch.setattr("app.services.voice.providers.alibaba_realtime.connect", connect)
     provider = AlibabaRealtime(settings())
 
     async def listen():

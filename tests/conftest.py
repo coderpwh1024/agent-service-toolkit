@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from schema.prompts import Mem0Prompts
+from app.schemas.prompts import Mem0Prompts
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def mem0_prompts() -> Mem0Prompts:
 
 @pytest.fixture(autouse=True)
 def configure_mem0_prompts(monkeypatch, mem0_prompts: Mem0Prompts) -> None:
-    from core import settings
+    from app.core import settings
 
     monkeypatch.setattr(settings, "_mem0_prompts", mem0_prompts)
 

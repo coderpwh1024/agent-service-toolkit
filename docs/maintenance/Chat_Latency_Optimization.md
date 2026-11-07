@@ -19,7 +19,7 @@ Max 的合成多轮验证覆盖重复低信息量聊天、明确结束、不可�
 
 Nacos Prompt CLI 将 mem0-chat-system 发布为 1.0.1；CLI 与 SDK 回读逐字一致，其他五条记忆模板保持原版本。角色模板 SHA-256：`fb26a4647c7cb3284e84f092e303111ed032d7843b46f94408a7c0b930e0290b`。服务继续只从 Nacos 加载模板，没有本地正文回退。
 
-复现脚本为 scripts/benchmark_chat_latency.py，从仓库根目录使用 `PYTHONPATH=src uv run python scripts/benchmark_chat_latency.py` 启动。比较历史版本时，应先用 Nacos Prompt CLI 获取对应模板，再显式传入候选路径；报告只包含指标与内容摘要，不保存提示词和回答正文。
+复现脚本为 scripts/benchmark_chat_latency.py，从仓库根目录使用 `PYTHONPATH=. uv run python scripts/benchmark_chat_latency.py` 启动。比较历史版本时，应先用 Nacos Prompt CLI 获取对应模板，再显式传入候选路径；报告只包含指标与内容摘要，不保存提示词和回答正文。
 
 ## HTTP 入口回归与默认思考配置
 

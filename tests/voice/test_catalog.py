@@ -1,8 +1,8 @@
 import pytest
 
-from core.settings import Settings
-from schema.voice import VoiceOption
-from voice.catalog import speech_endpoint, speech_protocol, voice_options
+from app.core.settings import Settings
+from app.core.speech import speech_endpoint, speech_protocol, voice_options
+from app.schemas.voice import VoiceOption
 
 
 @pytest.mark.parametrize(

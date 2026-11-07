@@ -100,13 +100,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: ${POSTGRES_DB:-agent_service}
-      RAG_COLLECTION_NAME: ${RAG_COLLECTION_NAME:-acmetech-employee-handbook}
-      RAG_TOP_K: ${RAG_TOP_K:-5}
       MEM0_ENABLED: ${MEM0_ENABLED:-false}
-      MEM0_RESEARCH_ENABLED: ${MEM0_RESEARCH_ENABLED:-true}
-      MEM0_RESEARCH_TIMEOUT_SECONDS: ${MEM0_RESEARCH_TIMEOUT_SECONDS:-90}
-      MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS: ${MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS:-15}
-      RESEARCH_SEARCH_TIMEOUT_SECONDS: ${RESEARCH_SEARCH_TIMEOUT_SECONDS:-60}
       MEM0_COLLECTION_NAME: ${MEM0_COLLECTION_NAME:-mem0_chat}
       MEM0_API_KEY: ${MEM0_API_KEY:-}
       MEM0_BASE_URL: ${MEM0_BASE_URL:-}
@@ -136,30 +130,9 @@ services:
       - ./privatecredentials:/privatecredentials
     develop:
       watch:
-        - path: src/agents/
+        - path: app/
           action: sync+restart
-          target: /app/agents/
-        - path: src/schema/
-          action: sync+restart
-          target: /app/schema/
-        - path: src/service/
-          action: sync+restart
-          target: /app/service/
-        - path: src/core/
-          action: sync+restart
-          target: /app/core/
-        - path: src/memory/
-          action: sync+restart
-          target: /app/memory/
-        - path: src/voice/
-          action: sync+restart
-          target: /app/voice/
-        - path: src/video/
-          action: sync+restart
-          target: /app/video/
-        - path: src/rag/
-          action: sync+restart
-          target: /app/rag/
+          target: /app/app/
   streamlit_app:
     build:
       context: .
@@ -192,18 +165,18 @@ services:
       DASHSCOPE_NATIVE_BASE_URL: ${DASHSCOPE_NATIVE_BASE_URL:-https://dashscope.aliyuncs.com/api/v1}
     develop:
       watch:
-        - path: src/client/
+        - path: client/
           action: sync+restart
           target: /app/client/
-        - path: src/schema/
+        - path: app/schemas/
           action: sync+restart
-          target: /app/schema/
-        - path: src/streamlit_app.py
+          target: /app/app/schemas/
+        - path: streamlit_app.py
           action: sync+restart
           target: /app/streamlit_app.py
-        - path: src/voice/
+        - path: app/services/voice/
           action: sync+restart
-          target: /app/voice/
+          target: /app/app/services/voice/
 
 volumes:
   postgres_data:

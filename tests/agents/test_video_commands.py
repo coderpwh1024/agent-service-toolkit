@@ -7,24 +7,24 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.func import entrypoint
 
-from core import settings
-from video import runtime
+import app.services.video.runtime as runtime
+from app.core import settings
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
+@pytest.mark.parametrize("agent_name", ["mem0_chat"])
 @pytest.mark.parametrize("legacy_dialogue", [False, True])
 async def test_video_requests_use_ordinary_chat_without_video_execution(
     monkeypatch, agent_name, legacy_dialogue
 ):
-    module = importlib.import_module(f"agents.{agent_name}")
+    module = importlib.import_module(f"app.agents.{agent_name}")
     model = Mock(ainvoke=AsyncMock(return_value=AIMessage(content="普通聊天回答")))
     model.bind_tools.return_value = model
     service = Mock(create=AsyncMock(), query=AsyncMock(), list_tasks=AsyncMock())
     monkeypatch.setattr(runtime, "_service", service)
     monkeypatch.setattr(settings, "VIDEO_ENABLED", True)
     monkeypatch.setattr(module, "get_model", lambda *_, **kwargs: model)
-    if agent_name == "mem0_chatbot":
+    if agent_name == "mem0_chat":
         monkeypatch.setattr(module, "get_mem0_service", lambda: None)
     graph = getattr(module, agent_name).copy()
     graph.checkpointer = MemorySaver()

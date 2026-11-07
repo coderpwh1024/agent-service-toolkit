@@ -1,7 +1,7 @@
 # 当前用户邮件发送技能
 
 `send-current-user-email` 使用 Nacos Skill 管理分发技能，复用 Nacos 中的 SMTP
-配置发送纯文本邮件。默认 `mem0-chatbot` 和 `chatbot` 均支持文字和语音触发。
+配置发送纯文本邮件。唯一主 Agent `mem0-chatbot` 支持文字和语音触发；`chatbot` 仅为旧请求兼容值。
 其他研究、RAG 或后台智能体暂不接入该技能。
 
 ## 配置与加载
@@ -148,9 +148,9 @@ Redis 去重状态丢失或过期后不保证去重，SMTP 不提供跨系统的
 ## 验证与参考
 
 ```sh
-uv run pytest tests/agents/test_email_commands.py tests/service/test_email_skill.py tests/core/test_skills.py -q
+uv run pytest tests/agents/test_email_commands.py tests/api/test_email_skill.py tests/core/test_skills.py -q
 uv run pytest tests/voice/test_realtime_service.py -k email -q
-uv run pytest tests/service/test_nacos.py tests/service/test_email_scheduling.py -q
+uv run pytest tests/api/test_nacos.py tests/api/test_email_scheduling.py -q
 ```
 
 语音自动化测试使用模拟的 ASR/TTS 和邮件服务，覆盖音频帧到语音反馈的链路，

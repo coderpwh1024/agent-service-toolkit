@@ -14,8 +14,9 @@ from psycopg.conninfo import make_conninfo
 from psycopg.sql import SQL, Identifier
 from psycopg.types.json import Jsonb
 
-from memory.postgres import get_postgres_connection_string
-from schema.video import (
+from app.core.database import get_postgres_connection_string
+from app.repositories.video import VideoRepository
+from app.schemas.video import (
     ProviderResult,
     VideoCreate,
     VideoEdit,
@@ -24,9 +25,8 @@ from schema.video import (
     VideoStatus,
     VideoStorageStatus,
 )
-from video.providers import VideoStorageError
-from video.repository import VideoRepository
-from video.service import VideoService
+from app.services.video.providers import VideoStorageError
+from app.services.video.service import VideoService
 
 
 @pytest.mark.docker
@@ -127,7 +127,7 @@ async def test_wan3_migration_preserves_legacy_hash_and_filters_owned_models() -
         ).hexdigest()
         async with await psycopg.AsyncConnection.connect(scoped, autocommit=True) as conn:
             await conn.execute(
-                SQL(Path("src/video/sql/create_video_generation_tasks.sql").read_text())
+                SQL(Path("app/models/sql/create_video_generation_tasks.sql").read_text())
             )
             row = await (
                 await conn.execute(

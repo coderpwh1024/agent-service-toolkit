@@ -1,8 +1,8 @@
 {
     "python_version": "3.12",
-    "dependencies": ["./src"],
+    "dependencies": ["."],
     "graphs": {
-        "research_assistant": "./src/agents/research_assistant.py:research_assistant"
+        "mem0_chat": "./app/agents/mem0_chat.py:mem0_chat"
     },
     "env": "./.env"
 }

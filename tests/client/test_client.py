@@ -6,8 +6,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from httpx import Request, Response
 
-from client import AgentClient, AgentClientError
-from schema import (
+from app.schemas import (
     AgentInfo,
     ChatHistory,
     ChatMessage,
@@ -16,7 +15,8 @@ from schema import (
     ServiceMetadata,
     UserThreads,
 )
-from schema.models import OpenAIModelName
+from app.schemas.llm import OpenAIModelName
+from client import AgentClient, AgentClientError
 
 
 def test_init(mock_env):
@@ -515,3 +515,36 @@ async def test_aget_chat_record_detail(agent_client) -> None:
     assert mock_get.call_args.args[0] == (
         f"http://test/custom-agent/chat-records/{today.isoformat()}"
     )
+
+
+@pytest.mark.parametrize("selected", ["mem0-chatbot", "chatbot"])
+def test_single_agent_metadata_accepts_legacy_selection(mock_env, selected):
+    info = ServiceMetadata(
+        default_agent="mem0-chatbot",
+        agents=[AgentInfo(key="mem0-chatbot", description="Main agent")],
+        default_model=OpenAIModelName.GPT_5_NANO,
+        models=[OpenAIModelName.GPT_5_NANO],
+    )
+    response = Response(
+        200,
+        json={"code": 200, "message": "success", "data": info.model_dump()},
+        request=Request("GET", "http://test/info"),
+    )
+    with patch("httpx.get", return_value=response):
+        client = AgentClient(base_url="http://test", agent=selected)
+        assert client.agent == selected
+        client.retrieve_info()
+        assert client.agent == selected
+    with pytest.raises(AgentClientError):
+        client.update_agent("research-assistant")
+
+
+def test_legacy_selection_requires_the_main_agent_to_be_available(agent_client):
+    agent_client.info = ServiceMetadata(
+        default_agent="other-agent",
+        agents=[AgentInfo(key="other-agent", description="Other")],
+        default_model=OpenAIModelName.GPT_5_NANO,
+        models=[OpenAIModelName.GPT_5_NANO],
+    )
+    with pytest.raises(AgentClientError):
+        agent_client.update_agent("chatbot")

@@ -7,11 +7,11 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 
-from agents.email_commands import handle_email_command
-from core import settings
-from core.skills import EMAIL_SKILL_NAME, EmailSkill
-from schema.email_skill import EmailContent, EmailIntent, EmailScheduleError, EmailSendResult
-from skills import email
+import app.services.skills.email as email
+from app.agents.email_commands import handle_email_command
+from app.core import settings
+from app.core.skills import EMAIL_SKILL_NAME, EmailSkill
+from app.schemas.email_skill import EmailContent, EmailIntent, EmailScheduleError, EmailSendResult
 
 
 @pytest.fixture
@@ -157,14 +157,14 @@ async def test_ordinary_mailbox_fact_does_not_trigger_skill(email_runtime):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("agent_name", ["chatbot", "mem0_chatbot"])
+@pytest.mark.parametrize("agent_name", ["mem0_chat"])
 async def test_both_streaming_agents_execute_skill_and_checkpoint_result(
     email_runtime, monkeypatch, agent_name
 ):
     service, model, _ = email_runtime
-    module = importlib.import_module(f"agents.{agent_name}")
+    module = importlib.import_module(f"app.agents.{agent_name}")
     monkeypatch.setattr(module, "get_model", lambda _, **kwargs: model)
-    if agent_name == "mem0_chatbot":
+    if agent_name == "mem0_chat":
         monkeypatch.setattr(module, "get_mem0_service", lambda: None)
     graph = getattr(module, agent_name).copy()
     graph.checkpointer = MemorySaver()

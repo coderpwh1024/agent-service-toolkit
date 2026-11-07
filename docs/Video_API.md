@@ -1,6 +1,6 @@
 # HappyHorse 与万相 3.0 视频生成
 
-视频功能由独立的 `src/video/` 模块维护，`src/service/video.py` 负责路由和生命周期适配，提供文生视频、查询、标题与封面修改、逻辑删除、七牛云持久转存和后台同步。默认关闭，不影响现有聊天、语音和头像功能。没有新增生产依赖，复用项目已有的 httpx、psycopg 和七牛 SDK。
+视频功能由独立的 `app/services/video/` 模块维护，`app/api/video.py` 负责路由，`app/lifecycle.py` 管理资源生命周期，提供文生视频、查询、标题与封面修改、逻辑删除、七牛云持久转存和后台同步。默认关闭，不影响现有聊天、语音和头像功能。没有新增生产依赖，复用项目已有的 httpx、psycopg 和七牛 SDK。
 
 ## 万相 3.0 接入与兼容设计
 
@@ -50,7 +50,7 @@
 
 ### SQL 升级与回滚
 
-升级脚本为 [add_wan3_video_fields.sql](../src/video/sql/add_wan3_video_fields.sql)。启用视频模块时，先执行原建表脚本，再在同一事务和 advisory lock 内执行升级脚本。已有表可在发布前单独执行升级脚本；不删除数据、不回填用户内容、不重算请求摘要，缺省或为 null 的万相字段不改变旧 HappyHorse 请求摘要。旧记录的模型从 `request_payload.model` 读取，不将所有历史记录误标为 1.1。
+升级脚本为 [add_wan3_video_fields.sql](../app/models/sql/add_wan3_video_fields.sql)。启用视频模块时，先执行原建表脚本，再在同一事务和 advisory lock 内执行升级脚本。已有表可在发布前单独执行升级脚本；不删除数据、不回填用户内容、不重算请求摘要，缺省或为 null 的万相字段不改变旧 HappyHorse 请求摘要。旧记录的模型从 `request_payload.model` 读取，不将所有历史记录误标为 1.1。
 
 手工执行可使用已有安全连接配置：
 
@@ -59,8 +59,8 @@ psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
 BEGIN;
 SET LOCAL lock_timeout = '5s';
 SELECT pg_advisory_xact_lock(824567120);
-\i src/video/sql/create_video_generation_tasks.sql
-\i src/video/sql/add_wan3_video_fields.sql
+\i app/models/sql/create_video_generation_tasks.sql
+\i app/models/sql/add_wan3_video_fields.sql
 COMMIT;
 SQL
 ```
@@ -75,7 +75,7 @@ SQL
 
 ## PostgreSQL 表设计
 
-DDL 位于 [create_video_generation_tasks.sql](../src/video/sql/create_video_generation_tasks.sql)。启动启用的视频模块时，在 PostgreSQL 中幂等创建新表和索引，并通过 `ADD COLUMN IF NOT EXISTS` 为已有表补充 `title`、`cover_url` 和内部字段 `qiniu_cover_object_key`。并发启动的建表操作通过事务级 advisory lock 串行化。部署账号需要建表、修改表、索引和注释权限；也可由管理员提前执行此 DDL。
+DDL 位于 [create_video_generation_tasks.sql](../app/models/sql/create_video_generation_tasks.sql)。启动启用的视频模块时，在 PostgreSQL 中幂等创建新表和索引，并通过 `ADD COLUMN IF NOT EXISTS` 为已有表补充 `title`、`cover_url` 和内部字段 `qiniu_cover_object_key`。并发启动的建表操作通过事务级 advisory lock 串行化。部署账号需要建表、修改表、索引和注释权限；也可由管理员提前执行此 DDL。
 
 本次 DDL 只新增可空列，不批量修改历史业务数据。运行时在查询和定时同步中为缺少元数据的已生成任务补齐标题及七牛封面，并同步更新审计字段；原始请求载荷和摘要保持不变。可在旧服务仍运行时先执行 DDL，再部署新服务；重复执行安全。执行前可查询 `information_schema.columns` 核对已有列；手动执行时使用事务并设置适当的 `lock_timeout`。尚未提交的 DDL 可回滚；已提交后回退应用版本时保留新增列，不删除已保存元数据。新字段缺省或显式为 `null` 时沿用旧请求摘要，保证旧幂等键重试兼容。
 
@@ -284,7 +284,7 @@ PostgreSQL 目标已包含 `tests/smoke/test_video_postgres.py`，在独立测�
 
 ## Nacos 视频 Skill
 
-`manage-user-videos` 为独立运行时技能，源码位于 [SKILL.md](../skills/manage-user-videos/SKILL.md)，受控实现位于 `src/skills/video.py`。它使用现有 `VideoService`，保留三个 HTTP 接口、任务同步和七牛转存流程，并支持可选标题和封面。HTTP 创建请求默认水印改为 `false`；显式参数仍受现有接口支持。
+`manage-user-videos` 为独立运行时技能，源码位于 [SKILL.md](../skills/manage-user-videos/SKILL.md)，受控实现位于 `app/services/skills/video.py`。它使用现有 `VideoService`，保留三个 HTTP 接口、任务同步和七牛转存流程，并支持可选标题和封面。HTTP 创建请求默认水印改为 `false`；显式参数仍受现有接口支持。
 
 在当前 Nacos 应用配置中合并以下内容，保留其他配置：
 

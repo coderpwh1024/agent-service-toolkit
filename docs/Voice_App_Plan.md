@@ -1,6 +1,6 @@
 # 独立 Flutter App 与实时语音后端规划
 
-日期：2026-09-18，更新于 2026-09-24。状态：后端 P1/P2 主链路、独立 Flutter 工程、前台离线唤醒、系统 AEC/降噪接入和自动插话已经实现；真实百炼账号、弱网及 Android/iOS 真机声学验收仍待完成。实际接口以 [Voice_API.md](Voice_API.md) 为准。
+日期：2026-09-18，更新于 2026-09-24。状态：后端 P1/P2 主链路、独立 Flutter 工程、前台离线唤醒、系统 AEC/降噪接入和自动插话已经实现；真实百炼账号、弱网及 Android/iOS 真机声学验收仍待完成。实际接口以 [Voice_API.md](Voice_API.md) 为准。当前仅保留 `mem0-chatbot` 主 Agent，`chatbot` 为兼容标识；其他 Agent 已移除，以下计划的业务范围已同步收敛。
 
 目标：以当前 agent-service-toolkit 为唯一业务后端，在独立目录建立 Flutter 工程。手机与后端共同实现本地唤醒、连续语音对话、流式回答、说话打断和 Agent 业务。所有云端模型调用、Agent 编排、工具权限与业务数据由后端管理。
 
@@ -18,7 +18,7 @@
 
 | 职责 | 当前后端工程 | Flutter 工程 |
 | --- | --- | --- |
-| 业务 | Agent、RAG、MCP、工具执行与确认、业务权限 | 展示业务结果、提交操作与确认 |
+| 业务 | Mem0 主 Agent、邮件与视频 Skill、工具执行与确认、业务权限 | 展示业务结果、提交操作与确认 |
 | 模型 | ASR、LLM、TTS，模型与音色白名单、密钥 | 接收可用配置，不持有百炼密钥 |
 | 音频 | 音频流转发、格式校验、云端识别与合成 | 麦克风、扬声器、音频路由、回声消除、重采样 |
 | 唤醒 | 可下发支持的唤醒配置、管理会话超时 | 本地关键词检测、唤醒提示、会话启动 |
@@ -32,20 +32,20 @@ App 是轻业务客户端，但必须包含音频终端能力。AEC 与实际停
 
 | 位置 | 原有能力 | 当前后端结果 |
 | --- | --- | --- |
-| `src/core/llm.py`、`src/schema/models.py` | 百炼 `qwen3.8-max`，流式文字 | 保留；新增模型必须经过注册与可用性校验 |
-| `src/service/service.py` | `/info`、`/invoke`、`/stream`、`/history`、`/threads` | 已提取传输无关的 Agent 事件层，并统一线程归属和运行锁 |
-| `src/service/agui.py` | AG-UI SSE，复用 Agent 与检查点 | 已保持兼容，并接入用户绑定、线程归属和运行锁 |
-| `src/agents/` | 多种 LangGraph Agent、RAG、MCP | 按 Agent 验收语音输出、取消与恢复能力 |
-| `src/memory/postgres.py` | 检查点与跨会话 Store | 已继续复用 PostgreSQL，并新增语音会话、轮次、播放记录及归属表 |
-| `src/voice/providers/alibaba_stt.py` | 完整录音 HTTP ASR，`stream=False` | 已新增 `alibaba_realtime.py` 异步实时 ASR 适配器 |
-| `src/voice/providers/alibaba_tts.py` | 完整文本 HTTP 合成、完整音频返回 | 已新增流式 TTS，支持一个连接内连续提交多个语音段 |
-| `src/voice/manager.py`、`src/voice/__init__.py` | Streamlit UI 与入口导入耦合 | 已改为惰性导入，服务端加载 voice 包不会触发 Streamlit |
-| `docker/Dockerfile.service` | 未复制 `src/voice/` | 已加入 `voice` 和现有 Agent 所需的 `rag` 源码 |
+| `app/core/llm.py`、`app/schemas/llm.py` | 百炼 `qwen3.8-max`，流式文字 | 保留；新增模型必须经过注册与可用性校验 |
+| `app/api/chats.py` | `/info`、`/invoke`、`/stream`、`/history`、`/threads` | 已提取传输无关的 Agent 事件层，并统一线程归属和运行锁 |
+| `app/api/agui.py` | AG-UI SSE，复用 Agent 与检查点 | 已保持兼容，并接入用户绑定、线程归属和运行锁 |
+| `app/agents/` | 唯一 Mem0 主 Agent | 验收语音输出、取消与恢复能力，兼容旧请求标识 |
+| `app/core/database.py` | 检查点与跨会话 Store | 已继续复用 PostgreSQL，并新增语音会话、轮次、播放记录及归属表 |
+| `app/services/voice/providers/alibaba_stt.py` | 完整录音 HTTP ASR，`stream=False` | 已新增 `alibaba_realtime.py` 异步实时 ASR 适配器 |
+| `app/services/voice/providers/alibaba_tts.py` | 完整文本 HTTP 合成、完整音频返回 | 已新增流式 TTS，支持一个连接内连续提交多个语音段 |
+| `client/voice.py`、`app/services/voice/__init__.py` | 客户端与服务端语音模块 | Streamlit 管理器仅位于 client，服务端包不导入客户端 |
+| `docker/Dockerfile.service` | 服务镜像 | 复制完整 app 与启动配置，已移除 RAG/其他 Agent 源码 |
 | `compose.yaml` | voice 同步规则在 Streamlit 服务 | 已给 agent_service 加入语音配置、同步规则和兼容认证的健康检查 |
 
 当前已经有语音 WebSocket、回答取消、播放进度、业务确认、短期用户令牌、线程归属校验、Flutter 客户端、前台本地唤醒、AEC/系统降噪、本地 VAD 插话和音频质量指标。尚未完成的部分集中在后台/锁屏生命周期、远场与弱网优化及真机矩阵验收；复杂 Agent 的外部业务执行不会因用户停播而假装回滚。已有 `interrupt-agent` 是业务流程中的人在回路机制，与用户插话取消仍是两种事件。
 
-补充：默认 Agent 是 `research-assistant`。其中 Safeguard 仅在配置 Groq Key 时实际调用相应模型，不能据节点存在就认为每轮一定有额外模型开销。首轮语音基准使用 `chatbot`，复杂 Agent 单独测量。
+默认 Agent 是 `mem0-chatbot`；旧 App 的 `chatbot` 参数继续有效，执行同一主 Agent。研究、RAG、MCP 与多 Agent 委派已移除；不改变语音协议和已有 Skill 参数。
 
 ## 模型路线
 
@@ -56,7 +56,7 @@ App 是轻业务客户端，但必须包含音频终端能力。AEC 与实际停
 | 实时识别 | `qwen3-asr-flash-realtime` | 验证中文、停顿、噪声、账号地域和实际可用版本 |
 | 对话 | `qwen3.8-max` | 沿用已有注册项；按首音延迟、工具能力和成本再比较其他百炼文本模型 |
 | 实时合成 | `qwen3-tts-flash-realtime`，先验证 `Cherry` | 配置音色、语速，按句或短语流式合成 |
-| RAG 向量 | 现有 `qwen3.7-text-embedding` | 与语音协议独立，按原知识库流程使用 |
+| 记忆向量 | Mem0 配置的 embedding 模型 | 与语音协议独立，按用户隔离检索长期事实 |
 
 百炼提供实时 ASR 的 WebSocket 交互和流式 TTS。实时适配器需要实现相应协议，不能只替换当前 HTTP Provider 的模型名称。[实时 ASR](https://help.aliyun.com/zh/model-studio/real-time-speech-recognition-user-guide)、[实时 TTS](https://help.aliyun.com/zh/model-studio/realtime-tts-user-guide)
 
@@ -86,7 +86,7 @@ flowchart LR
     Session --> ASR[百炼实时 ASR]
     ASR -->|最终转写| Session
     Session --> Runner
-    Runner --> Agent[现有 Agent / LLM / RAG / 工具]
+    Runner --> Agent[Mem0 主 Agent / LLM / 邮件与视频 Skill]
     Runner -->|可播报文本| TTS[百炼实时 TTS]
     TTS --> Session
     Session --> WS
@@ -218,15 +218,15 @@ AEC 必须在实际播放与采集链路上工作。iOS 应验证 Voice Processi
 ## 后端建议增量
 
 ```text
-src/service/voice.py                    语音 HTTP 与 WebSocket 路由
-src/service/agent_runner.py             传输无关的 Agent 事件与运行协调
-src/schema/voice.py                     语音契约、格式与状态
-src/voice/session.py                    并发任务、生命周期、轮次与取消
-src/voice/providers/alibaba_realtime.py       百炼实时 ASR/TTS 适配器
-src/voice/speech_output.py              可播报内容与文本段管理
-src/voice/persistence.py                语音会话/轮次记录
+app/api/voice.py                    语音 HTTP 与 WebSocket 路由
+app/services/agent_runner.py             传输无关的 Agent 事件与运行协调
+app/schemas/voice.py                     语音契约、格式与状态
+app/api/voice_connection.py                    并发任务、生命周期、轮次与取消
+app/services/voice/providers/alibaba_realtime.py       百炼实时 ASR/TTS 适配器
+app/services/voice/speech_output.py              可播报内容与文本段管理
+app/repositories/voice.py                语音会话/轮次记录
 tests/voice/                            Provider、取消、流控、会话一致性
-tests/service/test_voice.py             路由、鉴权、协议集成
+tests/api/test_voice.py             路由、鉴权、协议集成
 docs/Voice_API.md                       实际接口、帧格式与 Flutter 对接说明
 ```
 
@@ -251,10 +251,10 @@ App 面向多用户前，需要登录身份、短期访问令牌，以及线程/
 | P0：验证关键约束 | 固定协议草案；验证账号、实时模型、音频格式和 TTS 取消行为 | 创建独立工程；验证真机同时采集播放、AEC、设备切换 | 外放时仍可识别人声；协议、采样率、取消方案有明确结论 |
 | P1：贯通最小链路 | 实时 ASR → chatbot → 流式 TTS；语音会话路由与基础认证 | 点击进入会话、实时字幕、流式播放、停止、历史 | 一次会话多轮运行；回答未生成完即开始播放；每轮只执行一次 |
 | P2：完成双工 | 插话确认、旧回答隔离、运行取消、播放进度、上下文恢复、有界队列 | 播放时持续采集、本地快速暂停、清空与丢弃旧帧 | 外放连续插话不串音；无自问自答；下一轮上下文正确 |
-| P3：唤醒与完整业务 | 业务确认协议、长任务状态、逐个 Agent 能力适配 | 本地唤醒、超时待机、工具状态与确认卡片 | 唤醒后首字不丢；RAG/工具可用；语音打断不会误当业务确认或重复写操作 |
+| P3：唤醒与完整业务 | 业务确认协议、长任务状态、主 Agent 的 Skill 适配 | 本地唤醒、超时待机、工具状态与确认卡片 | 唤醒后首字不丢；记忆和 Skill 可用；语音打断不会误当业务确认或重复写操作 |
 | P4：产品化 | 所有入口的用户隔离、断线恢复、容器部署、容量与成本监控 | iOS 验收、来电/蓝牙/网络切换、按平台评估后台模式 | 真机验收矩阵通过；长会话和断线没有悬挂任务或持续上游计费 |
 
-所有 Agent 的业务实现继续留在后端，但“可以展示”与“已经适配语音”分别标记。普通 chatbot、RAG/搜索、MCP 写操作、多 Agent 交接、业务 interrupt、后台任务分别列能力矩阵后逐项开放。
+主 Agent 和邮件、视频 Skill 的业务实现继续留在后端，App 只消费现有语音及业务事件；研究、RAG、MCP 和多 Agent 交接不再作为待开放能力。
 
 每阶段都保留可运行版本。先让后端模拟 Provider 和 Flutter 协议 fixture 独立验证，再用真实百炼联调，最后验证扬声器外放。P0 的音频风险验证应尽早完成，不能等所有后端功能写完才开始试真机。
 

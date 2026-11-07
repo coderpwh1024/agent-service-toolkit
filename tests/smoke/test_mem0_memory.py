@@ -13,11 +13,11 @@ from psycopg import sql
 from psycopg_pool import ConnectionPool
 from pydantic import SecretStr
 
-from core.settings import Settings
-from memory.mem0_sdk import build_memory, close_memory
-from memory.mem0_service import Mem0Service, MemoryConflictError, MemoryNotFoundError
-from memory.postgres import get_postgres_connection_string
-from schema.memory_commands import MemoryMutation, MemoryTarget
+from app.core.database import get_postgres_connection_string
+from app.core.settings import Settings
+from app.schemas.memory_commands import MemoryMutation, MemoryTarget
+from app.services.memory.mem0_sdk import build_memory, close_memory
+from app.services.memory.mem0_service import Mem0Service, MemoryConflictError, MemoryNotFoundError
 
 
 @pytest.mark.docker

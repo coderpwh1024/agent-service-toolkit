@@ -8,20 +8,24 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from schema.video import (
+from app.models.video import VideoRecord, derive_video_title
+from app.schemas.video import (
     ProviderResult,
     VideoCreate,
     VideoEdit,
     VideoListQuery,
     VideoMetadataUpdate,
-    VideoRecord,
     VideoStatus,
     VideoStorageStatus,
     VideoTask,
 )
-from video.metadata import derive_video_title
-from video.providers import VideoProviderError, VideoStorageError
-from video.service import VideoBusyError, VideoConflictError, VideoEditInputError, VideoService
+from app.services.video.providers import VideoProviderError, VideoStorageError
+from app.services.video.service import (
+    VideoBusyError,
+    VideoConflictError,
+    VideoEditInputError,
+    VideoService,
+)
 
 
 def record(**changes) -> VideoRecord:
@@ -634,7 +638,7 @@ async def test_abandoned_submission_becomes_uncertain(service):
 
 @pytest.mark.asyncio
 async def test_chinese_logs_do_not_expose_prompt_or_signed_urls(service, caplog):
-    caplog.set_level(logging.INFO, logger="video")
+    caplog.set_level(logging.INFO, logger="app.services.video")
     await service.create(12, "private-key", VideoCreate(prompt="私人提示词"))
     assert "视频生成入参" in caplog.text
     assert "视频接口出参" in caplog.text
@@ -666,7 +670,7 @@ async def test_list_chinese_logs_only_include_summary(service, caplog):
         ).model_dump()
     )
     service.repo.list_tasks = AsyncMock(return_value=([task], 1))
-    caplog.set_level(logging.INFO, logger="video")
+    caplog.set_level(logging.INFO, logger="app.services.video")
     await service.list_tasks(12, VideoListQuery())
     assert "视频列表查询入参" in caplog.text and "视频列表查询出参" in caplog.text
     assert "private-signature" not in caplog.text and "私人提示词" not in caplog.text
@@ -683,7 +687,7 @@ async def test_wan3_create_replay_query_and_archive_preserve_inputs(service, cap
         first_frame_url="https://images.example/start.png?sig=private-start",
         last_frame_url="https://images.example/end.png?sig=private-end",
     )
-    caplog.set_level(logging.INFO, logger="video")
+    caplog.set_level(logging.INFO, logger="app.services.video")
     created = await service.create(12, "wan-key", body)
     replay = await service.create(12, "wan-key", body)
     assert replay.id == created.id

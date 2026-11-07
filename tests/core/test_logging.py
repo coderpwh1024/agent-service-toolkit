@@ -1,7 +1,7 @@
 import json
 import logging
 
-from core.logging import JsonFormatter, ServiceLogFilter
+from app.core.logging import JsonFormatter, ServiceLogFilter
 
 
 def test_json_logs_have_timestamp_and_redact_exception_value():
@@ -11,7 +11,7 @@ def test_json_logs_have_timestamp_and_redact_exception_value():
         import sys
 
         record = logging.LogRecord(
-            "memory.mem0_service",
+            "app.services.memory.mem0_service",
             logging.ERROR,
             __file__,
             1,
@@ -31,5 +31,5 @@ def test_sdk_payload_logs_are_filtered():
     for name in ["mem0.memory.main", "httpx", "openai._base_client", "ddgs.ddgs", "primp"]:
         assert not log_filter.filter(logging.LogRecord(name, logging.DEBUG, "", 1, "", (), None))
     assert log_filter.filter(
-        logging.LogRecord("memory.mem0_service", logging.INFO, "", 1, "", (), None)
+        logging.LogRecord("app.services.memory.mem0_service", logging.INFO, "", 1, "", (), None)
     )

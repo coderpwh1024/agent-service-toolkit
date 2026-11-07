@@ -215,7 +215,7 @@ https://agent-service-toolkit.streamlit.app/` → 预期最终返回 200 和 Str
 
 ## 阶段 D——基础设施冒烟测试（每次运行）
 
-每次都运行完整套件：`./scripts/smoke_test.sh all`（Postgres、MongoDB、AG-UI 以及
+每次都运行完整套件：`./scripts/smoke_test.sh all`（Postgres、AG-UI 以及
 LangFuse 自托管技术栈）。双周频率也使它成为基础设施侧的漂移检测器——即使仓库代码没有更改，
 上游镜像变更、出站/允许列表回归和云端 Docker 故障也会在这里暴露。SessionStart 钩子会启动
 Docker 守护进程；如果尚未启动，请执行
@@ -226,18 +226,19 @@ Docker 守护进程；如果尚未启动，请执行
 （pytest 会模拟传输；Docker CI 作业只访问健康检查端点），而且这里无法对已部署应用执行浏览器
 测试（受 WebSocket 代理限制——见阶段 C），因此本地运行是唯一能够检测已合并更改或 Streamlit
 技术栈升级是否破坏 UI 的例程信号——与上述基础设施冒烟测试采用相同的漂移检测逻辑。使用伪模型
-服务启动应用；一个服务即可覆盖两项检查，因为 `DEFAULT_MODEL=fake` 能让默认行为保持确定性
-且免费，同时真实密钥仍可用于真实模型场景：
+测试入口启动应用，先配置独立 PostgreSQL 测试库。该入口仅注册 fake 模型并注入固定
+测试提示词，禁用外部业务功能和认证，不能用于生产。真实模型场景需另行使用正常
+`python -m app` 启动、完整配置且获准调用真实模型的服务：
 
 ```sh
-USE_FAKE_MODEL=true DEFAULT_MODEL=fake uv run python src/run_service.py &   # 等待 :8080/health
+PYTHONPATH=. USE_FAKE_MODEL=true HOST=127.0.0.1 PORT=8080 uv run python tests/smoke/server.py &   # 等待 :8080/health
 AGENT_URL=http://localhost:8080 \
-  uv run streamlit run src/streamlit_app.py --server.headless true --server.port 8501 &  # 等待 :8501
+  uv run streamlit run streamlit_app.py --server.headless true --server.port 8501 &  # 等待 :8501
 # 1）完整的伪模型套件（默认为 localhost:8501）——结果确定且无 LLM 成本：
 uv run --with playwright python scripts/e2e_ui_tests.py
 # 2）真实模型检查——通过 UI 发起一次低成本的真实调用（尽力而为，见下文）：
 uv run --with playwright python scripts/e2e_ui_tests.py \
-  --model=<当前的低成本模型，例如 gpt-5-nano——根据 src/schema/models.py 确认> live_model
+  --model=<当前的低成本模型，例如 gpt-5-nano——根据 app/schemas/llm.py 确认> live_model
 ```
 
 在执行依赖各服务器的步骤前，进行有界等待（每个约 60 秒），完成后终止两个后台进程。
@@ -260,7 +261,7 @@ uv run --with playwright python scripts/e2e_ui_tests.py \
 使用 **dependency-refresh** 技能——它是完整的操作手册，其中包括先前状态的位置
 （按照其步骤 0，从上一次刷新 PR 的描述中查找）。将安全升级放入一个 PR；按照技能模板，在 PR
 描述中继续记录推迟的主版本升级及其冷却截止日期。范围包括冒烟测试和 Compose 文件固定的
-基础设施镜像（`postgres`/`mongo` 标签、`scripts/smoke_test.sh` 中的
+基础设施镜像（`postgres` 标签、`scripts/smoke_test.sh` 中的
 `LANGFUSE_REF`），具体参见技能的“Where versions live”表。运行完整验证阶梯，包括使用
 伪模型的真实端到端测试——`smoke_live_app.py` 往返测试；当某次升级可能影响聊天历史、
 设置或反馈/流式传输路径时，还要运行更完整的 `e2e_ui_tests.py` 套件

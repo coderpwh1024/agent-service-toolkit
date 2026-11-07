@@ -4,15 +4,15 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from app.schemas import ChatHistory, ChatMessage, ThreadSummary, UserThreads
+from app.schemas.llm import OpenAIModelName
 from client import AgentClientError
-from schema import ChatHistory, ChatMessage, ThreadSummary, UserThreads
-from schema.models import OpenAIModelName
-from voice.manager import VoiceManager
+from client.voice import VoiceManager
 
 
 def test_app_simple_non_streaming(mock_agent_client):
     """Test the full app - happy path"""
-    at = AppTest.from_file("../../src/streamlit_app.py").run()
+    at = AppTest.from_file("../../streamlit_app.py").run()
 
     WELCOME_START = "Hello! I'm an AI agent. Ask me anything!"
     PROMPT = "Know any jokes?"
@@ -37,7 +37,7 @@ def test_app_simple_non_streaming(mock_agent_client):
 
 def test_app_settings(mock_agent_client):
     """Test the full app - happy path"""
-    at = AppTest.from_file("../../src/streamlit_app.py")
+    at = AppTest.from_file("../../streamlit_app.py")
     at.query_params["user_id"] = "1234"
     at.run()
 
@@ -74,7 +74,7 @@ def test_app_settings(mock_agent_client):
 
 
 def test_sidebar_keeps_only_primary_navigation(mock_agent_client):
-    at = AppTest.from_file("../../src/streamlit_app.py").run()
+    at = AppTest.from_file("../../streamlit_app.py").run()
 
     sidebar = str(at.sidebar)
     assert [button.label for button in at.sidebar.button] == [":material/chat: 新建聊天"]
@@ -91,8 +91,8 @@ def test_sidebar_keeps_only_primary_navigation(mock_agent_client):
 
 def test_app_enables_bailian_voice_controls(mock_agent_client):
     voice = VoiceManager(stt=Mock(), tts=Mock())
-    with patch("voice.VoiceManager.from_env", return_value=voice):
-        at = AppTest.from_file("../../src/streamlit_app.py").run()
+    with patch("client.voice.VoiceManager.from_env", return_value=voice):
+        at = AppTest.from_file("../../streamlit_app.py").run()
 
     assert at.chat_input[0].proto.accept_audio is True
     assert at.sidebar.toggle[1].label == "启用语音回复"
@@ -104,10 +104,10 @@ def test_app_enables_bailian_voice_controls(mock_agent_client):
 def test_app_thread_id_history(mock_agent_client):
     """Test the thread_id is generated"""
 
-    at = AppTest.from_file("../../src/streamlit_app.py").run()
+    at = AppTest.from_file("../../streamlit_app.py").run()
 
     # Reset and set thread_id
-    at = AppTest.from_file("../../src/streamlit_app.py")
+    at = AppTest.from_file("../../streamlit_app.py")
     at.query_params["thread_id"] = "1234"
     HISTORY = [
         ChatMessage(type="human", content="What is the weather?"),
@@ -129,7 +129,7 @@ def test_app_thread_id_history(mock_agent_client):
 def test_app_resume_with_agent_param(mock_agent_client):
     """An ?agent= URL param scopes the resumed history to that agent's graph."""
 
-    at = AppTest.from_file("../../src/streamlit_app.py")
+    at = AppTest.from_file("../../streamlit_app.py")
     at.query_params["thread_id"] = "1234"
     at.query_params["agent"] = "chatbot"
     HISTORY = [
@@ -156,7 +156,7 @@ def test_app_feedback(mock_agent_client):
 @pytest.mark.asyncio
 async def test_app_streaming(mock_agent_client):
     """Test the app with streaming enabled - including tool messages"""
-    at = AppTest.from_file("../../src/streamlit_app.py").run()
+    at = AppTest.from_file("../../streamlit_app.py").run()
 
     # Setup mock streaming response
     PROMPT = "What is 6 * 7?"
@@ -198,7 +198,7 @@ async def test_app_streaming(mock_agent_client):
 @pytest.mark.asyncio
 async def test_app_init_error(mock_agent_client):
     """Test the app with an error in the agent initialization"""
-    at = AppTest.from_file("../../src/streamlit_app.py").run()
+    at = AppTest.from_file("../../streamlit_app.py").run()
 
     # Setup mock streaming response
     PROMPT = "What is 6 * 7?"
@@ -216,7 +216,7 @@ async def test_app_init_error(mock_agent_client):
 
 
 def test_app_new_chat_btn(mock_agent_client):
-    at = AppTest.from_file("../../src/streamlit_app.py").run()
+    at = AppTest.from_file("../../streamlit_app.py").run()
     thread_id_a = at.session_state.thread_id
 
     at.sidebar.button[0].click().run()
@@ -228,7 +228,7 @@ def test_app_new_chat_btn(mock_agent_client):
 @pytest.fixture
 def multi_agent_messages():
     """Fixture providing reusable messages for multi-agent tests"""
-    from schema import ChatMessage
+    from app.schemas import ChatMessage
 
     # tool 1
     tool_1 = ChatMessage(
@@ -368,7 +368,7 @@ def multi_agent_messages():
 async def test_app_streaming_single_sub_agent(mock_agent_client, multi_agent_messages):
     """Test a single sub-agent with multiple tool calls to verify popover functionality"""
 
-    at = AppTest.from_file("../../src/streamlit_app.py").run()
+    at = AppTest.from_file("../../streamlit_app.py").run()
 
     PROMPT = "Test single sub-agent with multiple tools"
 
@@ -438,7 +438,7 @@ async def test_app_streaming_single_sub_agent(mock_agent_client, multi_agent_mes
 async def test_app_streaming_sequential_sub_agents(mock_agent_client, multi_agent_messages):
     """Test when the supervisor agent transfers to sub agent A, then back to supervisor, then transfers to sub agent C, and back again"""
 
-    at = AppTest.from_file("../../src/streamlit_app.py").run()
+    at = AppTest.from_file("../../streamlit_app.py").run()
 
     PROMPT = "Test multiple transfer back patterns"
 
@@ -528,7 +528,7 @@ async def test_app_streaming_sequential_sub_agents(mock_agent_client, multi_agen
 async def test_app_streaming_nested_sub_agents(mock_agent_client, multi_agent_messages):
     """Test nested sub-agents where agent B is a sub-agent of agent A"""
 
-    at = AppTest.from_file("../../src/streamlit_app.py").run()
+    at = AppTest.from_file("../../streamlit_app.py").run()
 
     PROMPT = "Test nested sub-agents"
 
@@ -634,7 +634,7 @@ def test_app_thread_caching_sidebar(mock_agent_client, mock_threads_data):
     """Verify thread list is fetched via get_user_threads and rendered in sidebar history."""
     mock_agent_client.get_user_threads = Mock(return_value=mock_threads_data)
 
-    at = AppTest.from_file("../../src/streamlit_app.py")
+    at = AppTest.from_file("../../streamlit_app.py")
     at.query_params["user_id"] = "user-123"
     at.run()
 
@@ -659,7 +659,7 @@ def test_app_thread_click_loads_history(mock_agent_client, mock_threads_data):
         )
     )
 
-    at = AppTest.from_file("../../src/streamlit_app.py")
+    at = AppTest.from_file("../../streamlit_app.py")
     at.query_params["user_id"] = "user-123"
     at.run()
 
@@ -681,7 +681,7 @@ def test_app_thread_click_history_error(mock_agent_client, mock_threads_data):
     mock_agent_client.get_user_threads = Mock(return_value=mock_threads_data)
     mock_agent_client.get_history = Mock(side_effect=AgentClientError("service down"))
 
-    at = AppTest.from_file("../../src/streamlit_app.py")
+    at = AppTest.from_file("../../streamlit_app.py")
     at.query_params["user_id"] = "user-123"
     at.run()
     original_thread_id = at.session_state.thread_id
@@ -697,9 +697,38 @@ def test_app_thread_fetch_error_shows_caption(mock_agent_client):
     """Verify the sidebar degrades gracefully when the threads endpoint fails."""
     mock_agent_client.get_user_threads = Mock(side_effect=AgentClientError("service down"))
 
-    at = AppTest.from_file("../../src/streamlit_app.py")
+    at = AppTest.from_file("../../streamlit_app.py")
     at.query_params["user_id"] = "user-123"
     at.run()
 
     assert any("无法加载聊天记录" in caption.value for caption in at.caption)
     assert not at.exception
+
+
+def test_legacy_bookmark_keeps_agent_and_thread_with_single_agent_metadata(mock_agent_client):
+    from app.schemas import AgentInfo
+
+    mock_agent_client.info.default_agent = "mem0-chatbot"
+    mock_agent_client.info.agents = [AgentInfo(key="mem0-chatbot", description="Main agent")]
+    mock_agent_client.agent = "mem0-chatbot"
+    mock_agent_client.get_history.return_value = ChatHistory(
+        messages=[
+            ChatMessage(type="human", content="旧问题"),
+            ChatMessage(type="ai", content="旧回答"),
+        ]
+    )
+    at = AppTest.from_file("../../streamlit_app.py")
+    at.query_params["thread_id"] = "legacy-thread"
+    at.query_params["agent"] = "chatbot"
+    at.run()
+    assert not at.exception
+    assert at.session_state.thread_id == "legacy-thread"
+    assert at.sidebar.selectbox[1].value == "chatbot"
+    assert mock_agent_client.agent == "chatbot"
+    mock_agent_client.get_history.assert_called_with(thread_id="legacy-thread", agent="chatbot")
+    mock_agent_client.ainvoke = AsyncMock(return_value=ChatMessage(type="ai", content="继续回答"))
+    at.sidebar.toggle[0].set_value(False)
+    at.chat_input[0].set_value("继续").run()
+    assert not at.exception
+    assert mock_agent_client.agent == "chatbot"
+    assert mock_agent_client.ainvoke.call_args.kwargs["thread_id"] == "legacy-thread"

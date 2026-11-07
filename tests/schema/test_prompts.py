@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from schema.prompts import Mem0Prompts
+from app.schemas.prompts import Mem0Prompts
 
 
 @pytest.mark.parametrize(

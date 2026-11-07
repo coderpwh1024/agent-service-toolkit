@@ -3,7 +3,7 @@ from uuid import UUID
 
 import pytest
 
-from memory.mem0_history import PostgresHistory
+from app.repositories.mem0_history import PostgresHistory
 
 MEMORY_ID = "00000000-0000-0000-0000-000000000001"
 

@@ -8,25 +8,25 @@ from langchain_core.language_models.fake_chat_models import FakeMessagesListChat
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
 
-from core import settings
-from core.skills import SkillDefinition
-from schema.video import VideoTaskPage
-from schema.video_skill import VideoSkillDialogue
-from service.agent_runner import graph_events
+from app.core import settings
+from app.core.skills import SkillDefinition
+from app.schemas.video import VideoTaskPage
+from app.schemas.video_skill import VideoSkillDialogue
+from app.services.agent_runner import graph_events
 
 
 def call(name, args=None, call_id="call"):
     return AIMessage(content="", tool_calls=[{"name": name, "args": args or {}, "id": call_id}])
 
 
-@pytest.fixture(params=["chatbot", "mem0_chatbot"])
+@pytest.fixture(params=["mem0_chat"])
 def setup(request, monkeypatch):
-    module = importlib.import_module(f"agents.{request.param}")
+    module = importlib.import_module(f"app.agents.{request.param}")
     model = Mock(ainvoke=AsyncMock(return_value=AIMessage(content="你好")))
     model.bind_tools.return_value = model
     memory = Mock(search=AsyncMock(return_value=[]), remember=AsyncMock())
     monkeypatch.setattr(module, "get_model", lambda *args, **kwargs: model)
-    if request.param == "mem0_chatbot":
+    if request.param == "mem0_chat":
         monkeypatch.setattr(module, "get_mem0_service", lambda: memory)
     monkeypatch.setattr(settings, "VIDEO_ENABLED", True)
     monkeypatch.setattr(settings, "VIDEO_SKILL_ENABLED", True)
@@ -72,7 +72,7 @@ async def test_unavailable_skill_does_not_block_ordinary_chat(setup, monkeypatch
 
 @pytest.mark.asyncio
 async def test_on_demand_count_uses_owned_service_without_leaking_skill_history(setup, monkeypatch):
-    from video import runtime
+    from app.services.video import runtime
 
     graph, model, config, memory, _ = setup
     service = Mock(
@@ -106,7 +106,7 @@ async def test_on_demand_count_uses_owned_service_without_leaking_skill_history(
 async def test_draft_correction_preserves_original_input_identity_and_parameters(
     setup, monkeypatch
 ):
-    from video import runtime
+    from app.services.video import runtime
 
     graph, model, config, _, _ = setup
     service = Mock(create=AsyncMock(side_effect=RuntimeError("synthetic failure")))
@@ -139,7 +139,7 @@ async def test_draft_correction_preserves_original_input_identity_and_parameters
 
 @pytest.mark.asyncio
 async def test_save_only_draft_does_not_submit_generation(setup, monkeypatch):
-    from video import runtime
+    from app.services.video import runtime
 
     graph, model, config, _, _ = setup
     service = Mock(create=AsyncMock(), edit=AsyncMock())
@@ -210,7 +210,7 @@ async def test_save_only_draft_does_not_submit_generation(setup, monkeypatch):
     ],
 )
 async def test_invalid_selection_has_no_side_effects(setup, monkeypatch, responses):
-    from video import runtime
+    from app.services.video import runtime
 
     graph, model, config, _, _ = setup
     service = Mock(create=AsyncMock(), edit=AsyncMock(), query=AsyncMock(), list_tasks=AsyncMock())
@@ -240,7 +240,7 @@ async def test_loaded_model_failure_and_timeout_are_controlled(setup):
 
 @pytest.mark.asyncio
 async def test_cancellation_stops_loaded_model_before_submission(setup, monkeypatch):
-    from video import runtime
+    from app.services.video import runtime
 
     graph, model, config, _, _ = setup
     service = Mock(create=AsyncMock())
@@ -274,7 +274,7 @@ async def test_cancellation_stops_loaded_model_before_submission(setup, monkeypa
 
 @pytest.mark.asyncio
 async def test_only_final_video_result_and_custom_event_are_visible(setup, monkeypatch):
-    from video import runtime
+    from app.services.video import runtime
 
     graph, _, config, _, module = setup
 
@@ -312,7 +312,7 @@ async def test_only_final_video_result_and_custom_event_are_visible(setup, monke
 
 
 def test_foreign_checkpoint_is_not_exposed_in_loaded_context(setup):
-    from skills.video import video_skill_reference
+    from app.services.skills.video import video_skill_reference
 
     config = {"configurable": {"user_id": "7", "authenticated_user_id": "7"}}
     saved = VideoSkillDialogue(user_id="8", last_record_id=123, listed_ids=[456]).model_dump()
@@ -324,7 +324,7 @@ def test_foreign_checkpoint_is_not_exposed_in_loaded_context(setup):
     "owner,expires,pending", [("7", 600, True), ("7", -1, False), ("8", 600, False)]
 )
 def test_main_sees_only_owned_active_context_flags(setup, owner, expires, pending):
-    from skills.video_chat import VideoSkillSession
+    from app.services.skills.video_chat import VideoSkillSession
 
     _, _, config, _, _ = setup
     saved = VideoSkillDialogue(

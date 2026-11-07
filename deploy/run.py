@@ -21,9 +21,9 @@ def main() -> None:
     os.environ.setdefault("PYTHONUNBUFFERED", "1")
 
     if args.component == "service":
-        command = [sys.executable, str(root / "src" / "run_service.py")]
+        command = [sys.executable, "-m", "app"]
     else:
-        command = [sys.executable, "-m", "streamlit", "run", str(root / "src" / "streamlit_app.py")]
+        command = [sys.executable, "-m", "streamlit", "run", str(root / "streamlit_app.py")]
     os.execv(sys.executable, command)
 
 

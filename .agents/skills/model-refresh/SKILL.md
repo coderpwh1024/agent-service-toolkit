@@ -1,7 +1,7 @@
 ---
 name: model-refresh
 description: >-
-  定期根据各提供商当前发布的模型审查 src/schema/models.py 中的 LLM 模型目录：
+  定期根据各提供商当前发布的模型审查 app/schemas/llm.py 中的 LLM 模型目录：
   添加新发布的模型，移除或标记提供商已弃用或不再推荐的模型，并将 DEFAULT_MODEL
   回退值重新指向当前可用的模型。当用户要求“检查新模型”“更新模型列表”
   “刷新模型目录”，或定时 model-refresh 触发器运行时使用。
@@ -9,24 +9,24 @@ description: >-
 
 # 刷新模型目录
 
-保持 `src/schema/models.py`（`AllModelEnum` 目录）为最新状态：添加提供商自上次
+保持 `app/schemas/llm.py`（`AllModelEnum` 目录）为最新状态：添加提供商自上次
 刷新后发布的模型，移除提供商已弃用或正积极引导用户停止使用的模型，并确保
-`src/core/settings.py` 中各提供商的 `DEFAULT_MODEL` 回退值指向仍然存在的模型。
+`app/core/settings.py` 中各提供商的 `DEFAULT_MODEL` 回退值指向仍然存在的模型。
 
 ## 模型配置位置
 
 | 内容 | 文件 |
 |---|---|
-| 按提供商划分的所有受支持模型枚举，每个类的文档字符串中包含提供商文档 URL | `src/schema/models.py`（`AllModelEnum`） |
-| 各提供商的默认模型，以及设置密钥后哪些模型为“可用”状态 | `src/core/settings.py`（`Settings.model_post_init`） |
-| 枚举到 API 模型字符串的映射，以及提供商特有的构造差异（温度、流式传输、工具绑定） | `src/core/llm.py`（`_MODEL_TABLE`、`get_model`） |
+| 按提供商划分的所有受支持模型枚举，每个类的文档字符串中包含提供商文档 URL | `app/schemas/llm.py`（`AllModelEnum`） |
+| 各提供商的默认模型，以及设置密钥后哪些模型为“可用”状态 | `app/core/settings.py`（`Settings.model_post_init`） |
+| 枚举到 API 模型字符串的映射，以及提供商特有的构造差异（温度、流式传输、工具绑定） | `app/core/llm.py`（`_MODEL_TABLE`、`get_model`） |
 | 断言 `get_model` 为每个模型构造正确 LangChain 类的单元测试 | `tests/core/test_llm.py` |
 | 设置和默认模型测试 | `tests/core/test_settings.py` |
 | 实时冒烟测试（真实 API 调用） | `scripts/check_live_models.py` |
 
 ## 工作流程
 
-1. **调研。** 对于 `src/schema/models.py` 中的每个提供商代码块，获取该类文档
+1. **调研。** 对于 `app/schemas/llm.py` 中的每个提供商代码块，获取该类文档
    字符串中已有的文档 URL，并将当前模型列表与已有的枚举值进行比较。这些文档字符串
    URL 是查找信息的**唯一权威来源**，不要在其他位置硬编码另一份副本，因为提供商的
    文档 URL 会随时间变化，重复的链接会在无人察觉的情况下失效。
@@ -59,12 +59,12 @@ description: >-
      `gemini-2.5-pro`、`gpt-5.1`），应从提供商文档中原样复制，不要猜测。
    - 在类中将同一提供商的模型系列归组，并大致按尺寸和代际排序，与当前的排列方式保持一致。
 4. **在所有耦合位置应用变更**，不要只编辑枚举：
-   - `src/schema/models.py`：添加或移除 `StrEnum` 成员。保持文档字符串中的 URL
+   - `app/schemas/llm.py`：添加或移除 `StrEnum` 成员。保持文档字符串中的 URL
      为最新状态（参见步骤 1）。
-   - `src/core/settings.py` 的 `model_post_init`：如果被移除的模型是
+   - `app/core/settings.py` 的 `model_post_init`：如果被移除的模型是
      `DEFAULT_MODEL` 回退值，将其重新指向该提供商剩余的模型，最好选择便宜、快速的
      模型。应符合当前默认值的定位（例如 Haiku、Flash、Nano 级别，而非旗舰模型）。
-   - `src/core/llm.py`：对于单纯的重命名或添加，无需改动（`_MODEL_TABLE` 和
+   - `app/core/llm.py`：对于单纯的重命名或添加，无需改动（`_MODEL_TABLE` 和
      `if model_name in ...Name` 分派由枚举驱动），但要检查是否存在也应适用于新模型的
      提供商特有逻辑（参见 Groq 的 safeguard 模型分支）。
    - `tests/core/test_llm.py`、`tests/core/test_settings.py`：更新所有硬编码了
@@ -123,8 +123,8 @@ description: >-
 手动运行，或通过定时触发器运行：
 
 ```sh
-PYTHONPATH=src uv run python scripts/check_live_models.py                    # 所有已配置的提供商
-PYTHONPATH=src uv run python scripts/check_live_models.py --provider anthropic google
+PYTHONPATH=. uv run python scripts/check_live_models.py                    # 所有已配置的提供商
+PYTHONPATH=. uv run python scripts/check_live_models.py --provider anthropic google
 ```
 
 `SKIP` 表示该提供商没有可用凭据，这是预期行为，不算失败。只有 `FAIL` 行才应阻塞构建。

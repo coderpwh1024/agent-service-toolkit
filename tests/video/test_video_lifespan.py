@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock
 import pytest
 from fastapi import FastAPI
 
-from core import settings
-from service import video as video_routes
-from video.runtime import get_video_service
+import app.lifecycle as video_routes
+from app.core import settings
+from app.services.video.runtime import get_video_service
 
 
 @pytest.mark.asyncio

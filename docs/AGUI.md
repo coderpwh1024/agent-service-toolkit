@@ -1,13 +1,13 @@
 # AG-UI 协议支持
 
-该服务通过 [AG-UI 协议](https://docs.ag-ui.com) 对外提供所有智能体。AG-UI 是一种开放的、
+该服务通过 [AG-UI 协议](https://docs.ag-ui.com) 对外提供唯一主 Agent `mem0-chatbot`（兼容标识为 `chatbot`）。AG-UI 是一种开放的、
 基于事件的标准，用于将智能体连接到面向用户的应用，[CopilotKit](https://docs.copilotkit.ai)
 及越来越多的框架都在使用它。这样，你既可以为智能体构建生产级 React/Next.js 前端，
 又可以保留 Streamlit 应用用于开发。
 
 繁重的工作（将 LangGraph 执行过程转换为 AG-UI 事件）由官方
 [`ag-ui-langgraph`](https://pypi.org/project/ag-ui-langgraph/) 包完成。该服务只增加了一个
-轻量适配器（`src/service/agui.py`），将其接入智能体注册表、Bearer 身份验证和 Langfuse
+轻量适配器（`app/api/agui.py`），将其接入智能体注册表、Bearer 身份验证和 Langfuse
 追踪。
 
 ## 端点
@@ -30,7 +30,7 @@ AG-UI `HttpAgent` 从服务端连接此服务：
 import { HttpAgent } from "@ag-ui/client";
 
 const agent = new HttpAgent({
-  url: "http://your-service:8080/agui/research-assistant/run",
+  url: "http://your-service:8080/agui/mem0-chatbot/run",
   headers: { Authorization: `Bearer ${process.env.AUTH_SECRET}` },
 });
 ```
@@ -45,7 +45,7 @@ CORS 中间件，而且 `AUTH_SECRET` 会暴露给浏览器，因此应优先采
 
 ```sh
 # 在一个终端中启动服务（也可以使用 docker compose watch）
-python src/run_service.py
+python -m app
 
 # 在另一个终端中运行
 cd scripts/agui-client
@@ -76,7 +76,7 @@ THREAD_ID=my-thread node client.mjs "再讲一个" chatbot
   `STATE_SNAPSHOT` 事件，因此不要把密钥或仅限内部使用的数据放入智能体状态。
 - 适配器会过滤掉 **`RAW` 透传事件**。标准 AG-UI 客户端会忽略这些事件，而且它们可能向
   调用方暴露服务端内部信息（包括完整渲染后的提示词）。如果需要在可信层后方使用完整事件流
-  进行调试（例如 AG-UI Event Inspector），请移除 `src/service/agui.py` 中的过滤器。
+  进行调试（例如 AG-UI Event Inspector），请移除 `app/api/agui.py` 中的过滤器。
 - **`/feedback` 和 `/history` 未进行桥接。** AG-UI `runId` 由客户端生成，不会用作
   LangSmith 运行 ID，因此星级反馈不适用于 AG-UI 运行。AG-UI 客户端会根据事件流自行管理
   消息历史。

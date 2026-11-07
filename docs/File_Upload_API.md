@@ -4,7 +4,7 @@
 
 ## 表设计与初始化
 
-DDL 位于 [create_file_uploads.sql](../src/service/sql/create_file_uploads.sql)，表名为 `file_uploads`。
+DDL 位于 [create_file_uploads.sql](../app/models/sql/create_file_uploads.sql)，表名为 `file_uploads`。
 
 | 字段 | PostgreSQL 类型 | 约束与含义 |
 | --- | --- | --- |
@@ -26,7 +26,7 @@ DDL 位于 [create_file_uploads.sql](../src/service/sql/create_file_uploads.sql)
 启用功能后，服务启动使用事务、10 秒锁等待上限和 PostgreSQL advisory lock 幂等执行 DDL。也可以由数据库管理员在目标数据库内执行：
 
 ```sh
-psql -v ON_ERROR_STOP=1 --single-transaction -f src/service/sql/create_file_uploads.sql
+psql -v ON_ERROR_STOP=1 --single-transaction -f app/models/sql/create_file_uploads.sql
 ```
 
 连接信息应通过已有安全连接配置传入，不写入命令或文档。DDL 只新增本功能的表、约束和注释，不修改现有业务表或回填用户数据。可先建表再滚动升级应用；回退时关闭功能并保留表与七牛对象，不删除数据。后续任何更新或逻辑删除都必须同步 `update_by` 和 `update_time`。当前不提供删除接口。
@@ -110,7 +110,7 @@ curl "$AGENT_URL/files/123/url" -H "Authorization: Bearer $APP_TOKEN"
 ## 验证
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 uv run pytest tests/service/test_files.py tests/service/test_nacos.py -q
+PYTHONDONTWRITEBYTECODE=1 uv run pytest tests/api/test_files.py tests/api/test_nacos.py -q
 ./scripts/smoke_test.sh postgres
 ```
 

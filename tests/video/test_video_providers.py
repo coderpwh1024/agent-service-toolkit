@@ -5,8 +5,8 @@ import httpx
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from schema.video import VideoCreate, VideoEdit
-from video.providers import (
+from app.schemas.video import VideoCreate, VideoEdit
+from app.services.video.providers import (
     HappyHorseClient,
     QiniuVideoStorage,
     VideoProviderError,

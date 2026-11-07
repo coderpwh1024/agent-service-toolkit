@@ -20,10 +20,10 @@ def package_root(tmp_path: Path) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("template\n", encoding="utf-8")
     for name in (
-        "src/run_service.py",
-        "src/service/sql/create_app_users.sql",
-        "src/__pycache__/old.pyc",
-        "src/.hidden/private.py",
+        "app/__main__.py",
+        "app/models/sql/create_app_users.sql",
+        "app/__pycache__/old.pyc",
+        "app/.hidden/private.py",
         ".env",
         ".env.local",
         "privatecredentials/token.pem",
@@ -44,8 +44,8 @@ def test_package_includes_runtime_sql_and_excludes_local_data(
     PACKAGER["build_archive"](package_root, destination, "example==1.0\n")
     with tarfile.open(destination) as archive:
         names = set(archive.getnames())
-        assert "agent-service-toolkit/src/run_service.py" in names
-        assert "agent-service-toolkit/src/service/sql/create_app_users.sql" in names
+        assert "agent-service-toolkit/app/__main__.py" in names
+        assert "agent-service-toolkit/app/models/sql/create_app_users.sql" in names
         assert "agent-service-toolkit/.env.example" in names
         assert "agent-service-toolkit/deploy/.env.example" in names
         assert "agent-service-toolkit/deploy/nginx/agent-service-toolkit.conf" in names
@@ -62,7 +62,7 @@ def test_package_includes_runtime_sql_and_excludes_local_data(
 
 
 def test_package_rejects_source_symlink(package_root: Path, tmp_path: Path) -> None:
-    (package_root / "src" / "credentials.py").symlink_to(package_root / ".env")
+    (package_root / "app" / "credentials.py").symlink_to(package_root / ".env")
     with pytest.raises(ValueError, match="regular files"):
         PACKAGER["build_archive"](package_root, tmp_path / "package.tar.gz", "")
     assert not (tmp_path / "package.tar.gz").exists()
@@ -100,10 +100,10 @@ def test_launcher_loads_deployment_configuration_before_exec(
     assert os.environ["PORT"] == "9000"
     assert calls[0][0] == sys.executable
     if component == "service":
-        assert calls[0][1][1] == str(tmp_path / "src" / "run_service.py")
+        assert calls[0][1][1:] == ["-m", "app"]
     else:
         assert calls[0][1][1:4] == ["-m", "streamlit", "run"]
-        assert calls[0][1][4] == str(tmp_path / "src" / "streamlit_app.py")
+        assert calls[0][1][4] == str(tmp_path / "streamlit_app.py")
 
 
 def test_launcher_requires_configuration(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

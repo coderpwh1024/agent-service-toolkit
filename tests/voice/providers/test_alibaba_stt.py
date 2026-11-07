@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from voice.providers.alibaba_stt import AlibabaSTT
+from app.services.voice.providers.alibaba_stt import AlibabaSTT
 
 
 def asr_response(content: str = " transcribed text ") -> Mock:
@@ -34,7 +34,9 @@ def test_init_requires_dashscope_key():
 
 def test_transcribe_sends_base64_audio_to_bailian(mock_audio_file):
     response = asr_response()
-    with patch("voice.providers.alibaba_stt.httpx.post", return_value=response) as post:
+    with patch(
+        "app.services.voice.providers.alibaba_stt.httpx.post", return_value=response
+    ) as post:
         result = AlibabaSTT(api_key="test-key").transcribe(mock_audio_file)
 
     assert result == "transcribed text"
@@ -52,7 +54,9 @@ def test_transcribe_sends_base64_audio_to_bailian(mock_audio_file):
 def test_transcribe_reads_from_start_of_audio_file(mock_audio_file):
     mock_audio_file.seek(5)
     response = asr_response("ok")
-    with patch("voice.providers.alibaba_stt.httpx.post", return_value=response) as post:
+    with patch(
+        "app.services.voice.providers.alibaba_stt.httpx.post", return_value=response
+    ) as post:
         AlibabaSTT(api_key="test-key").transcribe(mock_audio_file)
 
     audio_data = post.call_args.kwargs["json"]["messages"][0]["content"][0]["input_audio"]["data"]
@@ -61,13 +65,15 @@ def test_transcribe_reads_from_start_of_audio_file(mock_audio_file):
 
 def test_transcribe_rejects_audio_larger_than_base64_limit(mock_audio_file, monkeypatch):
     monkeypatch.setattr(AlibabaSTT, "MAX_AUDIO_BYTES", 3)
-    with patch("voice.providers.alibaba_stt.httpx.post") as post:
+    with patch("app.services.voice.providers.alibaba_stt.httpx.post") as post:
         result = AlibabaSTT(api_key="test-key").transcribe(mock_audio_file)
     assert result == ""
     post.assert_not_called()
 
 
 def test_transcribe_api_error_returns_empty_string(mock_audio_file):
-    with patch("voice.providers.alibaba_stt.httpx.post", side_effect=RuntimeError("API error")):
+    with patch(
+        "app.services.voice.providers.alibaba_stt.httpx.post", side_effect=RuntimeError("API error")
+    ):
         result = AlibabaSTT(api_key="test-key").transcribe(mock_audio_file)
     assert result == ""

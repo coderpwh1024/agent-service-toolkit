@@ -9,7 +9,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
 from langchain_core.outputs import ChatGenerationChunk
 from langchain_core.runnables import RunnableConfig
 
-from core.model_metrics import ModelTiming, invoke_chat_model
+from app.core.model_metrics import ModelTiming, invoke_chat_model
 
 
 @pytest.mark.asyncio
@@ -24,7 +24,7 @@ async def test_usage_logged_without_prompt_or_response(caplog):
         },
     )
     model = FakeMessagesListChatModel(responses=[reply])
-    caplog.set_level(logging.INFO, logger="core.model_metrics")
+    caplog.set_level(logging.INFO, logger="app.core.model_metrics")
     result = await invoke_chat_model(
         model, [HumanMessage(content="private-input")], {}, stage="main_initial"
     )
@@ -59,7 +59,7 @@ async def test_callback_preserves_existing_handlers_and_config():
 @pytest.mark.asyncio
 async def test_tool_chunk_is_timed_separately_from_visible_text(caplog):
     timing = ModelTiming("video_operation")
-    caplog.set_level(logging.INFO, logger="core.model_metrics")
+    caplog.set_level(logging.INFO, logger="app.core.model_metrics")
     chunk = ChatGenerationChunk(
         message=AIMessageChunk(
             content="",
@@ -83,7 +83,7 @@ async def test_tool_chunk_is_timed_separately_from_visible_text(caplog):
 
 @pytest.mark.asyncio
 async def test_cancel_and_error_are_propagated_without_payloads(caplog):
-    caplog.set_level(logging.INFO, logger="core.model_metrics")
+    caplog.set_level(logging.INFO, logger="app.core.model_metrics")
     for exc in [asyncio.CancelledError(), RuntimeError("secret-value")]:
         model = AsyncMock()
         model.ainvoke.side_effect = exc
@@ -95,7 +95,7 @@ async def test_cancel_and_error_are_propagated_without_payloads(caplog):
 
 @pytest.mark.asyncio
 async def test_missing_usage_is_unknown_and_rich_content_is_not_dropped(caplog):
-    caplog.set_level(logging.INFO, logger="core.model_metrics")
+    caplog.set_level(logging.INFO, logger="app.core.model_metrics")
     reply = AIMessage(content=[{"type": "text", "text": "rich-text"}])
     result = await invoke_chat_model(
         FakeMessagesListChatModel(responses=[reply]), [], {}, stage="main_initial"

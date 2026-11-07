@@ -1,6 +1,6 @@
 """Compare chat prefixes, cache modes and models without executing selected tools.
 
-Run from the repository root with PYTHONPATH=src uv run python scripts/benchmark_chat_latency.py.
+Run from the repository root with PYTHONPATH=. uv run python scripts/benchmark_chat_latency.py.
 """
 
 import argparse
@@ -27,12 +27,12 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 from langchain_openai import ChatOpenAI
 from pydantic import Field
 
-from agents.mem0_chatbot import _chat_prompt
-from agents.research_delegation import _RULES, answer_with_research, research_assistant
-from core import settings
-from core.logging import configure_logging
-from service.nacos import NacosIntegration
-from skills.video_chat import VideoSkillSession
+from app.agents.chat import _RULES, answer_chat
+from app.agents.mem0_chat import _chat_prompt
+from app.core import settings
+from app.core.logging import configure_logging
+from app.core.nacos import NacosIntegration
+from app.services.skills.video_chat import VideoSkillSession
 
 QUESTIONS = (
     "你好，请用一句话简单介绍一下你自己。",
@@ -100,7 +100,6 @@ async def build_prompt(trial: Trial, question: str) -> tuple[list[BaseMessage], 
             human,
         ]
         return messages, [
-            convert_to_openai_tool(research_assistant),
             convert_to_openai_tool(session.load_tool()),
         ]
     capture = PromptCapture(responses=[AIMessage(content="offline capture")])
@@ -109,7 +108,7 @@ async def build_prompt(trial: Trial, question: str) -> tuple[list[BaseMessage], 
     previous = settings.DASHSCOPE_EXPLICIT_CACHE_ENABLED
     try:
         settings.DASHSCOPE_EXPLICIT_CACHE_ENABLED = trial.explicit_cache
-        await answer_with_research(capture, prompt, config, video=session)
+        await answer_chat(capture, prompt, config, video=session)
     finally:
         settings.DASHSCOPE_EXPLICIT_CACHE_ENABLED = previous
     return capture.messages_seen, [convert_to_openai_tool(tool) for tool in capture.tools_seen]

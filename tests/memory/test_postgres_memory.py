@@ -1,7 +1,7 @@
 from psycopg.conninfo import conninfo_to_dict
 from pydantic import SecretStr
 
-from memory import postgres
+import app.core.database as postgres
 
 
 def test_connection_string_preserves_special_characters(monkeypatch):

@@ -1,6 +1,6 @@
 import pytest
 
-from voice.wake_word import match_wake_prefix
+from app.services.voice.wake_word import match_wake_prefix
 
 
 @pytest.mark.parametrize(

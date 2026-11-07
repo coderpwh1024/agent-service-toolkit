@@ -8,7 +8,7 @@
 
 | 配置 | 用途 | 使用位置 |
 | --- | --- | --- |
-| `DASHSCOPE_API_KEY` | 聊天、RAG 向量生成、语音识别和语音合成共用的百炼密钥 | 服务端；启用语音时也需要提供给 Streamlit 进程 |
+| `DASHSCOPE_API_KEY` | 聊天、记忆向量生成、语音识别和语音合成共用的百炼密钥 | 服务端；启用语音时也需要提供给 Streamlit 进程 |
 | `POSTGRES_USER`、`POSTGRES_PASSWORD` | PostgreSQL 数据库身份 | 服务端连接数据库；Compose 用于初始化数据库 |
 | `POSTGRES_HOST`、`POSTGRES_PORT`、`POSTGRES_DB` | 数据库连接目标 | 本地默认 `127.0.0.1:5432/agent_service`；服务容器内使用 `postgres:5432` |
 | `AUTH_SECRET` | 可信后台服务凭据，由部署者自行设置 | 服务端管理调用和现有 Streamlit/Python 客户端；不能内置到移动 App |
@@ -17,23 +17,23 @@
 | `SMTP_*` | 验证邮件发送配置 | 由 Nacos YAML 加载；支持 STARTTLS 或隐式 SSL，二者不能同时启用 |
 | `QINIU_*` | 用户头像、文件上传及视频对象存储 | 由 Nacos `storage.qiniu` 加载；AK/SK 仅保存在服务端 |
 
-模型、认证、Redis、PostgreSQL、SMTP、RAG 和实时语音配置统一维护在 Nacos YAML 中，不在 `.env` 重复保存。数据库凭据不是聊天界面的登录账号；数据库当前用于会话检查点、跨会话记忆及 RAG 数据。
+模型、认证、Redis、PostgreSQL、SMTP 和实时语音配置统一维护在 Nacos YAML 中，不在 `.env` 重复保存。数据库凭据不是聊天界面的登录账号；数据库当前用于会话检查点、跨会话记忆及 Mem0 长期记忆。
 
-百炼相关地址和模型配置见 [百炼说明](Alibaba_Bailian.md)，RAG 初始化见 [RAG 说明](RAG_Assistant.md)。只使用这套默认方案时，不需要额外配置 OpenAI、Deepgram 或 ElevenLabs 账号。研究助手的审核、天气等扩展仍有各自的可选凭据。
+百炼相关地址和模型配置见 [百炼说明](Alibaba_Bailian.md)。只使用这套默认方案时，不需要额外配置 OpenAI、Deepgram 或 ElevenLabs 账号。
 
 ## 可选模型服务账号
 
-以下为仓库保留的接入选项，不需要全部配置。是否将模型加入可用列表由 [Settings](../src/core/settings.py) 决定，实际创建客户端的逻辑见 [LLM 工厂](../src/core/llm.py)。配置存在不等于外部服务已经验证可用。
+以下为仓库保留的接入选项，不需要全部配置。是否将模型加入可用列表由 [Settings](../app/core/settings.py) 决定，实际创建客户端的逻辑见 [LLM 工厂](../app/core/llm.py)。配置存在不等于外部服务已经验证可用。
 
 | 服务 | 凭据或启用配置 | 配套配置与说明 |
 | --- | --- | --- |
-| 阿里云百炼 | `DASHSCOPE_API_KEY` | `DASHSCOPE_BASE_URL`；RAG 使用 `DASHSCOPE_EMBEDDING_MODEL` |
+| 阿里云百炼 | `DASHSCOPE_API_KEY` | `DASHSCOPE_BASE_URL`；记忆向量模型见 Mem0 配置 |
 | OpenAI | `OPENAI_API_KEY` | 可选聊天模型 |
 | DeepSeek | `DEEPSEEK_API_KEY` | 可选聊天模型 |
 | Anthropic | `ANTHROPIC_API_KEY` | 可选聊天模型 |
 | Google Gemini | `GOOGLE_API_KEY` | 与 Vertex AI 的文件凭据配置分开 |
 | Google Vertex AI | `GOOGLE_APPLICATION_CREDENTIALS` | 凭据文件路径；见 [Vertex AI 说明](VertexAI.md) |
-| Groq | `GROQ_API_KEY` | 聊天模型及研究助手的 Safeguard 审核 |
+| Groq | `GROQ_API_KEY` | 可选聊天模型 |
 | AWS Bedrock | `USE_AWS_BEDROCK=true` | 仓库将凭据解析交给底层 SDK；启用开关本身不提供 AWS 身份 |
 | Azure OpenAI | `AZURE_OPENAI_API_KEY` | 还需 `AZURE_OPENAI_ENDPOINT`、`AZURE_OPENAI_DEPLOYMENT_MAP`；可配置 `AZURE_OPENAI_API_VERSION` |
 | OpenRouter | `OPENROUTER_API_KEY` | 独立密钥，代码显式传入 OpenRouter 客户端 |
@@ -47,16 +47,11 @@
 
 | 功能 | 账号或凭据 | 未配置时的行为 | 代码入口 |
 | --- | --- | --- | --- |
-| GitHub MCP | `GITHUB_PAT`；可选 `MCP_GITHUB_SERVER_URL` | GitHub 智能体不加载 MCP 工具 | [GitHub 智能体](../src/agents/github_mcp_agent/github_mcp_agent.py) |
-| 天气查询 | `OPENWEATHERMAP_API_KEY` | 研究助手不添加天气工具 | [研究助手](../src/agents/research_assistant.py) |
-| 内容审核 | `GROQ_API_KEY` | 跳过 Safeguard 模型审核 | [Safeguard](../src/agents/safeguard.py) |
-| LangSmith 追踪 | `LANGCHAIN_API_KEY`、`LANGCHAIN_TRACING_V2` | 追踪开关默认关闭 | [Settings](../src/core/settings.py) |
-| LangSmith 反馈 | `LANGCHAIN_API_KEY` | `/feedback` 仍会调用 LangSmith；未配置可用凭据时不能假定反馈可用 | [反馈接口](../src/service/service.py) |
-| Langfuse 追踪 | `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_TRACING` | 追踪开关默认关闭 | [服务](../src/service/service.py)、[AG-UI](../src/service/agui.py) |
+| LangSmith 追踪 | `LANGCHAIN_API_KEY`、`LANGCHAIN_TRACING_V2` | 追踪开关默认关闭 | [Settings](../app/core/settings.py) |
+| LangSmith 反馈 | `LANGCHAIN_API_KEY` | `/feedback` 仍会调用 LangSmith；未配置可用凭据时不能假定反馈可用 | [反馈接口](../app/api/chats.py) |
+| Langfuse 追踪 | `LANGFUSE_PUBLIC_KEY`、`LANGFUSE_SECRET_KEY`、`LANGFUSE_TRACING` | 追踪开关默认关闭 | [服务](../app/api/chats.py)、[AG-UI](../app/api/agui.py) |
 
 LangSmith 可配置 `LANGCHAIN_PROJECT`、`LANGCHAIN_ENDPOINT`；Langfuse 可配置 `LANGFUSE_HOST`。这些地址、项目名及开关不属于登录凭据。
-
-GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `user_id` 切换。DuckDuckGo 搜索和本地计算器在当前代码中没有单独的账号配置。
 
 ## 应用内用户身份与认证
 
@@ -64,7 +59,7 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 
 `app_users` 使用自增 `BIGINT` 主键，包含必填昵称、规范化邮箱、可选图片 URL，以及 `create_by`、`update_by`、`create_time`、`update_time`、`is_delete`。有效记录的邮箱由部分唯一索引约束。自助注册的审计操作者使用 `AUTH_SERVICE_ACCOUNT_ID`，默认保留值为 `0`。
 
-完整且幂等的 PostgreSQL DDL 位于 [`src/service/sql/create_app_users.sql`](../src/service/sql/create_app_users.sql)。服务启动时读取并执行同一文件，也可以手工执行 `psql -f src/service/sql/create_app_users.sql`，因此运行时初始化与部署脚本不会形成两套 schema 定义。
+完整且幂等的 PostgreSQL DDL 位于 [`app/models/sql/create_app_users.sql`](../app/models/sql/create_app_users.sql)。服务启动时读取并执行同一文件，也可以手工执行 `psql -f app/models/sql/create_app_users.sql`，因此运行时初始化与部署脚本不会形成两套 schema 定义。
 
 | 标识 | 当前含义 | 是否完成用户认证 |
 | --- | --- | --- |
@@ -74,9 +69,9 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 | `thread_id` | 标识单次会话及其历史 | 由 `app_thread_owners` 校验归属，不是访问凭证 |
 | `run_id` | 标识一次运行及其反馈 | 由 `app_runs` 校验归属 |
 
-[Streamlit](../src/streamlit_app.py) 优先读取 session state 中的 `user_id`，其次读取 URL 参数，否则生成 UUID 并写回 URL。虽然常量名为 `USER_ID_COOKIE`，这段实现使用的是 session state 和 URL 参数，没有登录 Cookie 校验。
+[Streamlit](../streamlit_app.py) 优先读取 session state 中的 `user_id`，其次读取 URL 参数，否则生成 UUID 并写回 URL。虽然常量名为 `USER_ID_COOKIE`，这段实现使用的是 session state 和 URL 参数，没有登录 Cookie 校验。
 
-[服务端](../src/service/service.py) 的实际边界如下：
+[服务端](../app/api/chats.py) 的实际边界如下：
 
 - 同时未设置 `AUTH_SECRET` 和 `APP_TOKEN_SECRET` 时，保留原开发模式，业务接口不要求 Bearer 令牌并按管理身份处理。该模式不适合多用户暴露。
 - 设置后，`/info`、调用、流式输出、历史、线程列表、反馈及 AG-UI 路由接受可信 `AUTH_SECRET` 或 App Token；`/health` 独立于认证路由，默认文档路由也没有接入这一校验。
@@ -86,7 +81,7 @@ GitHub 工具实际使用服务端配置的 PAT 身份，不随聊天中的 `use
 - 可信服务携带 `AUTH_SECRET` 调用 `POST /auth/token`，为已完成登录校验的 `user_id` 签发令牌。普通 App Token 不能再次签发令牌。
 - App Token 用户可调用 `GET /users/me` 获取自己的 `id`、昵称、邮箱和头像完整 URL；也可调用 `PATCH /users/me`，以 multipart 的 `nickname` 和/或 `image` 更新自己的资料。邮箱是登录标识，不允许通过编辑接口修改；可信服务管理令牌也不能冒充当前用户。头像上传成功后数据库保存七牛公开域名下的完整 URL。
 - App Token 的 `user_id` 取自 JWT `sub`。服务端对 HTTP、SSE、AG-UI 和语音入口执行线程归属校验，对反馈执行运行归属校验；跨用户访问返回 403。
-- [Python 客户端](../src/client/client.py) 从自己的进程环境读取 `AUTH_SECRET` 并添加 `Authorization: Bearer ...`；它不会自动建立用户登录会话。
+- [Python 客户端](../client/client.py) 从自己的进程环境读取 `AUTH_SECRET` 并添加 `Authorization: Bearer ...`；它不会自动建立用户登录会话。
 
 邮箱认证请求示例：
 
@@ -112,7 +107,7 @@ Compose 中的 Redis 配置面向本地开发，默认没有密码并映射宿�
 
 ## 配置放在哪里
 
-1. **Nacos YAML**：模型、认证、Redis、PostgreSQL、SMTP、七牛对象存储、RAG 和实时语音字段由服务启动时优先从 Nacos 的 `agent-service-toolkit.yaml` 读取，并覆盖 Settings 中的本地值；邮件配置也继续兼容 Java/Spring 风格的 `mail` 或 `spring.mail` 节点。
+1. **Nacos YAML**：模型、认证、Redis、PostgreSQL、SMTP、七牛对象存储、记忆和实时语音字段由服务启动时优先从 Nacos 的 `agent-service-toolkit.yaml` 读取，并覆盖 Settings 中的本地值；邮件配置也继续兼容 Java/Spring 风格的 `mail` 或 `spring.mail` 节点。
 2. **本地 Python 运行**：项目 `.env` 选择 `APP_ENV=local|test`，`config/environments/*.env` 保存非敏感 Nacos 引导配置，`.env.local` 和 `.env.test` 保存各环境认证信息。Settings 按层加载选中的配置，进程环境变量优先级最高。
 3. **Docker Compose**：服务端和 Streamlit 读取相同环境配置，并额外应用 `*.compose.env` 中的容器地址覆盖。[Compose](../compose.yaml) 会启动 PostgreSQL 和启用 AOF 的 Redis，但应用连接信息仍以 Nacos YAML 为准。完整切换方式见[环境配置说明](Environment_Configuration.md)。
 4. **文件凭据**：开发用文件可放在 `privatecredentials/`，Compose 挂载到 `/privatecredentials`。本地路径和容器路径不同，`GOOGLE_APPLICATION_CREDENTIALS` 应指向运行进程能读取的路径。

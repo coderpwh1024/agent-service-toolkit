@@ -11,8 +11,8 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.store.base import BaseStore
 from langgraph.store.postgres import AsyncPostgresStore
 
-from memory import initialize_database, initialize_store
-from memory.postgres import get_postgres_connection_string
+from app.core.database import get_postgres_connection_string
+from app.core.persistence import initialize_database, initialize_store
 
 
 @pytest.mark.docker

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import SecretStr, ValidationError
 
-from core.settings import (
+from app.core.settings import (
     AppEnvironment,
     DatabaseType,
     LogLevel,
@@ -16,7 +16,7 @@ from core.settings import (
     selected_app_environment,
     settings_env_files,
 )
-from schema.models import (
+from app.schemas.llm import (
     AlibabaModelName,
     AnthropicModelName,
     AzureOpenAIModelName,
@@ -106,7 +106,7 @@ def test_research_deadlines_reject_invalid_values(name, maximum, invalid):
 
 def test_research_defaults_and_environment_override(monkeypatch):
     defaults = Settings(_env_file=None)
-    assert defaults.MEM0_RESEARCH_ENABLED
+    assert not defaults.MEM0_RESEARCH_ENABLED
     assert defaults.MEM0_RESEARCH_TIMEOUT_SECONDS == 90
     assert defaults.MEM0_RESEARCH_FINAL_TIMEOUT_SECONDS == 15
     assert defaults.RESEARCH_SEARCH_TIMEOUT_SECONDS == 60

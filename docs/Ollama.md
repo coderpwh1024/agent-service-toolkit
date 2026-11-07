@@ -9,7 +9,7 @@
 1. 安装任意想使用的模型，例如执行 `ollama pull llama3.2`，并将 `OLLAMA_MODEL`
    环境变量设为要使用的模型，例如 `OLLAMA_MODEL=llama3.2`
 
-如果在本地运行服务（例如 `python src/run_service.py`），至此应该已经可以正常使用。
+如果在本地运行服务（例如 `python -m app`），至此应该已经可以正常使用。
 
 如果在 Docker 中运行服务，还需要执行以下操作：
 

@@ -66,7 +66,7 @@ start_service() {
   fi
   start_postgres
   SERVICE_LOG="$(mktemp)"
-  env USE_FAKE_MODEL=true "$@" uv run python src/run_service.py > "$SERVICE_LOG" 2>&1 &
+  env PYTHONPATH=. USE_FAKE_MODEL=true "$@" uv run python tests/smoke/server.py > "$SERVICE_LOG" 2>&1 &
   SERVICE_PID=$!
   for _ in $(seq 1 30); do
     if curl -sf "$AGENT_URL/health" >/dev/null 2>&1; then
@@ -220,7 +220,7 @@ smoke_langfuse() {
 
   # (2) decisive: a traced invoke must actually produce a trace in LangFuse.
   uv run python -c "
-import sys; sys.path.insert(0, 'src')
+import sys; sys.path.insert(0, '.')
 from client import AgentClient
 c = AgentClient('$AGENT_URL')
 r = c.invoke('Trace me please', thread_id='$SMOKE_THREAD_ID', model='fake')

@@ -5,8 +5,8 @@ from collections import defaultdict
 
 import pytest
 
-from core.llm import _MODEL_TABLE
-from schema.models import AllModelEnum, GoogleModelName, VertexAIModelName
+from app.core.llm import _MODEL_TABLE
+from app.schemas.llm import AllModelEnum, GoogleModelName, VertexAIModelName
 
 MODEL_ENUMS = typing.get_args(AllModelEnum.__value__)
 

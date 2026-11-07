@@ -14,9 +14,12 @@ RUN pip install --no-cache-dir uv==0.11.32
 # --only-group client: Only install dependencies marked as part of the "client" group in pyproject.toml
 RUN uv sync --frozen --only-group client
 
-COPY src/client/ ./client/
-COPY src/schema/ ./schema/
-COPY src/voice/ ./voice/
-COPY src/streamlit_app.py .
+COPY client/ ./client/
+COPY app/__init__.py ./app/
+COPY app/schemas/ ./app/schemas/
+COPY app/services/__init__.py ./app/services/
+COPY app/services/voice/__init__.py app/services/voice/stt.py app/services/voice/tts.py ./app/services/voice/
+COPY app/services/voice/providers/__init__.py app/services/voice/providers/alibaba_stt.py app/services/voice/providers/alibaba_tts.py ./app/services/voice/providers/
+COPY streamlit_app.py .
 
 CMD ["streamlit", "run", "streamlit_app.py"]
