@@ -213,14 +213,14 @@ uv run pymarkdown scan AGENTS.md
 - Docker 集成测试需要显式 `--run-docker`。真实模型检查会产生网络请求和费用，只有任务明确需要且环境已有授权凭据时才运行 `scripts/check_live_models.py`。
 - 若某项检查因 Docker、网络、外部服务或凭据不可用而无法运行，应报告未验证的具体范围，不要伪造通过结果，也不要为此削弱测试。
 
-## 模板仓库与维护者脚手架
+## 开发辅助文件
 
-本仓库是 GitHub 模板。下游项目首次创建时，`.github/workflows/template-cleanup.yml` 会按约定清理仅供维护者使用的内容。
+当前仓库主要维护语音、用户、聊天、记忆、邮件和视频能力。上游原作者专用的社区回复技能、定时维护手册及模板清理工作流已移除。
 
-- 维护者技能、钩子和定时任务放在 `.claude/`、`.agents/`、`.codex/` 或 `docs/maintenance/` 中，这些目录会被整体删除。
-- 仅供维护者使用的工作流必须包含所有者保护条件 `if: github.repository == 'JoshuaC215/agent-service-toolkit'`，以便清理流程识别。
-- 只有当维护者文件必须放在共享目录且无法带保护标记时，才把它加入 `template-cleanup.yml` 的显式清理列表。
-- `AGENTS.md` 是下游项目也应保留的开发约定，不属于维护者专用脚手架。
+- `.agents/`、`.claude/` 和 `.codex/` 保留本项目使用的依赖刷新、模型目录、冒烟测试技能与固定 uv 版本钩子。
+- `docs/maintenance/` 保存聊天提示词及延迟优化的设计依据和验证记录，不是自动执行的任务目录。
+- `scripts/` 保留打包、基础设施冒烟、浏览器回归、模型验证和聊天性能检查入口；浏览器单轮检查统一使用 `scripts/e2e_ui_tests.py` 的 `chat` 场景。
+- IDE 配置、历史本地数据库、凭据与运行产物不纳入版本控制。清理时保留正在使用或可能包含历史数据的本地文件。
 
 ## 完成标准
 

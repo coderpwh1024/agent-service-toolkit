@@ -37,7 +37,7 @@ curl -s -N -XPOST localhost:8080/stream -H 'content-type: application/json' \
 
 ## Streamlit UI 端到端测试（浏览器）
 
-CI 从不驱动真实 Streamlit 界面：pytest 会模拟传输层，Docker CI 作业也只检查健康端点。
+pytest 会模拟传输层，Docker 集成测试也只检查健康端点。
 因此，只有真实浏览器测试才能发现升级引起的 Streamlit/pandas/pyarrow 层面 UI 故障。
 保持上述伪模型服务运行，然后执行：
 
@@ -45,22 +45,21 @@ CI 从不驱动真实 Streamlit 界面：pytest 会模拟传输层，Docker CI �
 AGENT_URL=http://localhost:8080 \
   uv run streamlit run streamlit_app.py --server.headless true --server.port 8501 &
 # 快速单消息冒烟测试：
-uv run --with playwright python scripts/smoke_live_app.py http://localhost:8501
+uv run --with playwright python scripts/e2e_ui_tests.py http://localhost:8501 chat
 # 更全面的覆盖（多轮对话恢复、设置选择器、反馈组件、流式传输开关等）：
 uv run --with playwright python scripts/e2e_ui_tests.py http://localhost:8501
 ```
 
-`smoke_live_app.py` 会发送一条聊天消息，并验证流式响应能够渲染且最终稳定。
-`e2e_ui_tests.py` 是一组基于相同思路构建的关键用户旅程小型测试套件。运行 `--list`
-可查看测试名称，也可以传入名称仅运行其中一部分。两者通过时均以状态码 0 退出，失败时
-保存诊断截图；两者都支持 URL 参数，因此同一命令也能针对已部署应用运行（省略 URL，
-或设置 `LIVE_APP_URL`）。凡是提升 `streamlit`、其渲染技术栈（pandas、pyarrow、
+`chat` 场景会发送一条聊天消息，并验证流式响应能够渲染且最终稳定。
+`e2e_ui_tests.py` 还覆盖多轮对话恢复等关键用户旅程。运行 `--list` 可查看测试名称，
+也可以传入名称仅运行其中一部分。通过时以状态码 0 退出，失败时保存诊断截图。
+脚本默认访问 localhost；针对已部署应用运行时应显式传入受信任的 URL，或设置
+`LIVE_APP_URL`。凡是提升 `streamlit`、其渲染技术栈（pandas、pyarrow、
 pillow、altair）或 UI 使用的客户端/数据模式代码版本，在打开 PR 前至少运行冒烟测试；
 升级可能影响聊天记录、设置、反馈或流式传输路径，则运行完整测试套件。
 
 ## 容器化测试
 
 要验证镜像本身（基础镜像 + 镜像内的 `uv sync`），请运行
-`docker compose up --build`，并通过映射端口访问相同端点。这与 `test-docker` CI
-作业一致。该测试需要拉取 Python slim 基础镜像，因此需要访问 Docker Hub 的出站网络
-权限（并非所有沙箱都具备；CI 通过 Docker-in-Docker 处理）。
+`docker compose up --build`，并通过映射端口访问相同端点。该测试需要拉取 Python slim
+基础镜像，因此需要访问 Docker Hub 的出站网络权限。
