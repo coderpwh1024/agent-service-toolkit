@@ -44,21 +44,21 @@ def test_package_includes_runtime_sql_and_excludes_local_data(
     PACKAGER["build_archive"](package_root, destination, "example==1.0\n")
     with tarfile.open(destination) as archive:
         names = set(archive.getnames())
-        assert "agent-service-toolkit/app/__main__.py" in names
-        assert "agent-service-toolkit/app/models/sql/create_app_users.sql" in names
-        assert "agent-service-toolkit/.env.example" in names
-        assert "agent-service-toolkit/deploy/.env.example" in names
-        assert "agent-service-toolkit/deploy/nginx/agent-service-toolkit.conf" in names
+        assert "agent-voice-server/app/__main__.py" in names
+        assert "agent-voice-server/app/models/sql/create_app_users.sql" in names
+        assert "agent-voice-server/.env.example" in names
+        assert "agent-voice-server/deploy/.env.example" in names
+        assert "agent-voice-server/deploy/nginx/agent-voice-server.conf" in names
         assert not any(
             name.endswith(("/.env", "/.env.local", ".pyc", "private.py"))
             or any(part in name for part in ("privatecredentials/", "data/", "tmp/", ".venv/"))
             for name in names
         )
-        requirements = archive.extractfile("agent-service-toolkit/requirements.txt")
+        requirements = archive.extractfile("agent-voice-server/requirements.txt")
         assert requirements is not None
         assert requirements.read() == b"example==1.0\n"
         assert all(member.isreg() and member.uid == 0 for member in archive.getmembers())
-        assert archive.getmember("agent-service-toolkit/deploy/install.sh").mode == 0o755
+        assert archive.getmember("agent-voice-server/deploy/install.sh").mode == 0o755
 
 
 def test_package_rejects_source_symlink(package_root: Path, tmp_path: Path) -> None:

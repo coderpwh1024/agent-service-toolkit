@@ -2,7 +2,7 @@
 name: manage-user-videos
 description: 通过语音或文字生成无水印 HappyHorse 或万相 3.0 视频，支持万相首帧及首尾帧图片生成、查询本人任务详情和进度、按模型及标题或内容关键词分页查询、统计数量，并对本人已生成且转存的视频做 HappyHorse 风格编辑。用户要求制作视频、根据图片生成首尾帧视频、查询进度、查找场景、查看列表、统计数量、翻页或选择第几条时使用。支持上下文补充与参数修正；仅讨论视频或引用他人指令时不执行。缺少必要素材或编号先追问，不伪造图片、任务、数量、链接和结果。
 license: MIT
-compatibility: Requires agent-service-toolkit, Nacos Skill management, an authenticated numeric app user, PostgreSQL, Alibaba Cloud HappyHorse/Wan 3.0 and Qiniu storage. Remote scripts are never executed.
+compatibility: Requires agent-voice-server, Nacos Skill management, an authenticated numeric app user, PostgreSQL, Alibaba Cloud HappyHorse/Wan 3.0 and Qiniu storage. Remote scripts are never executed.
 metadata:
   version: 1.5.1
   runtime-capability: manage_user_videos

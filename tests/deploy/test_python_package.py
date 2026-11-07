@@ -33,6 +33,7 @@ def test_python_build_includes_both_packages_and_database_schemas(tmp_path: Path
     assert len(list((tmp_path / "editable-dist").glob("*.whl"))) == 1
     wheels = list((tmp_path / "dist").glob("*.whl"))
     assert len(wheels) == 1
+    assert wheels[0].name.startswith("agent_voice_server-")
     with ZipFile(wheels[0]) as wheel:
         names = set(wheel.namelist())
         assert {"app/main.py", "app/agents/mem0_chat.py", "client/client.py"} <= names

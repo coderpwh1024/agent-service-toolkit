@@ -1,6 +1,6 @@
 # CentOS 非 Docker 部署
 
-本部署包使用 Python 虚拟环境运行 FastAPI 和 Streamlit，支持 systemd 自动启动和异常重启。以下命令以 **CentOS Stream 9 / 10**、安装目录 `/opt/agent-service-toolkit` 为例，使用 DNF、原生 PostgreSQL 和 Nginx。服务器需要联网下载 Python 和依赖，并能访问模型服务；此包是源码部署包，不含 Python、第三方依赖或数据库数据。
+本部署包使用 Python 虚拟环境运行 FastAPI 和 Streamlit，支持 systemd 自动启动和异常重启。以下命令以 **CentOS Stream 9 / 10**、安装目录 `/opt/agent-voice-server` 为例，使用 DNF、原生 PostgreSQL 和 Nginx。服务器需要联网下载 Python 和依赖，并能访问模型服务；此包是源码部署包，不含 Python、第三方依赖或数据库数据。
 
 ## 0. 确认 CentOS 版本和兼容性
 
@@ -24,7 +24,7 @@ getconf GNU_LIBC_VERSION
 
 ## 1. 在本地重新打包
 
-使用 Python 3.12–3.14 和仓库固定的 uv 打包当前源码，生成的文件位于 `output/agent-service-toolkit-*-linux-*.tar.gz`：
+使用 Python 3.12–3.14 和仓库固定的 uv 打包当前源码，生成的文件位于 `output/agent-voice-server-*-linux-*.tar.gz`：
 
 ```sh
 python3 scripts/package_linux.py
@@ -37,14 +37,14 @@ python3 scripts/package_linux.py
 将 `.tar.gz` 和同名 `.sha256` 文件一起上传。在服务器的上传目录执行，下面的文件名需要替换为实际名称：
 
 ```sh
-sha256sum -c agent-service-toolkit-VERSION-linux-TIMESTAMP.tar.gz.sha256
+sha256sum -c agent-voice-server-VERSION-linux-TIMESTAMP.tar.gz.sha256
 
 sudo useradd --system --user-group --create-home \
   --home-dir /var/lib/agent-service --shell /sbin/nologin agent-service
 sudo mkdir -p /opt
-sudo tar --no-same-owner -xzf agent-service-toolkit-VERSION-linux-TIMESTAMP.tar.gz -C /opt
-sudo chown -R agent-service:agent-service /opt/agent-service-toolkit
-cd /opt/agent-service-toolkit
+sudo tar --no-same-owner -xzf agent-voice-server-VERSION-linux-TIMESTAMP.tar.gz -C /opt
+sudo chown -R agent-service:agent-service /opt/agent-voice-server
+cd /opt/agent-voice-server
 ```
 
 已存在服务账号时跳过 `useradd`。升级时先停止应用、备份 PostgreSQL，并保留服务器的 `.env`；不要用新模板覆盖密钥。代码可以解压覆盖，但若新版删除了源文件，应使用新目录重新部署，避免旧文件残留。
@@ -59,7 +59,7 @@ curl -LsSf https://astral.sh/uv/0.11.32/install.sh \
   | sudo env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
 
 sudo -u agent-service -H bash deploy/install.sh
-sudo restorecon -RF /opt/agent-service-toolkit
+sudo restorecon -RF /opt/agent-voice-server
 ```
 
 脚本默认下载 Python **3.13.14**，安装至项目 `.python/`，将生产依赖安装至 `.venv/`，并在没有 `.env` 时创建权限为 `600` 的配置文件。已有 `.env` 会保留，不修改 CentOS 自带的 Python 或 `/usr/bin/python`。Python 和虚拟环境必须在最终安装目录创建；安装完成后不要移动目录。`restorecon` 恢复安装目录的 SELinux 文件上下文。uv 的版本安装方式和冻结依赖说明见 [uv 安装文档](https://docs.astral.sh/uv/getting-started/installation/)与 [uv 依赖同步文档](https://docs.astral.sh/uv/concepts/projects/sync/)。
@@ -73,7 +73,7 @@ cp .env.example .env
 chmod 600 .env
 ```
 
-pip 路径下应在服务账号或其拥有的安装目录操作；已有 `.env` 时跳过复制步骤，安装后也执行 `sudo restorecon -RF /opt/agent-service-toolkit`。部分依赖可能需要编译，届时按安装错误补充对应系统开发包。离线部署需要提前在相同 Linux 架构、glibc 和 Python 版本下下载依赖，此源码包本身不支持离线安装。
+pip 路径下应在服务账号或其拥有的安装目录操作；已有 `.env` 时跳过复制步骤，安装后也执行 `sudo restorecon -RF /opt/agent-voice-server`。部分依赖可能需要编译，届时按安装错误补充对应系统开发包。离线部署需要提前在相同 Linux 架构、glibc 和 Python 版本下下载依赖，此源码包本身不支持离线安装。
 
 ## 4. 准备数据库和运行配置
 
@@ -190,8 +190,8 @@ ssh -L 8501:127.0.0.1:8501 -L 8000:127.0.0.1:8000 USER@SERVER
 
 ```sh
 sudo dnf install -y nginx
-sudo install -m 644 deploy/nginx/agent-service-toolkit.conf /etc/nginx/conf.d/
-sudo vi /etc/nginx/conf.d/agent-service-toolkit.conf
+sudo install -m 644 deploy/nginx/agent-voice-server.conf /etc/nginx/conf.d/
+sudo vi /etc/nginx/conf.d/agent-voice-server.conf
 ```
 
 将 `app.example.com`、`api.example.com` 替换为已解析到服务器的域名。配置已传递 WebSocket 头，API 已关闭 SSE 代理缓冲。SELinux 开启时，允许 Nginx 连接上游，保留 SELinux 的正常保护：

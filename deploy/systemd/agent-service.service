@@ -1,5 +1,5 @@
 [Unit]
-Description=Agent Service Toolkit API
+Description=Agent Voice Server API
 Wants=network-online.target
 After=network-online.target
 
@@ -7,8 +7,8 @@ After=network-online.target
 Type=simple
 User=agent-service
 Group=agent-service
-WorkingDirectory=/opt/agent-service-toolkit
-ExecStart=/opt/agent-service-toolkit/.venv/bin/python /opt/agent-service-toolkit/deploy/run.py service
+WorkingDirectory=/opt/agent-voice-server
+ExecStart=/opt/agent-voice-server/.venv/bin/python /opt/agent-voice-server/deploy/run.py service
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=60

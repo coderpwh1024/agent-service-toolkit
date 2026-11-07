@@ -2,7 +2,7 @@
 name: send-current-user-email
 description: 给当前登录用户的注册邮箱立即或定时发送纯文本邮件。通过语音或文字要求“给我发邮件”“十分钟后发到我的邮箱”或“send me an email”时使用。未指定时间立即发送，指定时间只支持未来24小时；支持追问主题、正文或不明确的时间，不支持其他收件人、附件、抄送或密送。
 license: MIT
-compatibility: Requires agent-service-toolkit with Nacos Skill management, email login, PostgreSQL, Redis, and encrypted SMTP. The bundled script requires Python 3.12+ and a signed-in user access token.
+compatibility: Requires agent-voice-server with Nacos Skill management, email login, PostgreSQL, Redis, and encrypted SMTP. The bundled script requires Python 3.12+ and a signed-in user access token.
 metadata:
   version: "1.1.0"
   runtime-capability: send_current_user_email

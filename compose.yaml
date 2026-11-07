@@ -1,3 +1,5 @@
+name: agent-service-toolkit
+
 services:
   postgres:
     image: pgvector/pgvector:0.8.2-pg16

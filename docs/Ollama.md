@@ -1,6 +1,6 @@
 # 使用 Ollama
 
-⚠️ _**注意：** agent-service-toolkit 对 Ollama 的支持尚处于实验阶段，实际效果可能不符合预期。
+⚠️ _**注意：** agent-voice-server 对 Ollama 的支持尚处于实验阶段，实际效果可能不符合预期。
 以下说明已在 MacBook Pro 上使用 Docker Desktop 测试。如遇到任何问题，请提交 Issue。_
 
 你也可以使用 [Ollama](https://ollama.com) 运行智能体服务所依赖的 LLM。

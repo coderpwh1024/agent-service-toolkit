@@ -1,5 +1,5 @@
 [Unit]
-Description=Agent Service Toolkit Streamlit UI
+Description=Agent Voice Server Streamlit UI
 Wants=network-online.target agent-service.service
 After=network-online.target agent-service.service
 
@@ -7,8 +7,8 @@ After=network-online.target agent-service.service
 Type=simple
 User=agent-service
 Group=agent-service
-WorkingDirectory=/opt/agent-service-toolkit
-ExecStart=/opt/agent-service-toolkit/.venv/bin/python /opt/agent-service-toolkit/deploy/run.py app
+WorkingDirectory=/opt/agent-voice-server
+ExecStart=/opt/agent-voice-server/.venv/bin/python /opt/agent-voice-server/deploy/run.py app
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=60

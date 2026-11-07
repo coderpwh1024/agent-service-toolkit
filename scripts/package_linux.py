@@ -9,7 +9,7 @@ import tomllib
 from datetime import UTC, datetime
 from pathlib import Path
 
-PACKAGE_ROOT = "agent-service-toolkit"
+PACKAGE_ROOT = "agent-voice-server"
 PACKAGE_FILES = (
     "pyproject.toml",
     "uv.lock",
@@ -21,7 +21,7 @@ PACKAGE_FILES = (
     "deploy/.env.example",
     "deploy/install.sh",
     "deploy/run.py",
-    "deploy/nginx/agent-service-toolkit.conf",
+    "deploy/nginx/agent-voice-server.conf",
     "deploy/systemd/agent-service.service",
     "deploy/systemd/agent-streamlit.service",
     "docs/Linux_NoDocker_Deployment.md",

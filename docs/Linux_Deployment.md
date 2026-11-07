@@ -33,12 +33,12 @@ Ubuntu 上按 [Docker 官方说明](https://docs.docker.com/engine/install/ubunt
 ```sh
 mkdir -p ~/apps
 cd ~/apps
-git clone YOUR_REPOSITORY_URL agent-service-toolkit
-cd agent-service-toolkit
+git clone YOUR_REPOSITORY_URL agent-voice-server
+cd agent-voice-server
 git checkout RELEASE_TAG_OR_COMMIT
 ```
 
-Git 不会传送被忽略的 `.env`、私有凭据和运行产物。若没有可供服务器访问的 Git 仓库，可以在本地运行 `git archive --format=tar HEAD > agent-service-toolkit.tar`，将该 tar 文件传到服务器后解包；`git archive HEAD` 同样只包含已提交的内容。不要把 `.env` 或 `privatecredentials/` 放入代码包。
+Git 不会传送被忽略的 `.env`、私有凭据和运行产物。若没有可供服务器访问的 Git 仓库，可以在本地运行 `git archive --format=tar HEAD > agent-voice-server.tar`，将该 tar 文件传到服务器后解包；`git archive HEAD` 同样只包含已提交的内容。不要把 `.env` 或 `privatecredentials/` 放入代码包。
 
 ## 2. 配置运行密钥
 
@@ -180,7 +180,7 @@ Streamlit 和语音使用 WebSocket，代理必须传递 Upgrade 头；API 流�
 
 ```sh
 docker compose -f compose.yaml -f compose.prod.yaml exec -T postgres \
-  pg_dump -U agent_service -d agent_service -Fc > agent-service-toolkit.dump
+  pg_dump -U agent_service -d agent_service -Fc > agent-voice-server.dump
 ```
 
 若通过 Git 部署，拉取并切换到经过验证的提交后重新构建：
@@ -201,11 +201,11 @@ docker compose -f compose.yaml -f compose.prod.yaml ps
 
 ```sh
 docker buildx build --platform linux/amd64 --load \
-  -t agent-service-toolkit-service:release-1 -f docker/Dockerfile.service .
+  -t agent-voice-server-service:release-1 -f docker/Dockerfile.service .
 docker buildx build --platform linux/amd64 --load \
-  -t agent-service-toolkit-app:release-1 -f docker/Dockerfile.app .
-docker save -o agent-service-toolkit-images.tar \
-  agent-service-toolkit-service:release-1 agent-service-toolkit-app:release-1
+  -t agent-voice-server-app:release-1 -f docker/Dockerfile.app .
+docker save -o agent-voice-server-images.tar \
+  agent-voice-server-service:release-1 agent-voice-server-app:release-1
 ```
 
-服务器运行 `docker load -i agent-service-toolkit-images.tar` 后，还需在生产覆盖文件中分别为 `agent_service` 和 `streamlit_app` 指定上述 `image` 标签，并用 `docker compose ... up -d --no-build` 启动。服务器仍需取得 PostgreSQL 和 Redis 镜像，且需要部署配置文件及独立创建的 `.env`。跨架构构建及镜像传输参见 [Docker 多平台构建文档](https://docs.docker.com/build/building/multi-platform/)。
+服务器运行 `docker load -i agent-voice-server-images.tar` 后，还需在生产覆盖文件中分别为 `agent_service` 和 `streamlit_app` 指定上述 `image` 标签，并用 `docker compose ... up -d --no-build` 启动。服务器仍需取得 PostgreSQL 和 Redis 镜像，且需要部署配置文件及独立创建的 `.env`。跨架构构建及镜像传输参见 [Docker 多平台构建文档](https://docs.docker.com/build/building/multi-platform/)。

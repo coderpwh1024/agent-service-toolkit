@@ -2,7 +2,7 @@
 
 日期：2026-09-18，更新于 2026-09-24。状态：后端 P1/P2 主链路、独立 Flutter 工程、前台离线唤醒、系统 AEC/降噪接入和自动插话已经实现；真实百炼账号、弱网及 Android/iOS 真机声学验收仍待完成。实际接口以 [Voice_API.md](Voice_API.md) 为准。当前仅保留 `mem0-chatbot` 主 Agent，`chatbot` 为兼容标识；其他 Agent 已移除，以下计划的业务范围已同步收敛。
 
-目标：以当前 agent-service-toolkit 为唯一业务后端，在独立目录建立 Flutter 工程。手机与后端共同实现本地唤醒、连续语音对话、流式回答、说话打断和 Agent 业务。所有云端模型调用、Agent 编排、工具权限与业务数据由后端管理。
+目标：以当前 agent-voice-server 为唯一业务后端，在独立目录建立 Flutter 工程。手机与后端共同实现本地唤醒、连续语音对话、流式回答、说话打断和 Agent 业务。所有云端模型调用、Agent 编排、工具权限与业务数据由后端管理。
 
 首版假设：优先 Android 真机验证，同时保留 iOS 音频接口；前台会话、中文、单个活跃语音会话。Android 后台与 iOS 后台音频分别验收。平台优先级可调整，不影响后端协议。
 
@@ -12,7 +12,7 @@
 
 ```text
 /Users/coderpwh/python/workspace/
-├── agent-service-toolkit/       当前 Python 后端
+├── agent-voice-server/       当前 Python 后端
 └── agent-voice-app/             新 Flutter 工程
 ```
 

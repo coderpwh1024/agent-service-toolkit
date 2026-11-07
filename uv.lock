@@ -72,7 +72,7 @@ wheels = [
 ]
 
 [[package]]
-name = "agent-service-toolkit"
+name = "agent-voice-server"
 version = "0.2.0"
 source = { virtual = "." }
 dependencies = [
