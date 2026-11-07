@@ -24,7 +24,7 @@ getconf GNU_LIBC_VERSION
 
 ## 1. 在本地重新打包
 
-已生成的 `output/agent-service-toolkit-*-linux-*.tar.gz` 可直接上传。以后修改代码后，可以使用 Python 3.12–3.14 和仓库固定的 uv 重新打包：
+使用 Python 3.12–3.14 和仓库固定的 uv 打包当前源码，生成的文件位于 `output/agent-service-toolkit-*-linux-*.tar.gz`：
 
 ```sh
 python3 scripts/package_linux.py
