@@ -46,6 +46,8 @@ def test_package_includes_runtime_sql_and_excludes_local_data(
         names = set(archive.getnames())
         assert "agent-voice-server/app/__main__.py" in names
         assert "agent-voice-server/app/models/sql/create_app_users.sql" in names
+        assert "agent-voice-server/LICENSE" in names
+        assert "agent-voice-server/NOTICE" in names
         assert "agent-voice-server/.env.example" in names
         assert "agent-voice-server/deploy/.env.example" in names
         assert "agent-voice-server/deploy/nginx/agent-voice-server.conf" in names

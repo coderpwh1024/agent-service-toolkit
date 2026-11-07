@@ -16,6 +16,7 @@ PACKAGE_FILES = (
     "README.md",
     "streamlit_app.py",
     "LICENSE",
+    "NOTICE",
     "scripts/package_linux.py",
     "deploy/uv-version",
     "deploy/.env.example",
